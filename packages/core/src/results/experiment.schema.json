@@ -1,126 +1,220 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "memon Experiment description (experiment.json)",
-  "description": "Experiment Results description: legacy FS9 arrays or FS10 keyed Variants with research history.",
-  "type": "object",
-  "required": ["experiment_schema_version"],
-  "properties": {
-    "experiment_schema_version": {
-      "type": "integer",
-      "minimum": 1,
-      "description": "Version of this Experiment's result schema; every member result.csv records the same value."
-    },
-    "groups": {
+  "description": "Lightweight Experiment declarations, with compatible FS9/FS10 legacy formats.",
+  "oneOf": [
+    {
       "type": "object",
-      "description": "Display metadata keyed by group path (a partition or a deeper prefix).",
-      "propertyNames": {
-        "pattern": "^(?:params|metrics|env)(?:\\.[A-Za-z_][A-Za-z0-9_-]*)*$"
-      },
-      "additionalProperties": {
-        "$ref": "#/$defs/group"
-      }
-    },
-    "columns": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/column"
-      }
-    },
-    "variants": {
-      "oneOf": [
-        {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/variant"
-          }
+      "required": ["format"],
+      "properties": {
+        "format": {
+          "const": "lightweight"
         },
-        {
+        "groups": {
           "type": "object",
           "propertyNames": {
-            "pattern": "^V[0-9]{4}$"
+            "pattern": "^(?:params|metrics|env|run)(?:\\.[A-Za-z_][A-Za-z0-9_-]*)*$"
           },
           "additionalProperties": {
-            "$ref": "#/$defs/keyedVariant"
+            "$ref": "#/$defs/group"
+          }
+        },
+        "columns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/column"
+          }
+        },
+        "variants": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^(?:V[0-9]{4}|smoke)$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "aggregate": {
+                "const": "aggregate_variant.py"
+              },
+              "deprecated": {
+                "type": "boolean"
+              },
+              "deprecation": {
+                "type": "object",
+                "required": ["reason", "deprecated_at"],
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "deprecated_at": {
+                    "type": "string"
+                  },
+                  "successor": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "additionalProperties": false
           }
         }
-      ]
+      },
+      "not": {
+        "anyOf": [
+          {
+            "required": ["research"]
+          },
+          {
+            "required": ["experiment_schema_version"]
+          }
+        ]
+      }
     },
-    "research": {
+    {
       "type": "object",
-      "required": ["current_version", "versions", "run_versions"],
+      "required": ["experiment_schema_version"],
       "properties": {
-        "current_version": {
+        "experiment_schema_version": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "description": "Version of this Experiment's result schema; every member result.csv records the same value."
         },
-        "versions": {
+        "groups": {
+          "type": "object",
+          "description": "Display metadata keyed by group path (a partition or a deeper prefix).",
+          "propertyNames": {
+            "pattern": "^(?:params|metrics|env)(?:\\.[A-Za-z_][A-Za-z0-9_-]*)*$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/group"
+          }
+        },
+        "columns": {
           "type": "array",
-          "minItems": 1,
           "items": {
-            "type": "object",
-            "required": ["version", "started_at", "reason"],
-            "properties": {
-              "version": {
+            "$ref": "#/$defs/column"
+          }
+        },
+        "variants": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/variant"
+              }
+            },
+            {
+              "type": "object",
+              "propertyNames": {
+                "pattern": "^V[0-9]{4}$"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/keyedVariant"
+              }
+            }
+          ]
+        },
+        "research": {
+          "type": "object",
+          "required": ["current_version", "versions", "run_versions"],
+          "properties": {
+            "current_version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "versions": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["version", "started_at", "reason"],
+                "properties": {
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "started_at": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "snapshot": {
+                    "type": "object"
+                  }
+                }
+              }
+            },
+            "run_versions": {
+              "type": "object",
+              "additionalProperties": {
                 "type": "integer",
                 "minimum": 1
-              },
-              "started_at": {
-                "type": "string"
-              },
-              "reason": {
-                "type": "string",
-                "minLength": 1
-              },
-              "snapshot": {
-                "type": "object"
               }
             }
           }
-        },
-        "run_versions": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "integer",
-            "minimum": 1
+        }
+      },
+      "not": {
+        "anyOf": [
+          {
+            "required": ["id"]
+          },
+          {
+            "required": ["slug"]
+          },
+          {
+            "required": ["title"]
+          },
+          {
+            "required": ["status"]
+          },
+          {
+            "required": ["archived"]
+          },
+          {
+            "required": ["runs"]
+          },
+          {
+            "required": ["hypotheses"]
+          },
+          {
+            "required": ["tags"]
+          },
+          {
+            "required": ["created_at"]
+          },
+          {
+            "required": ["updated_at"]
+          }
+        ]
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["research"]
+          },
+          "then": {
+            "required": ["variants"],
+            "properties": {
+              "variants": {
+                "type": "object"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "variants": {
+                "type": "array"
+              }
+            }
           }
         }
-      }
+      ]
     }
-  },
-  "not": {
-    "anyOf": [
-      {
-        "required": ["id"]
-      },
-      {
-        "required": ["slug"]
-      },
-      {
-        "required": ["title"]
-      },
-      {
-        "required": ["status"]
-      },
-      {
-        "required": ["archived"]
-      },
-      {
-        "required": ["runs"]
-      },
-      {
-        "required": ["hypotheses"]
-      },
-      {
-        "required": ["tags"]
-      },
-      {
-        "required": ["created_at"]
-      },
-      {
-        "required": ["updated_at"]
-      }
-    ]
-  },
+  ],
   "$defs": {
     "valuePath": {
       "type": "string",
@@ -206,7 +300,8 @@
       "required": ["path", "label", "type"],
       "properties": {
         "path": {
-          "$ref": "#/$defs/valuePath"
+          "type": "string",
+          "pattern": "^(?:params|metrics|env|run)(?:\\.[A-Za-z_][A-Za-z0-9_-]*)+$"
         },
         "label": {
           "type": "string",
@@ -560,27 +655,5 @@
         }
       }
     }
-  },
-  "allOf": [
-    {
-      "if": {
-        "required": ["research"]
-      },
-      "then": {
-        "required": ["variants"],
-        "properties": {
-          "variants": {
-            "type": "object"
-          }
-        }
-      },
-      "else": {
-        "properties": {
-          "variants": {
-            "type": "array"
-          }
-        }
-      }
-    }
-  ]
+  }
 }

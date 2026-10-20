@@ -11,11 +11,8 @@ import {
   AmbiguousShareError,
   BackendDocumentConflictResponseSchema,
   type BackendErrorCode,
-  BackendWikiReviewOrderResponseSchema,
   JournalRecordingError,
   ShareNotFoundError,
-  WikiReviewError,
-  WikiReviewOrderError,
 } from '@memon/core'
 import { type FileAccessError, isFileAccessError } from '@memon/file-protocol'
 import { BackendActorContextError } from '../actor-context.js'
@@ -207,16 +204,6 @@ const MAPPERS: readonly Mapper<never>[] = [
   mapper(BackendStreamDeadlineError, () =>
     httpError(504, 'UNAVAILABLE', 'Backend stream control deadline exceeded', true),
   ),
-  mapper(WikiReviewOrderError, (error) => ({
-    status: 409,
-    code: 'CONFLICT',
-    message: error.message,
-    body: BackendWikiReviewOrderResponseSchema.parse({
-      error: { code: 'REVIEW_ORDER', message: error.message },
-      nextSha: error.nextSha,
-    }),
-  })),
-  mapper(WikiReviewError, () => httpError(404, 'NOT_FOUND', 'Backend wiki review is unavailable')),
   mapper(ShareNotFoundError, () => httpError(404, 'NOT_FOUND', 'Share record not found')),
   mapper(AmbiguousShareError, () =>
     httpError(409, 'CONFLICT', 'Share record selection is ambiguous'),

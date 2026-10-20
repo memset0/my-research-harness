@@ -1,10 +1,9 @@
 'use client'
 
-// Rail / Sheet / quick-switcher entry for one wiki page, plus the three
-// independent signal badges (status, staleness, review) the wiki surface
+// Rail / Sheet / quick-switcher entry for one wiki page, plus the
+// status and staleness badges the wiki surface
 // shows everywhere a page is listed.
 
-import type { ReviewState } from '@memon/core'
 import { AlertTriangle } from 'lucide-react'
 import Link from 'next/link'
 import type { WikiListItem } from '../lib/api'
@@ -14,26 +13,6 @@ import { wikiKinds } from '../lib/wiki-kinds'
 import { Badge } from './ui/badge'
 
 export { wikiKindOrder as WIKI_KIND_ORDER } from '../lib/wiki-kinds'
-
-const REVIEW_LABEL: Record<ReviewState, string> = {
-  VERIFIED: 'VERIFIED',
-  CHANGED_SINCE_VERIFY: 'CHANGED_SINCE_VERIFY',
-  UNVERIFIED: 'UNVERIFIED',
-}
-
-const REVIEW_DESCRIPTION: Record<ReviewState, string> = {
-  VERIFIED: 'every line is covered by the verified wiki-commit prefix',
-  CHANGED_SINCE_VERIFY: 'edited after the last verified wiki commit',
-  UNVERIFIED: 'no line is covered by a verified wiki commit',
-}
-
-// Distinct treatment per value using semantic tokens only, so both themes
-// resolve without hard-coded colours.
-const REVIEW_CLASS: Record<ReviewState, string> = {
-  VERIFIED: 'border-primary/50 bg-primary/10 text-primary',
-  CHANGED_SINCE_VERIFY: 'border-ring bg-accent text-accent-foreground',
-  UNVERIFIED: 'border-dashed border-muted-foreground/40 text-muted-foreground',
-}
 
 export function WikiKindBadge({ kind, className }: { kind: string; className?: string }) {
   return (
@@ -83,45 +62,6 @@ export function WikiStaleIndicator({
       <span aria-hidden>stale</span>
       <span className="sr-only">{label}</span>
     </span>
-  )
-}
-
-export function WikiReviewBadge({
-  state,
-  verifiedAt,
-}: {
-  state: ReviewState | null | undefined
-  verifiedAt?: string | null
-}) {
-  if (!state) {
-    return (
-      <Badge
-        variant="outline"
-        className="shrink-0 font-mono text-[10px] text-muted-foreground"
-        data-slot="wiki-review-badge"
-        data-review-state="UNKNOWN"
-        title="Git review state is unavailable or has not been checked"
-      >
-        NOT_CHECKED
-      </Badge>
-    )
-  }
-  const description = verifiedAt
-    ? `${REVIEW_DESCRIPTION[state]} (verified ${verifiedAt})`
-    : REVIEW_DESCRIPTION[state]
-  return (
-    <Badge
-      variant="outline"
-      className={cn('shrink-0 font-mono text-[10px]', REVIEW_CLASS[state])}
-      data-slot="wiki-review-badge"
-      data-review-state={state}
-      title={description}
-    >
-      <span aria-hidden>{REVIEW_LABEL[state]}</span>
-      <span className="sr-only">
-        review state {REVIEW_LABEL[state]}: {description}
-      </span>
-    </Badge>
   )
 }
 
@@ -204,7 +144,6 @@ export function WikiPageCard({
         <WikiKindBadge kind={page.kind} />
         <WikiStatusBadge status={page.status} />
         <WikiStaleIndicator stale={page.stale} staleSources={page.staleSources} />
-        <WikiReviewBadge state={page.review?.state} verifiedAt={page.review?.verifiedAt} />
         <WikiDeprecatedBadge deprecated={page.deprecated} />
       </div>
       <div className="mt-1 truncate text-[13px] font-medium text-foreground">

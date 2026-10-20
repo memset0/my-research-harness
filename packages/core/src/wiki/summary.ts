@@ -30,7 +30,6 @@ import {
   type WikiFrontmatter,
   type WikiPage,
   type WikiResolvedComponent,
-  type WikiReview,
   type WikiSummary,
 } from './types.js'
 
@@ -48,8 +47,6 @@ export interface BuildWikiSummaryInput {
   body: string
   diagnostics?: readonly WikiDiagnostic[]
   staleness?: WikiPageStaleness | null
-  /** Derived review; null (the default) outside a git worktree. */
-  review?: WikiReview | null
 }
 
 export function buildWikiSummary(input: BuildWikiSummaryInput): WikiSummary {
@@ -77,7 +74,6 @@ export function buildWikiSummary(input: BuildWikiSummaryInput): WikiSummary {
     deprecatedSections: sections.map((section) => section.heading),
     stale: input.staleness?.stale ?? false,
     staleSources: input.staleness?.staleSources ?? [],
-    review: input.review ?? null,
     format: location.format,
     path: location.path,
     mtime: location.mtime,
@@ -127,8 +123,6 @@ export function sortWikiSummaries<T extends WikiSummary>(summaries: readonly T[]
 }
 
 interface WikiProjectionContext {
-  /** Page path -> derived review, as produced by `deriveWikiReview`. */
-  reviews?: ReadonlyMap<string, WikiReview> | null
   /** Component type names for the unpinned check; defaults to the generated set. */
   componentNames?: readonly string[]
 }
@@ -262,7 +256,6 @@ export function buildWikiProject(
   const componentNames = ctx.componentNames ?? COMPONENT_TYPES
   const summaries = parsed.map((entry, index) => {
     const staleness = resolved?.pages.get(entry.id) ?? null
-    const review = ctx.reviews?.get(entry.page.path) ?? null
     const diagnostics = [
       ...lintWikiPage(lintPages[index]!, {
         ...(inventory === undefined ? {} : { inventory }),
@@ -273,7 +266,6 @@ export function buildWikiProject(
                 (source) => wikiSourceKind(source) !== null,
               ),
             }),
-        review,
         componentNames,
       }),
       ...(projectDiagnostics.get(entry.page.path) ?? []),
@@ -284,7 +276,6 @@ export function buildWikiProject(
       body: entry.body,
       diagnostics,
       staleness,
-      review,
     })
   })
 
@@ -305,7 +296,6 @@ export function buildWikiProject(
           status: summary.status,
           stale: summary.stale,
           deprecated: summary.deprecated !== null,
-          reviewState: summary.review?.state ?? null,
           updatedAt: summary.updatedAt,
         },
       ]

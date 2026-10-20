@@ -880,6 +880,7 @@ export function validateExperimentManagedDocuments(
   const diagnostics: ExperimentDocumentDiagnostic[] = []
   for (const kind of ['implementation', 'investigation'] as const) {
     const parsed = documents[kind]
+    if (documents.description?.data?.format === 'lightweight' && !parsed.exists) continue
     diagnostics.push(...parsed.parseErrors.map((issue) => parseIssueToDiagnostic(kind, issue)))
     diagnostics.push(...parsed.parseWarnings.map((issue) => parseIssueToDiagnostic(kind, issue)))
   }
@@ -995,6 +996,14 @@ export function lintExperimentDocument(
   experiment: Experiment,
   options: LintExperimentDocumentOptions = {},
 ): ExperimentDocumentDiagnostic[] {
+  if (experiment.documents?.description?.data?.format === 'lightweight')
+    return [
+      ...experiment.parseErrors.map((issue) => parseReadmeIssueToDiagnostic(issue, 'error')),
+      ...validateExperimentManagedDocuments(experiment.documents),
+      ...lintExperimentDescription(experiment.documents.description.data, {
+        file: EXPERIMENT_DESCRIPTION_FILE,
+      }),
+    ]
   const diagnostics = experiment.parseErrors.map((issue) =>
     parseReadmeIssueToDiagnostic(issue, 'error'),
   )

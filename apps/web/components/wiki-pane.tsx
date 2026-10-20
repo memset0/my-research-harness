@@ -8,25 +8,14 @@ import { ArrowUpRight, ChevronDown, PanelRight, PanelRightClose, Rows3, X } from
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { useState } from 'react'
-import {
-  fetchWikiPage,
-  type ProjectTarget,
-  projectQueryKey,
-  projectWebPath,
-  type WikiListItem,
-} from '../lib/api'
+import { fetchWikiPage, type ProjectTarget, projectWebPath, type WikiListItem } from '../lib/api'
 import { queryKeys } from '../lib/query-keys'
 import { cn } from '../lib/utils'
 import { switchWikiWorkspaceUrl } from '../lib/wiki-workspace-url'
 import { ListSkeleton } from './skeletons'
 import { Button } from './ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
-import {
-  WikiKindBadge,
-  WikiReviewBadge,
-  WikiStaleIndicator,
-  WikiStatusBadge,
-} from './wiki-page-card'
+import { WikiKindBadge, WikiStaleIndicator, WikiStatusBadge } from './wiki-page-card'
 import { useWikiPages, WikiDocumentView } from './wiki-shell'
 
 export type WikiPaneSurface = 'drawer' | 'split'
@@ -240,7 +229,6 @@ function WikiPaneSwitcher({
                         <WikiKindBadge kind={page.kind} />
                         <WikiStatusBadge status={page.status} />
                         <WikiStaleIndicator stale={page.stale} staleSources={page.staleSources} />
-                        <WikiReviewBadge state={page.review?.state} />
                       </span>
                       <span className="mt-0.5 flex items-center gap-1.5">
                         <span className="font-mono text-[10px] font-semibold tabular-nums text-primary">

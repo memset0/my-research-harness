@@ -26,8 +26,7 @@
         "sourcesRequired": false,
         "recommendedHeadings": ["Attendees", "Notes", "Decisions", "Action items"],
         "requiredHeadings": [],
-        "bodyEvidenceWarning": false,
-        "reviewWarningStatus": null
+        "bodyEvidenceWarning": false
       }
     },
     {
@@ -54,8 +53,7 @@
         "sourcesRequired": false,
         "recommendedHeadings": [],
         "requiredHeadings": [],
-        "bodyEvidenceWarning": false,
-        "reviewWarningStatus": null
+        "bodyEvidenceWarning": false
       }
     },
     {
@@ -73,7 +71,7 @@
         "uses": ["Evidence-backed research conclusions"],
         "examples": ["A method outperforms a baseline under stated conditions"],
         "distinctions": "Not an unanswered question or an unsupported claim disguised as a note.",
-        "authoring": "Make Claim quotable. Attribute every number to an Experiment, Variant or run in Evidence and state coverage limits. Cite evidence in prose as well as sources. VERIFIED means claims reproduce from cited Results, otherwise retain TENTATIVE. Retract disproven claims with an explanation rather than deleting them. Page status is independent of human git review."
+        "authoring": "Make Claim quotable. Attribute every number to an Experiment, Variant or run in Evidence and state coverage limits. Cite evidence in prose as well as sources. VERIFIED means claims reproduce from cited Results, otherwise retain TENTATIVE. Retract disproven claims with an explanation rather than deleting them."
       },
       "relatedKinds": ["question", "note"],
       "policy": {
@@ -82,8 +80,7 @@
         "sourcesRequired": true,
         "recommendedHeadings": ["Claim", "Evidence", "Limits"],
         "requiredHeadings": [],
-        "bodyEvidenceWarning": true,
-        "reviewWarningStatus": "VERIFIED"
+        "bodyEvidenceWarning": true
       }
     },
     {
@@ -110,8 +107,7 @@
         "sourcesRequired": false,
         "recommendedHeadings": ["Problem", "Impact", "Status", "Candidates"],
         "requiredHeadings": [],
-        "bodyEvidenceWarning": false,
-        "reviewWarningStatus": null
+        "bodyEvidenceWarning": false
       }
     },
     {
@@ -138,8 +134,7 @@
         "sourcesRequired": false,
         "recommendedHeadings": ["What to show", "How to reproduce", "Assets"],
         "requiredHeadings": [],
-        "bodyEvidenceWarning": false,
-        "reviewWarningStatus": null
+        "bodyEvidenceWarning": false
       }
     },
     {
@@ -166,8 +161,7 @@
         "sourcesRequired": false,
         "recommendedHeadings": ["Question", "Context", "Answer"],
         "requiredHeadings": [],
-        "bodyEvidenceWarning": false,
-        "reviewWarningStatus": null
+        "bodyEvidenceWarning": false
       }
     },
     {
@@ -194,8 +188,7 @@
         "sourcesRequired": false,
         "recommendedHeadings": ["Decision", "Rationale", "Consequences"],
         "requiredHeadings": [],
-        "bodyEvidenceWarning": false,
-        "reviewWarningStatus": null
+        "bodyEvidenceWarning": false
       }
     },
     {
@@ -222,8 +215,7 @@
         "sourcesRequired": false,
         "recommendedHeadings": [],
         "requiredHeadings": [],
-        "bodyEvidenceWarning": false,
-        "reviewWarningStatus": null
+        "bodyEvidenceWarning": false
       }
     },
     {
@@ -250,8 +242,7 @@
         "sourcesRequired": false,
         "recommendedHeadings": ["Motivation", "Proposal", "Status"],
         "requiredHeadings": [],
-        "bodyEvidenceWarning": false,
-        "reviewWarningStatus": null
+        "bodyEvidenceWarning": false
       }
     },
     {
@@ -278,8 +269,7 @@
         "sourcesRequired": false,
         "recommendedHeadings": [],
         "requiredHeadings": [],
-        "bodyEvidenceWarning": false,
-        "reviewWarningStatus": null
+        "bodyEvidenceWarning": false
       }
     },
     {
@@ -306,8 +296,7 @@
         "sourcesRequired": false,
         "recommendedHeadings": [],
         "requiredHeadings": [],
-        "bodyEvidenceWarning": false,
-        "reviewWarningStatus": null
+        "bodyEvidenceWarning": false
       }
     },
     {
@@ -334,8 +323,7 @@
         "sourcesRequired": false,
         "recommendedHeadings": [],
         "requiredHeadings": [],
-        "bodyEvidenceWarning": false,
-        "reviewWarningStatus": null
+        "bodyEvidenceWarning": false
       }
     }
   ]

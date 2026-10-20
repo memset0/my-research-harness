@@ -21,7 +21,6 @@ function page(id: string, updatedAt: string, overrides: Partial<WikiListItem> = 
     deprecatedSections: [],
     stale: false,
     staleSources: [],
-    review: null,
     format: 'markdown',
     path: `docs/wiki/finding/${id}-page.md`,
     project: 'project-a',
@@ -65,7 +64,7 @@ describe('wiki page rail cards', () => {
     ).toEqual(['W0002'])
   })
 
-  it('renders one native-link card with independent status, stale, and review signals', () => {
+  it('renders one native-link card with independent status and stale signals without review badges', () => {
     const entry = page('W0004', '2026-05-06T08:00:00+00:00', {
       title: 'Inference kernel drift',
       description: 'The generated kernel changed after the verified baseline.',
@@ -73,14 +72,6 @@ describe('wiki page rail cards', () => {
       status: 'VERIFIED',
       stale: true,
       staleSources: ['E0017/V0002'],
-      review: {
-        state: 'CHANGED_SINCE_VERIFY',
-        verifiedThrough: 'a'.repeat(40),
-        verifiedAt: '2026-05-05T08:00:00+00:00',
-        unverifiedCommits: ['b'.repeat(40)],
-        unverifiedRanges: [[12, 18]],
-        dirty: false,
-      },
     })
 
     render(<WikiPageCard page={entry} href="/p/project-a/wiki/W0004" active />)
@@ -92,7 +83,7 @@ describe('wiki page rail cards', () => {
     expect(within(link).getByText('finding')).toBeInTheDocument()
     expect(within(link).getByText('VERIFIED')).toBeInTheDocument()
     expect(within(link).getByText('stale')).toBeInTheDocument()
-    expect(within(link).getByText('CHANGED_SINCE_VERIFY')).toBeInTheDocument()
+    expect(link.querySelector('[data-slot="wiki-review-badge"]')).toBeNull()
     expect(link).toHaveTextContent('W0004')
     expect(link).toHaveTextContent('inference-kernel-drift')
     expect(link).toHaveTextContent('The generated kernel changed after the verified baseline.')

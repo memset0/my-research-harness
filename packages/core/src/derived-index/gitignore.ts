@@ -1,6 +1,6 @@
 // Bootstrap of `.memon/index/`.
 //
-// `.memon/` itself holds tracked files (`version.json`, `wiki-review.csv`), so
+// `.memon/` itself holds tracked files (`version.json`, `project.yml`), so
 // the index carries its own self-ignoring `.gitignore` (`*` ignores the
 // directory and everything in it). Whoever creates the directory writes it
 // first, before any snapshot, lock or event file.

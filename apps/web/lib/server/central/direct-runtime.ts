@@ -210,17 +210,13 @@ function jsonRead(request: Request, response: Response): boolean {
 }
 
 /**
- * Share administration and wiki review verification are dedicated owner
+ * Share administration provides dedicated owner
  * control operations over `.memon/` state, not Project-data writes. Read-only
  * data policy must not silently swallow them: they proceed and surface a real
  * filesystem error if the mount itself refuses the write.
  */
 function isControlWrite(route: MappedBackendRoute): boolean {
-  return (
-    route.ownership.capability === 'shares' ||
-    route.manifestRoute === 'wiki/review/route.ts' ||
-    route.manifestRoute === 'wiki/review/[sha]/route.ts'
-  )
+  return route.ownership.capability === 'shares'
 }
 
 function assertProjectPolicy(

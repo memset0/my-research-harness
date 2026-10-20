@@ -5,11 +5,12 @@
 
 import { basename, dirname, join, relative, sep } from '@memon/file-protocol/paths'
 import { runEligibilityError } from '../discovery/eligibility.js'
-import { readRunDir, runFromReadme } from '../discovery/read.js'
+import { readRunDir, runFromMetadata, runFromReadme } from '../discovery/read.js'
 import { type ParsedExperiment, parseExperimentReadme } from '../experiments/parse.js'
 import { throwIfSourceFailure } from '../project-file-store/errors.js'
-import { EXPERIMENT_DESCRIPTION_FILE } from '../results/description.js'
+import { EXPERIMENT_DESCRIPTION_FILE, parseExperimentDescription } from '../results/description.js'
 import { parseResultFile, RESULT_FILE_NAME } from '../results/result-file.js'
+import { RUN_METADATA_FILE } from '../runs/metadata.js'
 import { formatIsoLocal } from '../time.js'
 import type { Run } from '../types.js'
 import { EXPERIMENT_DIR_REGEX, EXPERIMENT_FILENAME_REGEX } from '../types.js'
@@ -46,6 +47,18 @@ export function runRowFromRun(run: Run): RunRow {
   return {
     mtime: run.mtime,
     readme_mtime: run.readmeMtime,
+    ...(run.recordFormat === 'json'
+      ? {
+          record_format: run.recordFormat,
+          record_mtime: run.recordMtime,
+          active: run.metadata?.active ?? false,
+          params: run.metadata?.params,
+          description: run.metadata?.description,
+          assessment: run.metadata?.assessment,
+          started_at: fm.startedAt,
+          scheduler: fm.scheduler,
+        }
+      : {}),
     id: fm.id,
     name: fm.name,
     project: fm.project,
@@ -69,6 +82,7 @@ export interface DeriveRunEntryInput {
   runDir: string
   /** README content already held by the caller; omitted → read; null → absent. */
   content?: string | null
+  metadataContent?: string | null
   /** `result.csv` content already held by the caller; omitted → read; null → absent. */
   resultContent?: string | null
   /** The directory was verified inside the project with real paths. */
@@ -82,10 +96,12 @@ export async function deriveRunEntry(input: DeriveRunEntryInput): Promise<RunInd
   const fs = input.fs ?? defaultIndexFs
   const readmePath = join(input.runDir, 'README.md')
   const resultPath = join(input.runDir, RESULT_FILE_NAME)
-  const [dirStat, readmeStat, resultStat] = await Promise.all([
+  const metadataPath = join(input.runDir, RUN_METADATA_FILE)
+  const [dirStat, readmeStat, resultStat, metadataStat] = await Promise.all([
     statOrNull(fs, input.runDir),
     input.content === null ? Promise.resolve(null) : statOrNull(fs, readmePath),
     input.resultContent === null ? Promise.resolve(null) : statOrNull(fs, resultPath),
+    input.metadataContent === null ? Promise.resolve(null) : statOrNull(fs, metadataPath),
   ])
   if (!dirStat?.isDirectory()) return null
   const hasResult = resultStat?.isFile() === true
@@ -102,7 +118,11 @@ export async function deriveRunEntry(input: DeriveRunEntryInput): Promise<RunInd
   let run: Run
   let eligibilityError: string | null = null
   const hasReadme = readmeStat?.isFile() === true
-  if (hasReadme) {
+  if (metadataStat?.isFile()) {
+    const content = input.metadataContent ?? (await fs.readFile(metadataPath, 'utf8'))
+    run = runFromMetadata(input.runDir, '', content, dirStat.mtimeMs, metadataStat.mtimeMs)
+    eligibilityError = run.parseErrors.map((issue) => issue.message).join('; ') || null
+  } else if (hasReadme) {
     const content = input.content ?? (await fs.readFile(readmePath, 'utf8'))
     run = runFromReadme(input.runDir, '', content, dirStat.mtimeMs, readmeStat.mtimeMs)
     eligibilityError = runEligibilityError(content)
@@ -119,6 +139,7 @@ export async function deriveRunEntry(input: DeriveRunEntryInput): Promise<RunInd
   const fm = run.frontMatter
   return {
     readme_fp: hasReadme ? persistedFingerprint(readmeStat) : null,
+    ...(metadataStat ? { metadata_fp: persistedFingerprint(metadataStat) } : {}),
     dir_fp: persistedFingerprint(dirStat),
     result_fp: hasResult ? persistedFingerprint(resultStat) : null,
     result_schema_version: resultSchemaVersion,
@@ -202,11 +223,12 @@ export async function deriveExperimentEntry(
   if (!location) return null
   const yaml = (name: string) =>
     location.folder ? statOrNull(fs, join(location.folder, name)) : Promise.resolve(null)
-  const [readmeStat, implementation, investigation, description] = await Promise.all([
+  const [readmeStat, implementation, investigation, description, results] = await Promise.all([
     statOrNull(fs, input.readmePath),
     yaml('implementation.yaml'),
     yaml('investigation.yaml'),
     yaml(EXPERIMENT_DESCRIPTION_FILE),
+    yaml('results.csv'),
   ])
   let parsed: ParsedExperiment
   if (readmeStat?.isFile()) {
@@ -224,9 +246,39 @@ export async function deriveExperimentEntry(
     stat: Awaited<ReturnType<typeof statOrNull>>,
   ): PersistedFingerprint | null => (stat?.isFile() ? persistedFingerprint(stat) : null)
   const fm = parsed.frontMatter
+  const definition =
+    description?.isFile() && location.folder
+      ? parseExperimentDescription(
+          await fs.readFile(join(location.folder, EXPERIMENT_DESCRIPTION_FILE), 'utf8'),
+        ).data
+      : null
   return {
     key: location.key,
     entry: {
+      ...(definition && (definition.format === 'lightweight' || definition.research)
+        ? {
+            ...(definition.format === 'lightweight' ? { format: 'lightweight' as const } : {}),
+            variants: Object.fromEntries(
+              definition.variants.map((variant) => [
+                variant.id,
+                {
+                  name: variant.name,
+                  active_runs:
+                    definition.format === 'lightweight'
+                      ? (variant.activeRuns ?? [])
+                      : variant.runs.filter(
+                          (path) =>
+                            definition.research?.run_versions[path] ===
+                            definition.research?.current_version,
+                        ),
+                  ...(variant.status ? { legacy_status: variant.status } : {}),
+                  ...(variant.frozen?.status ? { frozen_status: variant.frozen.status } : {}),
+                  ...(variant.deprecated ? { deprecated: true } : {}),
+                },
+              ]),
+            ),
+          }
+        : {}),
       dir: location.key,
       id: location.id,
       slug: fm.slug,
@@ -238,6 +290,7 @@ export async function deriveExperimentEntry(
         implementation: fingerprint(implementation),
         investigation: fingerprint(investigation),
         description: fingerprint(description),
+        ...(results ? { results: fingerprint(results) } : {}),
       },
       verified_at: formatIsoLocal((input.now ?? (() => new Date()))()),
       row: {

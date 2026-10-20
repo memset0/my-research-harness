@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { Markdown } from './markdown'
 
 describe('Markdown callouts', () => {
-  it('keeps artifact links, component fences and source-review highlighting inside callouts', () => {
+  it('keeps artifact links and component fences inside callouts', () => {
     const { container } = render(
       <Markdown
         artifactLinks={{
@@ -18,7 +18,6 @@ describe('Markdown callouts', () => {
           sourceSurface: 'left',
           getArtifactHref: (target) => `/artifact/${target.id}`,
         }}
-        unverified={{ ranges: [[2, 4]], title: 'uncommitted' }}
       >
         {
           '> [!info]- Evidence\n> See E0001.\n>\n> ```yaml figure@1\n> image: chart.svg\n> caption: Evidence figure\n> ```'
@@ -26,8 +25,7 @@ describe('Markdown callouts', () => {
       </Markdown>,
     )
     const callout = container.querySelector('details')!
-    expect(callout).toHaveAttribute('data-wiki-unverified')
-    expect(callout).toHaveAttribute('title', 'uncommitted')
+    expect(callout).not.toHaveAttribute('data-wiki-unverified')
     expect(callout.querySelector('a[data-memon-artifact-id]')).toHaveAttribute(
       'href',
       '/artifact/E0001-example',

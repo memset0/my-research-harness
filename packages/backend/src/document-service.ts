@@ -17,7 +17,6 @@ import {
   BackendWikiDocumentSchema,
   BackendWikiInventoryResponseSchema,
   BackendWikiPagesResponseSchema,
-  BackendWikiReviewResponseSchema,
   type BackendWikiWriteResponse,
   BackendWikiWriteResponseSchema,
   buildWikiProject,
@@ -26,7 +25,6 @@ import {
   collectWikiSourceReferences,
   type DiscoveredWikiPage,
   deriveCompletion,
-  deriveWikiReview,
   discoverRuns,
   EXPERIMENT_REF_REGEX,
   type Experiment,
@@ -35,7 +33,6 @@ import {
   formatIsoLocal,
   projectFs as fs,
   type IndexRole,
-  listWikiCommits,
   type MutationFs,
   markJournalInvocationOutcome,
   type ProjectConfig,
@@ -46,39 +43,23 @@ import {
   publishMutationEvent,
   ResourceIdSchema,
   type Run,
-  readWikiReviewMarks,
-  removeWikiReviewMark,
   researchDescriptionProblem,
   serializeWikiPage,
   toggleCommitReviewed,
   toggleTodoDone,
   updateWikiFrontmatter,
-  verifiedThroughMark,
   WIKI_ID_REGEX,
   WIKI_LEGACY_ID_REGEX,
-  WIKI_REVIEW_RELPATH,
-  type WikiCommit,
   type WikiProjectProjection,
-  type WikiReview,
-  WikiReviewError,
-  type WikiReviewMark,
-  type WikiReviewStoreOptions,
   type WikiSourceReferences,
   type WikiSummary,
   wikiStringList,
   withFileWriterLock,
   withJournalInvocation,
   writeFileAtomic,
-  writeWikiReviewMark,
 } from '@memon/core'
 import { dirname, join, relative, resolve, sep } from '@memon/file-protocol/paths'
 import { PathContainmentError, resolveContained } from './containment.js'
-import {
-  BackendExecutionError,
-  type BackendExecutionResolver,
-  gitCommandRunnerFor,
-  resolveProjectExecution,
-} from './execution-service.js'
 import {
   containedReal,
   indexedCodeReviewInventory,
@@ -93,7 +74,6 @@ import {
   type ReadPolicy,
   registerProjectRoots,
   STRICT_READ_POLICY,
-  statObservation,
 } from './read-index.js'
 import { RUN_INVENTORY_REFRESH_MS, RunInventory, type RunInventoryWalk } from './run-inventory.js'
 
@@ -140,9 +120,6 @@ export interface BackendDocumentService {
   getWiki(project: string, id: string): Promise<unknown>
   putWiki(project: string, id: string, input: DocumentWriteInput): Promise<BackendWikiWriteResult>
   wikiBacklinks(project: string, artifact: string): Promise<unknown>
-  wikiReviewLog(project: string): Promise<unknown>
-  markWikiReview(project: string, sha: string, note?: string): Promise<unknown>
-  unmarkWikiReview(project: string, sha: string): Promise<unknown>
 }
 
 export interface DocumentWriteInput {
@@ -235,14 +212,6 @@ export type BackendWikiArtifactProvider = (
 export interface FilesystemDocumentServiceOptions {
   /** Override for the on-demand artifact reads behind wiki source resolution. */
   wikiArtifacts?: BackendWikiArtifactProvider
-  /**
-   * Resolves where a Project's wiki git reads run — the same seam the git
-   * capability uses, so review history comes from the machine that owns the
-   * working copy. Defaults to the Project's own `execution` configuration; a
-   * Project without one has no readable review state rather than a local
-   * `git` run against a mounted copy that belongs to another machine.
-   */
-  execution?: BackendExecutionResolver
   /** Override for the Run-directory walk behind the shared wiki Run inventory. */
   runWalk?: RunInventoryWalk
   /** Summary-index validation windows; strict (validate every read) by default. */
@@ -271,8 +240,6 @@ export class FilesystemDocumentService implements BackendDocumentService {
 
   private readonly wikiArtifacts: BackendWikiArtifactProvider
 
-  private readonly resolveExecution: BackendExecutionResolver
-
   /** One Run-directory walk shared by every wiki projection of a Project. */
   private readonly runInventory: RunInventory | null
 
@@ -289,7 +256,6 @@ export class FilesystemDocumentService implements BackendDocumentService {
     this.policy = options.readPolicy ?? STRICT_READ_POLICY
     this.indexRole = options.indexRole ?? 'standalone'
     this.wikiArtifacts = options.wikiArtifacts ?? scanBackendWikiArtifacts
-    this.resolveExecution = options.execution ?? resolveProjectExecution
     // An injected walk keeps its own inventory; otherwise every projection
     // shares the Project summary index's walk.
     this.runInventory = options.runWalk
@@ -424,8 +390,7 @@ export class FilesystemDocumentService implements BackendDocumentService {
   }
 
   /**
-   * Project-wide wiki projection: discovery, source resolution, lint, and
-   * derived review. Component blocks stay opaque here — the central dashboard
+   * Project-wide wiki projection: discovery, source resolution and lint. Component blocks stay opaque here — the central dashboard
    * owns the registry, so no `WIKI_COMPONENT_*` diagnostic beyond the
    * structural unpinned check is produced.
    */
@@ -497,8 +462,7 @@ export class FilesystemDocumentService implements BackendDocumentService {
         before: currentHash,
         after: sha1(content),
       })
-      // Re-project so the response carries the staleness, diagnostics, and
-      // review state the write just produced.
+      // Re-project so the response carries the updated staleness and diagnostics.
       const next = await this.wikiPageSummary(project, id)
       const page = BackendWikiDocumentSchema.parse(await this.readWikiPage(project, next))
       return BackendWikiWriteResponseSchema.parse({
@@ -514,86 +478,6 @@ export class FilesystemDocumentService implements BackendDocumentService {
     const project = this.requireProject(projectName)
     const projection = await this.wikiProjection(project)
     return BackendWikiBacklinksSchema.parse(projection.backlinks.get(artifact) ?? [])
-  }
-
-  async wikiReviewLog(projectName: string) {
-    const project = this.requireProject(projectName)
-    return this.wikiReviewResponse(project, this.wikiGitOptions(project))
-  }
-
-  async markWikiReview(projectName: string, sha: string, note?: string) {
-    const project = this.requireProject(projectName)
-    // The reviewed-commit marker lives in `.memon/`, not in a document, so the
-    // receipt records the commit identity only — never the reviewer's note.
-    return this.record(project, 'wiki review mark', { sha }, async () => {
-      const options = this.wikiGitOptions(project)
-      await writeWikiReviewMark(project.root, sha, note, options)
-      return this.wikiReviewResponse(project, options)
-    })
-  }
-
-  async unmarkWikiReview(projectName: string, sha: string) {
-    const project = this.requireProject(projectName)
-    return this.record(project, 'wiki review unmark', { sha }, async () => {
-      const options = this.wikiGitOptions(project)
-      await removeWikiReviewMark(project.root, sha, options)
-      return this.wikiReviewResponse(project, options)
-    })
-  }
-
-  private async wikiReviewResponse(project: ProjectConfig, options: WikiReviewStoreOptions) {
-    // An explicit review request answers with git's state or with a failure:
-    // an unreachable target must never look like an unverified-but-known log.
-    const commits = await listWikiCommits(project.root, options)
-    if (commits === null) {
-      throw new BackendDocumentServiceError('RESOURCE_NOT_FOUND', 'Project is not a git worktree')
-    }
-    const marks = await readWikiReviewMarks(project.root)
-    return BackendWikiReviewResponseSchema.parse(wikiReviewProjection(commits, marks))
-  }
-
-  /**
-   * Git command seam for this Project's wiki review reads and writes.
-   * `{ exec: undefined }` means core runs git itself, which is correct only
-   * for a Project that declares local execution.
-   */
-  private wikiGitOptions(project: ProjectConfig): WikiReviewStoreOptions {
-    try {
-      return { exec: gitCommandRunnerFor(this.resolveExecution(project)) }
-    } catch (error) {
-      if (error instanceof BackendExecutionError) {
-        throw new BackendDocumentServiceError('EXECUTION_UNAVAILABLE', error.message)
-      }
-      throw error
-    }
-  }
-
-  /**
-   * Derived review for the projection, or `null` — reported as
-   * `review: null`, "not checked" — when this Project's git state cannot be
-   * read at all: no execution target, or a target that failed to answer.
-   *
-   * Neither failure may reach the client as a review: a page with no history
-   * to compare against is not a verified page, and a wiki whose git is
-   * unreachable is still worth reading.
-   */
-  private async wikiReviews(
-    project: ProjectConfig,
-    pagePaths: string[],
-    marks: WikiReviewMark[],
-  ): Promise<Map<string, WikiReview> | null> {
-    try {
-      await this.gitMarker(project)
-      return await deriveWikiReview(project.root, pagePaths, marks, this.wikiGitOptions(project))
-    } catch (error) {
-      if (
-        (error instanceof BackendDocumentServiceError && error.code === 'EXECUTION_UNAVAILABLE') ||
-        (error instanceof WikiReviewError && error.code === 'GIT_UNAVAILABLE')
-      ) {
-        return null
-      }
-      throw error
-    }
   }
 
   /**
@@ -645,21 +529,13 @@ export class FilesystemDocumentService implements BackendDocumentService {
         wikiStringList(parseWikiFrontmatter(page.content).frontmatter?.sources),
       ),
     )
-    const [artifacts, reportIds, marks] = await Promise.all([
+    const [artifacts, reportIds] = await Promise.all([
       this.wikiArtifacts(project, references, {
         runPaths: () => this.wikiRunPaths(project),
         readPolicy: this.policy,
       }),
       this.listReportIds(project),
-      this.indexedReviewMarks(project),
     ])
-    // A single-page projection keeps only the cited summary, so only its
-    // review is derived: git blame per page is the other per-page cost.
-    const reviews = await this.wikiReviews(
-      project,
-      (cited === pages ? pages : cited).map((page) => page.path),
-      marks,
-    )
     return buildWikiProject(pages, {
       experiments: artifacts.experiments,
       runs: artifacts.runs,
@@ -668,7 +544,6 @@ export class FilesystemDocumentService implements BackendDocumentService {
       hypothesesMtime: artifacts.hypothesesMtime,
       hypothesisIds: artifacts.hypothesisIds,
       reportIds,
-      reviews,
     })
   }
 
@@ -682,43 +557,6 @@ export class FilesystemDocumentService implements BackendDocumentService {
         (target) => discoverRuns(target, { includeArchived: true }),
       ),
     )
-  }
-
-  /**
-   * A fingerprint of the Project's git state for conditional wiki reads: the
-   * index and HEAD reflog of an ordinary `.git` directory (commits, checkouts
-   * and staging touch them). Without one, a 60 s time bucket stands in, so a
-   * validator never outlives a minute of unobserved history.
-   */
-  private async gitMarker(project: ProjectConfig): Promise<void> {
-    const git = join(project.root, '.git')
-    await projectReadIndex(project.root).observe(
-      `git:${git}`,
-      this.policy.listMaxAgeMs,
-      async () => {
-        const [directory, index, reflog] = await Promise.all([
-          statObservation(git),
-          statObservation(join(git, 'index')),
-          statObservation(join(git, 'logs', 'HEAD')),
-        ])
-        if (directory.observed?.isDirectory()) {
-          return { fingerprint: `git:${index.fingerprint ?? '-'}:${reflog.fingerprint ?? '-'}` }
-        }
-        return { fingerprint: `bucket:${Math.floor(Date.now() / 60_000)}` }
-      },
-      async () => true,
-    )
-  }
-
-  /** Review marks, re-read only when the marks file's fingerprint changed. */
-  private async indexedReviewMarks(project: ProjectConfig): Promise<WikiReviewMark[]> {
-    const marks = await projectReadIndex(project.root).observe(
-      `wiki-review-marks:${project.root}`,
-      this.policy.listMaxAgeMs,
-      () => statObservation(join(project.root, WIKI_REVIEW_RELPATH)),
-      () => readWikiReviewMarks(project.root),
-    )
-    return marks ?? []
   }
 
   private async readWikiPage(project: ProjectConfig, summary: WikiSummary) {
@@ -997,8 +835,7 @@ function wikiAbsolutePath(project: ProjectConfig, summary: WikiSummary): string 
 
 /**
  * Validate an incoming page against the one on disk and stamp `updated_at`.
- * Identity (`id`, `kind`) moves only through `memon wiki move`, and the
- * deprecated per-page review columns are never client-writable.
+ * Identity (`id`, `kind`) moves only through `memon wiki move`.
  */
 function nextWikiContent(content: string, current: string, summary: WikiSummary): string {
   const next = parseWikiFrontmatter(content)
@@ -1017,37 +854,10 @@ function nextWikiContent(content: string, current: string, summary: WikiSummary)
       'Wiki page identity changes only through a move',
     )
   }
-  for (const key of ['reviewed_at', 'reviewed_hash'] as const) {
-    if (next.frontmatter[key] !== previous?.[key]) {
-      throw new BackendDocumentServiceError(
-        'INVALID_RESOURCE',
-        `Wiki page write must not change ${key}`,
-      )
-    }
-  }
   return serializeWikiPage(
     updateWikiFrontmatter(next.frontmatter, { updated_at: formatIsoLocal(new Date()) }),
     next.body,
   )
-}
-
-function wikiReviewProjection(commits: WikiCommit[], marks: WikiReviewMark[]) {
-  const marksBySha = new Map(marks.map((mark) => [mark.sha, mark]))
-  return {
-    verifiedThrough: verifiedThroughMark(commits, marks)?.sha ?? null,
-    commits: commits.map((commit) => {
-      const mark = marksBySha.get(commit.sha)
-      return {
-        sha: commit.sha,
-        authoredAt: commit.authoredAt,
-        subject: commit.subject,
-        pages: commit.pages,
-        verified: mark !== undefined,
-        ...(mark ? { verifiedAt: mark.verifiedAt } : {}),
-        ...(mark?.note ? { note: mark.note } : {}),
-      }
-    }),
-  }
 }
 
 function reportSummary(project: ProjectConfig, entry: DocumentEntry) {

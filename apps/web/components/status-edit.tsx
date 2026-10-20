@@ -1,9 +1,10 @@
 'use client'
 
+import type { Status } from '@memon/core'
 import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { ApiError, type ProjectTarget, patchExperimentStatus, projectQueryKey } from '../lib/api'
+import { ApiError, type ProjectTarget, patchExperimentStatus } from '../lib/api'
 import { queryKeys } from '../lib/query-keys'
 import { StatusPill } from './status-pill'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
@@ -12,7 +13,6 @@ import { ViewerGuard } from './viewer-guard'
 // All v4 status values, used as the type for the incoming `status` prop
 // (since the on-disk value CAN be UNKNOWN even though the picker doesn't
 // offer it as user-selectable).
-type Status = 'PENDING' | 'RUNNING' | 'FINISHED' | 'INTERRUPTED' | 'FAILED' | 'UNKNOWN'
 
 // v4: picker excludes UNKNOWN — it's parser-only per archive-frontmatter /
 // experiment-readme spec.

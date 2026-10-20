@@ -19,6 +19,8 @@ export const DEFAULT_RUN_DIRS: readonly string[] = Object.freeze([
   'logs/*',
   'outputs/*',
   'experiments/*',
+  'logs/E????/V????/*',
+  'logs/E????/smoke/*',
 ])
 
 /** Lint-level code for a pattern match whose name is not Run-shaped. */

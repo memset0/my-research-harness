@@ -21,7 +21,9 @@ import {
   readExperimentManagedDocuments,
 } from '@memon/core'
 import { join } from '@memon/file-protocol/paths'
+import { experimentReadmeFromEntry } from './derived-index-mirror.js'
 import { digest, type ListedEntry, projectReadIndex, statObservation } from './read-index.js'
+import { experimentRunPaths, registeredProjectSnapshot } from './registered-index.js'
 
 const SUMMARY = BackendExperimentSummarySchema
 
@@ -147,6 +149,21 @@ export async function indexedExperimentDocuments(
   project: ProjectConfig,
   maxAgeMs: number,
 ): Promise<IndexedExperimentDocument[]> {
+  const snapshot = await registeredProjectSnapshot(project)
+  if (snapshot)
+    return Object.values(snapshot.experiments).map((entry) => {
+      const source = experimentReadmeFromEntry(entry, entry.id)
+      if (entry.format === 'lightweight')
+        source.parsed.frontMatter.runs = experimentRunPaths(snapshot, entry.id)
+      return {
+        id: entry.id,
+        path: join(project.root, entry.dir, 'README.md'),
+        parsed: source.parsed,
+        readmeMtime: source.mtime,
+        counts: source.counts,
+        discoveryWarnings: [],
+      }
+    })
   const { folders, legacy } = await experimentListing(project, maxAgeMs)
   const directory = join(project.root, ...EXPERIMENTS_SUBDIR)
   const fromFolders = await Promise.all(

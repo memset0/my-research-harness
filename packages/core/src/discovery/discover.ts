@@ -22,6 +22,7 @@ import { basename, join, relative, sep } from '@memon/file-protocol/paths'
 import { resolveProjectLayout } from '../project-declaration/layout.js'
 import { throwIfSourceFailure } from '../project-file-store/errors.js'
 import { projectFs } from '../project-file-store.js'
+import { lightweightRunIdentity } from '../runs/metadata.js'
 import type { ProjectConfig, Run } from '../types.js'
 import { DEFAULT_EXCLUDES, RUN_DIR_REGEX } from '../types.js'
 import { isArchivedSidecar } from './archive.js'
@@ -227,7 +228,8 @@ export async function discoverRuns(
     )
     for (const absolute of matched) {
       const relativePath = relative(project.root, absolute).split(sep).join('/')
-      if (!regex.test(basename(absolute))) options.onPatternNonRun?.(absolute)
+      if (!regex.test(basename(absolute)) && !lightweightRunIdentity(relativePath))
+        options.onPatternNonRun?.(absolute)
       else if (matchesInclude(relativePath)) found.push(absolute)
     }
     return found.sort()
@@ -256,7 +258,7 @@ export async function discoverRuns(
       const absolute = join(directory, name)
       const relativePath = relative(project.root, absolute).split(sep).join('/')
       if (matchesExclude(relativePath)) continue
-      if (regex.test(name)) {
+      if (regex.test(name) || lightweightRunIdentity(relativePath)) {
         if (matchesInclude(relativePath)) found.push(absolute)
         continue
       }

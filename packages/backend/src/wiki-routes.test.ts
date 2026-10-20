@@ -11,8 +11,6 @@ import {
   BackendWikiDocumentSchema,
   BackendWikiInventoryResponseSchema,
   BackendWikiPagesResponseSchema,
-  BackendWikiReviewOrderResponseSchema,
-  BackendWikiReviewResponseSchema,
   BackendWikiWriteResponseSchema,
   type ProjectConfig,
 } from '@memon/core'
@@ -115,7 +113,6 @@ let origin = ''
 let readOnlyOrigin = ''
 let server: ReturnType<typeof createBackendServer>
 let readOnlyServer: ReturnType<typeof createBackendServer>
-let commits: string[] = []
 const eventStream = new BackendEventStream({
   instanceEpoch: '123e4567-e89b-42d3-a456-426614174000',
 })
@@ -177,7 +174,6 @@ beforeAll(async () => {
     await git(target, 'add', 'docs')
     await git(target, 'commit', '-m', 'wiki: extend the finding')
   }
-  commits = (await git(root, 'log', '--format=%H', '--reverse', '--', 'docs/wiki')).split('\n')
   // Both roots are this host's own worktrees, so git may run against them —
   // the Project says so, the same way a deployed single-host Project does.
   const projects = [
@@ -237,7 +233,21 @@ const request = createBackendRequest<ActorContext>({
 })
 
 describe('Backend wiki routes', () => {
-  it('lists and reads pages through the strict, path-free envelopes', async () => {
+  it('does not expose review mark operations', async () => {
+    for (const method of ['POST', 'DELETE']) {
+      const response = await request('/api/backend/v1/wiki/review/next?project=research', {
+        actor: owner,
+        method,
+      })
+      expect(response.status).toBe(404)
+    }
+    expect(await fs.readdir(join(root, '.memon')).catch(() => [])).not.toContain('wiki-review.csv')
+  })
+
+  it('lists and reads pages for owners and viewers through strict, path-free envelopes', async () => {
+    expect((await request('/api/backend/v1/wiki?project=research', { actor: viewer })).status).toBe(
+      200,
+    )
     const listed = BackendWikiPagesResponseSchema.parse(
       await (await request('/api/backend/v1/wiki?project=research', { actor: owner })).json(),
     )
@@ -254,7 +264,7 @@ describe('Backend wiki routes', () => {
       await (await request('/api/backend/v1/wiki/W0001?project=research', { actor: owner })).json(),
     )
     expect(page.content).toContain('## Claim')
-    expect(page.review?.state).toBe('UNVERIFIED')
+    expect(page).not.toHaveProperty('review')
 
     // A legacy Report id is not a wiki address, and neither is a missing page.
     expect(
@@ -298,7 +308,6 @@ describe('Backend wiki routes', () => {
         status: 'TENTATIVE',
         stale: true,
         deprecated: false,
-        reviewState: 'UNVERIFIED',
         updatedAt: '2026-09-02T10:00:00+08:00',
       },
     ]
@@ -419,64 +428,7 @@ describe('Backend wiki routes', () => {
     ).toBe(400)
   })
 
-  it('gates review marks on an owner actor and enforces commit order', async () => {
-    const log = BackendWikiReviewResponseSchema.parse(
-      await (
-        await request('/api/backend/v1/wiki/review?project=research', { actor: owner })
-      ).json(),
-    )
-    expect(log.commits.map((commit) => commit.sha)).toEqual(commits)
-    expect(log.verifiedThrough).toBeNull()
-
-    // A viewer may read the wiki but never record trust in it.
-    expect((await request('/api/backend/v1/wiki?project=research', { actor: viewer })).status).toBe(
-      200,
-    )
-    expect(
-      (await request('/api/backend/v1/wiki/review?project=research', { actor: viewer })).status,
-    ).toBe(403)
-    const viewerMark = await request(`/api/backend/v1/wiki/review/${commits[0]}?project=research`, {
-      actor: viewer,
-      method: 'POST',
-    })
-    expect(viewerMark.status).toBe(403)
-    expect(await fs.readdir(join(root, '.memon')).catch(() => [])).not.toContain('wiki-review.csv')
-
-    const outOfOrder = await request(`/api/backend/v1/wiki/review/${commits[1]}?project=research`, {
-      actor: owner,
-      method: 'POST',
-    })
-    expect(outOfOrder.status).toBe(409)
-    const order = BackendWikiReviewOrderResponseSchema.parse(await outOfOrder.json())
-    expect(order.error.code).toBe('REVIEW_ORDER')
-    expect(order.nextSha).toBe(commits[0])
-
-    const frames: string[] = []
-    const unsubscribe = eventStream.subscribe((frame) => {
-      frames.push(frame)
-      return true
-    })
-    const marked = await request(`/api/backend/v1/wiki/review/${commits[0]}?project=research`, {
-      actor: owner,
-      method: 'POST',
-      body: { note: 'read it all' },
-    })
-    expect(marked.status).toBe(200)
-    expect(BackendWikiReviewResponseSchema.parse(await marked.json()).verifiedThrough).toBe(
-      commits[0],
-    )
-    unsubscribe()
-    expect(frames.some((frame) => frame.includes('wiki-review-change'))).toBe(true)
-    expect(frames.some((frame) => frame.includes('wiki-change'))).toBe(true)
-    const removed = await request(`/api/backend/v1/wiki/review/${commits[0]}?project=research`, {
-      actor: owner,
-      method: 'DELETE',
-    })
-    expect(removed.status).toBe(200)
-    expect(BackendWikiReviewResponseSchema.parse(await removed.json()).verifiedThrough).toBeNull()
-  })
-
-  it('accepts review marks but refuses page writes on a read-only Backend', async () => {
+  it('refuses page writes on a read-only Backend', async () => {
     const page = BackendWikiDocumentSchema.parse(
       await (
         await request('/api/backend/v1/wiki/W0001?project=research', {
@@ -492,17 +444,5 @@ describe('Backend wiki routes', () => {
       body: { content: page.content, expectedMtime: page.mtime, expectedHash: page.hash },
     })
     expect(write.status).toBe(403)
-
-    const readOnlyCommits = (
-      await git(readOnlyRoot, 'log', '--format=%H', '--reverse', '--', 'docs/wiki')
-    ).split('\n')
-    const mark = await request(
-      `/api/backend/v1/wiki/review/${readOnlyCommits[0]}?project=research`,
-      { actor: owner, method: 'POST', base: readOnlyOrigin },
-    )
-    expect(mark.status).toBe(200)
-    expect(BackendWikiReviewResponseSchema.parse(await mark.json()).verifiedThrough).toBe(
-      readOnlyCommits[0],
-    )
   })
 })

@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import {
   advanceExperimentResearchVersion,
+  createLightweightVariant,
   importExperimentResearchRun,
   linkExperimentRun,
   nodeMutationFs,
@@ -16,8 +17,9 @@ import {
 import type { Command } from 'commander'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
-import { cliIndexSink } from '../lib/index-sink.js'
+import { cliIndexSink, indexWarningFields } from '../lib/index-sink.js'
 import { withCliWriterLock } from '../lib/invocation.js'
+import { publishLightweightWrite } from '../lib/lightweight-publication.js'
 import { cliMutation } from '../lib/mutation-error.js'
 import { emitJson } from '../lib/output.js'
 import type { ResultsCommandGlobals } from './results-commands.js'
@@ -52,7 +54,12 @@ export async function runResearchShow(input: Input): Promise<void> {
   if (!description) emitErrorAndExit('BAD_STATE', 'Invalid experiment.json')
   emitJson({
     experimentId: t.experimentId,
-    mode: description.research ? 'research' : 'legacy-fs9',
+    mode:
+      description.format === 'lightweight'
+        ? 'lightweight'
+        : description.research
+          ? 'research'
+          : 'legacy-fs9',
     research: description.research ?? null,
     mtime: state.mtime,
     hash: state.hash,
@@ -138,7 +145,7 @@ export function registerExperimentResearchCommands(
   globals: () => ResultsCommandGlobals,
 ): void {
   const version = experiment
-    .command('version')
+    .command('version', { hidden: true })
     .description('research versions, independent of result schema versions')
   version
     .command('show <id-or-slug>')
@@ -159,13 +166,53 @@ export function registerExperimentResearchCommands(
     )
   const variant = experiment
     .command('variant')
-    .description('retain identities while withdrawing or restoring a condition')
-  locked(variant.command('deprecate <id-or-slug> <variant>'))
+    .description('prepare lightweight Variants; legacy deprecate/restore remain callable')
+  variant
+    .command('create <id-or-slug>')
+    .description('prepare the first READY Run in a new Variant directory')
+    .option('--id <id>', 'explicit V number (default: next available)')
+    .option('--name <name>', 'short research name')
+    .option('--draft <text>', 'optional explanation on the prepared Run')
+    .option('--params <json>', 'partial planned parameters for the READY Run')
+    .action(
+      async (
+        idOrSlug: string,
+        opts: { id?: string; name?: string; draft?: string; params?: string },
+      ) => {
+        const t = await target({ ...globals(), idOrSlug })
+        try {
+          const result = await createLightweightVariant({
+            projectRoot: t.projectRoot,
+            experimentId: t.experimentId,
+            ...opts,
+            params: opts.params === undefined ? undefined : JSON.parse(opts.params),
+          })
+          const event = await publishLightweightWrite(
+            t.projectRoot,
+            `logs/${t.experimentId.slice(0, 5)}/${result.id}/${result.runId}`,
+            result.changes,
+          )
+          emitJson({
+            ok: true,
+            id: result.id,
+            runId: result.runId,
+            path: `logs/${t.experimentId.slice(0, 5)}/${result.id}/${result.runId}`,
+            ...indexWarningFields({ indexWarnings: event }),
+          })
+        } catch (error) {
+          emitErrorAndExit(
+            (error as { code?: string }).code === 'CONFLICT' ? 'CONFLICT' : 'BAD_REQUEST',
+            (error as Error).message,
+          )
+        }
+      },
+    )
+  locked(variant.command('deprecate <id-or-slug> <variant>', { hidden: true }))
     .option('--successor <id>', 'replacement Variant in the same Experiment')
     .action(async (idOrSlug: string, variant: string, opts) =>
       runResearchMutation({ ...globals(), idOrSlug }, 'deprecate', { ...opts, variant }),
     )
-  locked(variant.command('restore <id-or-slug> <variant>')).action(
+  locked(variant.command('restore <id-or-slug> <variant>', { hidden: true })).action(
     async (idOrSlug: string, variant: string, opts) =>
       runResearchMutation({ ...globals(), idOrSlug }, 'restore', { ...opts, variant }),
   )

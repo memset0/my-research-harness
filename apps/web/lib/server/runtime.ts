@@ -316,7 +316,6 @@ async function init(): Promise<Runtime> {
   })
   const wikiCache = new WikiCache({
     onChange: () => {},
-    onReviewChange: () => {},
     projects: [],
     context: () => ({
       experiments: [],

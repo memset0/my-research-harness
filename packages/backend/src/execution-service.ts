@@ -173,7 +173,7 @@ export function resolveProjectExecution(project: ProjectConfig): BackendExecutio
  * forwards every argv to the target with Project paths translated.
  *
  * Every git reader in core takes this same runner — history, status, blame,
- * blob reads, and the wiki review store — so a Project's `execution`
+ * and blob reads — so a Project's `execution`
  * configuration decides where git runs no matter which capability reads it.
  *
  * The runner is wrapped in the shared git read cache under a namespace built

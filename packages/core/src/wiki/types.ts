@@ -3,7 +3,7 @@
 // Pure data: kinds, per-kind status vocabularies, recommended sections,
 // frontmatter shape, diagnostics, and the list/detail projections. Every
 // other wiki module (frontmatter, discover, lint, staleness, deprecation,
-// components, summary, review) builds on these declarations only, so client
+// components, summary) builds on these declarations only, so client
 // bundles can `import type` from here without pulling any node code.
 
 export {
@@ -47,27 +47,6 @@ export function isWikiLanguage(value: unknown): value is WikiLanguage {
  * page; the section holds list items only (`WIKI_MAINTENANCE_RULES_INVALID`).
  */
 export const WIKI_MAINTENANCE_RULES_HEADING = 'Maintenance rules for agents'
-
-// ---------- review ----------
-
-export type ReviewState = 'VERIFIED' | 'CHANGED_SINCE_VERIFY' | 'UNVERIFIED'
-
-/**
- * Derived per page from the commit-ordered `.memon/wiki-review.csv` marks;
- * `null` on a page whose project root is not a git worktree.
- */
-export interface WikiReview {
-  state: ReviewState
-  /** Newest verified wiki commit (full 40-char SHA), or null when none. */
-  verifiedThrough: string | null
-  verifiedAt: string | null
-  /** Wiki commits newer than `verifiedThrough` that touched this page. */
-  unverifiedCommits: string[]
-  /** 1-based inclusive `[start, end]` line ranges not covered by the mark. */
-  unverifiedRanges: [number, number][]
-  /** Working tree differs from HEAD for this page's paths. */
-  dirty: boolean
-}
 
 // ---------- frontmatter ----------
 
@@ -130,7 +109,6 @@ export const WIKI_DIAGNOSTIC_CODES = [
   'WIKI_MAINTENANCE_RULES_INVALID',
   'WIKI_SOURCE_UNRESOLVED',
   'WIKI_CLAIM_WITHOUT_EVIDENCE',
-  'WIKI_UNREVIEWED_VERIFIED',
   'WIKI_LEGACY_ID_DUPLICATE',
   'WIKI_LINK_UNRESOLVED',
   'WIKI_DEPRECATION_INVALID',
@@ -218,8 +196,6 @@ export interface WikiSummary {
   stale: boolean
   /** Offending `sources` entries in declaration order. */
   staleSources: string[]
-  /** null outside a git worktree. */
-  review: WikiReview | null
   format: WikiPageFormat
   /** Project-relative path of the `.md` / `README.md`. */
   path: string
@@ -246,6 +222,5 @@ export interface WikiBacklink {
   status: string | null
   stale: boolean
   deprecated: boolean
-  reviewState: ReviewState | null
   updatedAt: string
 }

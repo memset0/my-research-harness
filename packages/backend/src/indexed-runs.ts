@@ -18,9 +18,11 @@ import {
   type Run,
   readRunDir,
   runEligibilityError,
+  runFromMetadata,
   runFromReadme,
 } from '@memon/core'
 import { join } from '@memon/file-protocol/paths'
+import { resolveContained } from './containment.js'
 import {
   type Observation,
   projectReadIndex,
@@ -74,6 +76,18 @@ export async function indexedRun(
     runSummaryKey(dir),
     maxAgeMs,
     async (): Promise<Observation<RunObservation>> => {
+      const metadataPath = await resolveContained(project.root, join(dir, 'run.json'), {
+        allowMissing: true,
+      })
+      const metadata = metadataPath
+        ? await statObservation(metadataPath)
+        : { fingerprint: null, observed: null }
+      if (metadata.fingerprint !== null && metadata.observed?.isFile()) {
+        return {
+          fingerprint: `metadata:${metadata.fingerprint}`,
+          observed: { readme: null, metadata: metadata.observed },
+        }
+      }
       const readme = await statObservation(join(dir, 'README.md'))
       if (readme.fingerprint !== null && readme.observed?.isFile()) {
         return {
@@ -85,7 +99,8 @@ export async function indexedRun(
       if (directory.fingerprint === null) return { fingerprint: null }
       return { fingerprint: `dir:${directory.fingerprint}`, observed: { readme: null } }
     },
-    async (observed) => loadRunSummary(project, dir, observed?.readme ?? null),
+    async (observed) =>
+      loadRunSummary(project, dir, observed?.readme ?? null, observed?.metadata ?? null),
   )
   if (summary && options.contained && !summary.contained) {
     // Containment and shape with real paths (the root's is request-scoped).
@@ -99,16 +114,27 @@ export async function indexedRun(
 
 interface RunObservation {
   readme: Stats | null
+  metadata?: Stats | null
 }
 
 async function loadRunSummary(
   project: ProjectConfig,
   dir: string,
   readme: Stats | null,
+  metadata: Stats | null,
 ): Promise<RunSummary> {
   let run: Run
   let eligibilityError: string | null = null
-  if (!readme) {
+  if (metadata) {
+    const [content, dirStat] = await Promise.all([
+      fs.readFile(join(dir, 'run.json'), 'utf8'),
+      fs.stat(dir),
+    ])
+    run = runFromMetadata(dir, project.name, content, dirStat.mtimeMs, metadata.mtimeMs)
+    eligibilityError = run.parseErrors.length
+      ? run.parseErrors.map((issue) => issue.message).join('; ')
+      : null
+  } else if (!readme) {
     run = await readRunDir(dir, project.name)
   } else {
     const [content, dirStat] = await Promise.all([
@@ -118,7 +144,7 @@ async function loadRunSummary(
     run = runFromReadme(dir, project.name, content, dirStat.mtimeMs, readme.mtimeMs)
     eligibilityError = runEligibilityError(content)
   }
-  const sidecarFallback = !run.frontMatterKeys.includes('archived')
+  const sidecarFallback = run.recordFormat !== 'json' && !run.frontMatterKeys.includes('archived')
   return {
     run: {
       ...run,

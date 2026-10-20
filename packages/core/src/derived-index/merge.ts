@@ -8,6 +8,7 @@
 
 import { basename } from '@memon/file-protocol/paths'
 import { matchesRunDirPatterns } from '../discovery/run-dirs.js'
+import { lightweightRunIdentity } from '../runs/metadata.js'
 import { formatIsoLocal } from '../time.js'
 import { FS_CONVENTION_VERSION, MEMON_RELEASE } from '../version.js'
 import { newestCtime } from './fingerprint.js'
@@ -32,7 +33,7 @@ type AnyEntry = RunIndexEntry | ExperimentIndexEntry | WikiIndexEntry
 /** The newest change time among the fingerprints an entry was built from. */
 export function entryCtime(entry: AnyEntry): number {
   if ('row' in entry && 'readme_fp' in entry && 'dir_fp' in entry) {
-    return newestCtime(entry.readme_fp, entry.dir_fp, entry.result_fp)
+    return newestCtime(entry.readme_fp, entry.dir_fp, entry.result_fp, entry.metadata_fp ?? null)
   }
   if ('bundle_fp' in entry) {
     return newestCtime(
@@ -40,6 +41,7 @@ export function entryCtime(entry: AnyEntry): number {
       entry.bundle_fp.implementation,
       entry.bundle_fp.investigation,
       entry.bundle_fp.description,
+      entry.bundle_fp.results ?? null,
     )
   }
   return newestCtime(entry.fp)
@@ -103,6 +105,14 @@ export function recomputeOwners(snapshot: IndexSnapshot): void {
     }
   }
   for (const [key, entry] of Object.entries(snapshot.runs)) {
+    const layout = lightweightRunIdentity(key)
+    if (layout) {
+      const matches = Object.values(snapshot.experiments).filter((experiment) =>
+        experiment.id.startsWith(`${layout.experimentId}-`),
+      )
+      entry.owner = matches.length === 1 ? matches[0]!.id : null
+      continue
+    }
     const owners = declarers.get(key)
     entry.owner = owners?.size === 1 ? [...owners][0]! : null
   }

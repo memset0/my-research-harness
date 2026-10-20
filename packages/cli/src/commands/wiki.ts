@@ -10,13 +10,12 @@
 //     a component is compiled into the CLI artifact. `memon components run`
 //     executes blocks locally through `@memon/core` without any descriptor.
 //   - git is invoked only through the shared core command seam with an argv
-//     array (never a shell string), and only by `commit` and the `review`
-//     subcommands. Every other command is a pure Wiki-file read — no worktree
+//     array (never a shell string), and only by `commit`. Every other command is a pure Wiki-file read — no worktree
 //     probe, no marks, no log/status/blame — so it behaves identically
 //     outside a git worktree.
 //
 // Exit codes: 0 ok, 1 `lint --strict` failure / generic, 2 BAD_REQUEST,
-// 4 NOT_FOUND (incl. NOT_A_GIT_PROJECT), 9 CONFLICT / REVIEW_ORDER /
+// 4 NOT_FOUND (incl. NOT_A_GIT_PROJECT), 9 CONFLICT /
 // MIXED_INDEX. Errors are one `{"error":{"code","message"}}` object on stderr.
 
 import { type Dirent, promises as fs } from 'node:fs'
@@ -33,20 +32,15 @@ import {
   getWikiKind,
   gitCommandStdoutText,
   isGitCommandFailure,
-  isGitWorktree,
   isWikiLanguage,
-  listWikiCommits,
   padId,
   parseId,
   parseWikiFrontmatter,
   REPORT_FILENAME_REGEX,
   RUN_MENTION_SOURCE,
-  readWikiReviewMarks,
-  removeWikiReviewMark,
   SLUG_SOURCE,
   serializeWikiPage,
   updateWikiFrontmatter,
-  verifiedThroughMark,
   WIKI_DIR_RELPATH,
   WIKI_ID_REGEX,
   WIKI_KIND_DEFINITIONS,
@@ -59,20 +53,15 @@ import {
   WIKI_SLUG_REGEX,
   WIKI_STATUS_BY_KIND,
   WIKI_TIMESTAMP_REGEX,
-  type WikiCommit,
   type WikiDiagnostic,
   type WikiFrontmatter,
   type WikiKind,
   type WikiLanguage,
   type WikiProjectProjection,
-  WikiReviewError,
-  type WikiReviewMark,
-  WikiReviewOrderError,
   type WikiSummary,
   wikiContentHash,
   wikiStringList,
   writeFileAtomic,
-  writeWikiReviewMark,
 } from '@memon/core'
 
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
@@ -92,8 +81,6 @@ const GIT_TIMEOUT_MS = 30_000
 const GIT_MAX_BUFFER = 64 * 1024 * 1024
 const WIKI_BUNDLE_MAX_DEPTH = 8
 const WIKI_BUNDLE_MAX_FILES = 5000
-/** `git`'s empty tree: the baseline when no wiki commit has been verified. */
-const EMPTY_TREE_SHA = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 
 export type WikiFormat = 'json' | 'human' | 'markdown'
 
@@ -164,9 +151,7 @@ function projectWiki(projectRoot: string, pages: DiscoveredWikiPage[]): WikiCont
 }
 
 /**
- * Load Wiki files — the only loader an ordinary command has. No git process
- * runs, so no page carries a review claim: human verification is whole-wiki
- * and commit-scoped, and `memon wiki review diff` is its only reader.
+ * Load Wiki files without Git or source-target directory scans.
  */
 async function loadWiki(input: WikiCommonInput): Promise<WikiContext> {
   const projectRoot = singleProjectRoot(await resolveContext(input))
@@ -338,20 +323,13 @@ function nextWikiId(ctx: WikiContext): string {
   return padId('W', max + 1)
 }
 
-type CliWikiSummary = Omit<WikiSummary, 'mtime' | 'stale' | 'staleSources' | 'review'>
+type CliWikiSummary = Omit<WikiSummary, 'mtime' | 'stale' | 'staleSources'>
 
 /**
- * CLI summary: target-derived staleness is Web-only, and review is neither
- * derived nor reported per page — it is whole-wiki (`wiki review diff`).
+ * CLI summary: target-derived staleness is Web-only.
  */
 function listEntry(summary: WikiSummary): CliWikiSummary {
-  const {
-    mtime: _mtime,
-    stale: _stale,
-    staleSources: _staleSources,
-    review: _review,
-    ...rest
-  } = summary
+  const { mtime: _mtime, stale: _stale, staleSources: _staleSources, ...rest } = summary
   return rest
 }
 
@@ -1231,7 +1209,7 @@ function deriveSources(body: string): string[] {
   return out
 }
 
-// ---------- git plumbing (review / commit) ----------
+// ---------- git plumbing (commit) ----------
 
 interface GitResult {
   ok: boolean
@@ -1240,9 +1218,7 @@ interface GitResult {
 }
 
 /**
- * Every git invocation of `commit` and the `review` subcommands, through the
- * shared read cache: one `review diff` reads HEAD, the mark history and the
- * patch, and `commit` reads the index on both sides of its own staging.
+ * The commit command reads the index on both sides of its own staging.
  * Staging and committing are mutations, which the cache runs uncached and
  * fences with an invalidation, so no read here can observe a pre-staging
  * index afterwards.
@@ -1280,308 +1256,17 @@ async function git(
   }
 }
 
-/** `commit` and every `review` subcommand need a usable git worktree. */
+/** The commit command needs a usable git worktree. */
 async function requireGitWorktree(projectRoot: string): Promise<void> {
-  if (!(await isGitWorktree(projectRoot))) {
+  const result = await git(projectRoot, ['rev-parse', '--is-inside-work-tree'])
+  if (!result.ok || result.stdout.trim() !== 'true') {
     emitErrorAndExit(
       'NOT_A_GIT_PROJECT',
-      `${projectRoot} is not inside a git worktree; wiki review and commit need git`,
+      `${projectRoot} is not inside a git worktree; wiki commit needs git`,
       undefined,
       EXIT.NOT_FOUND,
     )
   }
-}
-
-// ---------- memon wiki review ----------
-
-export async function runWikiReviewLog(input: WikiCommonInput): Promise<void> {
-  const format = readFormat(input)
-  const projectRoot = singleProjectRoot(await resolveContext(input))
-  await requireGitWorktree(projectRoot)
-  const commits = (await listWikiCommits(projectRoot)) ?? []
-  const marks = await readWikiReviewMarks(projectRoot)
-  const marksBySha = new Map(marks.map((mark) => [mark.sha, mark]))
-  const verifiedThrough = verifiedThroughMark(commits, marks)?.sha ?? null
-
-  const rows = commits.map((commit: WikiCommit) => {
-    const mark = marksBySha.get(commit.sha)
-    return {
-      sha: commit.sha,
-      authoredAt: commit.authoredAt,
-      subject: commit.subject,
-      pages: commit.pages,
-      files: commit.files,
-      verified: mark !== undefined,
-      verifiedAt: mark?.verifiedAt ?? null,
-      note: mark?.note ?? null,
-    }
-  })
-
-  if (format === 'json') {
-    emitJson({ verifiedThrough, commits: rows })
-    return
-  }
-  if (rows.length === 0) {
-    process.stdout.write('(no wiki commits)\n')
-    return
-  }
-  const lines = rows.map(
-    (row) =>
-      `${row.verified ? '✓' : ' '} ${row.sha.slice(0, 10)}  ${row.authoredAt}  ${
-        row.pages.join(',') || '—'
-      }  ${row.subject}`,
-  )
-  lines.push(`verifiedThrough: ${verifiedThrough ?? 'none'}`)
-  process.stdout.write(`${lines.join('\n')}\n`)
-}
-
-/**
- * One whole-wiki diff from the last human-verified wiki commit to HEAD.
- *
- * Review is commit-scoped and whole-wiki: no page argument, no per-page state,
- * no blame, and exactly one `git diff` for the whole of `docs/wiki/`. The
- * baseline is the newest mark in `.memon/wiki-review.csv` reachable from the
- * captured HEAD; with no mark at all it is git's empty tree, so the whole
- * committed wiki reads as added. Uncommitted work is deliberately absent —
- * only what is committed can be verified. Every git call is checked: a
- * failure is reported, never rendered as a clean diff.
- */
-export async function runWikiReviewDiff(input: WikiCommonInput): Promise<void> {
-  const format = readFormat(input)
-  const projectRoot = singleProjectRoot(await resolveContext(input))
-  await requireGitWorktree(projectRoot)
-
-  // HEAD first: `--verify --quiet` fails with an empty stderr exactly for an
-  // unborn HEAD (nothing committed, so nothing reviewable). Anything on
-  // stderr is a real git failure.
-  const head = await git(projectRoot, ['rev-parse', '--verify', '--quiet', 'HEAD'])
-  if (!head.ok && head.stderr.trim() !== '') {
-    emitErrorAndExit(
-      'GIT_FAILED',
-      `git rev-parse HEAD failed: ${head.stderr.trim()}`,
-      undefined,
-      EXIT.GENERIC,
-    )
-  }
-  const headSha = head.ok ? head.stdout.trim() : null
-
-  // Baseline resolution deliberately avoids the wiki-commit projection: that
-  // helper maps a failing `git log` to "no commits", which here would mean a
-  // silent empty-tree diff or a bogus stale-baseline verdict. One checked
-  // `rev-list` over the captured HEAD answers both questions instead.
-  const marks = await readWikiReviewMarks(projectRoot)
-  let verified: WikiReviewMark | null = null
-  let stale = marks.map((mark) => mark.sha)
-  if (marks.length > 0 && headSha !== null) {
-    const history = await git(projectRoot, ['rev-list', '--topo-order', headSha])
-    if (!history.ok) {
-      emitErrorAndExit(
-        'GIT_FAILED',
-        `git rev-list failed: ${history.stderr.trim()}`,
-        undefined,
-        EXIT.GENERIC,
-      )
-    }
-    const marksBySha = new Map(marks.map((mark) => [mark.sha, mark]))
-    const reachable = new Set<string>()
-    for (const sha of history.stdout.split('\n')) {
-      const mark = marksBySha.get(sha)
-      if (mark === undefined) continue
-      reachable.add(sha)
-      // `--topo-order` never lists a commit before its descendants, so the
-      // first marked commit reached is the last verified one.
-      if (verified === null) verified = mark
-    }
-    stale = marks.filter((mark) => !reachable.has(mark.sha)).map((mark) => mark.sha)
-  }
-
-  // A mark naming a commit unreachable from HEAD (amend, rebase, dropped
-  // branch) is not a baseline: falling back to the empty tree would silently
-  // discard the human's verification.
-  if (stale.length > 0) {
-    emitErrorAndExit(
-      'REVIEW_STALE_BASELINE',
-      `${stale.length} review mark(s) name commits unreachable from HEAD; drop them with \`memon wiki review unverify <sha>\``,
-      { staleMarks: stale },
-      EXIT.CONFLICT,
-    )
-  }
-
-  const base = verified?.sha ?? EMPTY_TREE_SHA
-  let files: string[] = []
-  let diff = ''
-  if (headSha !== null) {
-    // One invocation carries both the file list and the patch: `--raw -z`
-    // emits NUL-terminated records (never quoted, so spaces, unicode and
-    // rename pairs survive verbatim), an empty record closes them, and the
-    // patch follows byte for byte. `--binary` (implying `--full-index`) makes
-    // a changed bundle asset a complete patch, while the `-c` overrides,
-    // `--no-ext-diff` and `--no-textconv` keep a user's diff configuration,
-    // external differ and textconv filters out of a review diff.
-    const result = await git(projectRoot, [
-      '-c',
-      'core.quotePath=false',
-      '-c',
-      'diff.external=',
-      '-c',
-      'diff.noprefix=false',
-      '-c',
-      'diff.mnemonicPrefix=false',
-      'diff',
-      '--raw',
-      '-z',
-      '--patch',
-      '--binary',
-      '--find-renames',
-      '--no-ext-diff',
-      '--no-textconv',
-      '--no-color',
-      base,
-      headSha,
-      '--',
-      WIKI_DIR_RELPATH,
-    ])
-    if (!result.ok) {
-      emitErrorAndExit(
-        'GIT_FAILED',
-        `git diff failed: ${result.stderr.trim()}`,
-        undefined,
-        EXIT.GENERIC,
-      )
-    }
-    const parsed = parseRawDiff(result.stdout)
-    files = parsed.files
-    diff = parsed.diff
-  }
-
-  if (format === 'json') {
-    emitJson({
-      verifiedThrough: verified?.sha ?? null,
-      verifiedAt: verified?.verifiedAt ?? null,
-      base,
-      baseIsEmptyTree: verified === null,
-      head: headSha,
-      pathspec: WIKI_DIR_RELPATH,
-      files,
-      diff,
-    })
-    return
-  }
-  const lines = [
-    verified === null
-      ? `base: ${base.slice(0, 10)} (empty tree; no verified wiki commit)`
-      : `base: ${base.slice(0, 10)} (verified ${verified.verifiedAt})`,
-    `head: ${headSha === null ? '(unborn)' : headSha.slice(0, 10)}`,
-  ]
-  if (headSha === null) {
-    lines.push('(no wiki commits yet)')
-  } else if (files.length === 0) {
-    lines.push('(no committed wiki changes since base)')
-  } else {
-    lines.push(`${files.length} file(s) changed under ${WIKI_DIR_RELPATH}/`)
-  }
-  process.stdout.write(`${lines.join('\n')}\n${diff}`)
-}
-
-/**
- * Split one `git diff --raw -z --patch` output into changed paths and the
- * patch. A raw record is `:<modes> <shas> <status>` followed by one path, or
- * two for a rename/copy; an empty record terminates the raw section and the
- * remainder is the patch, returned untouched.
- */
-function parseRawDiff(stdout: string): { files: string[]; diff: string } {
-  const files: string[] = []
-  let cursor = 0
-  while (cursor < stdout.length) {
-    const end = stdout.indexOf('\0', cursor)
-    if (end === -1) break
-    const record = stdout.slice(cursor, end)
-    cursor = end + 1
-    if (record === '') break
-    if (!record.startsWith(':')) continue
-    const status = record.slice(record.lastIndexOf(' ') + 1)
-    const pathCount = status.startsWith('R') || status.startsWith('C') ? 2 : 1
-    for (let index = 0; index < pathCount; index += 1) {
-      const stop = stdout.indexOf('\0', cursor)
-      if (stop === -1) {
-        cursor = stdout.length
-        break
-      }
-      if (stop > cursor) files.push(stdout.slice(cursor, stop))
-      cursor = stop + 1
-    }
-  }
-  return { files, diff: stdout.slice(cursor) }
-}
-
-export interface WikiReviewVerifyInput extends WikiCommonInput {
-  sha: string
-  note?: string
-}
-
-export async function runWikiReviewVerify(input: WikiReviewVerifyInput): Promise<void> {
-  const format = readFormat(input)
-  const projectRoot = singleProjectRoot(await resolveContext(input))
-  await requireGitWorktree(projectRoot)
-
-  let mark: WikiReviewMark
-  try {
-    mark = await writeWikiReviewMark(projectRoot, input.sha, input.note)
-  } catch (err) {
-    if (err instanceof WikiReviewOrderError) {
-      emitErrorAndExit('REVIEW_ORDER', err.message, { nextSha: err.nextSha }, EXIT.CONFLICT)
-    }
-    if (err instanceof WikiReviewError) {
-      emitErrorAndExit(
-        err.code === 'NOT_GIT' ? 'NOT_A_GIT_PROJECT' : 'NOT_FOUND',
-        err.message,
-        undefined,
-        EXIT.NOT_FOUND,
-      )
-    }
-    throw err
-  }
-
-  const commits = (await listWikiCommits(projectRoot)) ?? []
-  const marks = await readWikiReviewMarks(projectRoot)
-  const marked = new Set(marks.map((entry) => entry.sha))
-  const next = commits.find((commit) => !marked.has(commit.sha)) ?? null
-
-  const payload = {
-    verified: { sha: mark.sha, verifiedAt: mark.verifiedAt, note: mark.note },
-    verifiedThrough: verifiedThroughMark(commits, marks)?.sha ?? null,
-    next: next === null ? null : { sha: next.sha, subject: next.subject, pages: next.pages },
-  }
-  if (format === 'json') {
-    emitJson(payload)
-    return
-  }
-  process.stdout.write(
-    `verified ${mark.sha}\nnext: ${next === null ? 'nothing left to verify' : `${next.sha} ${next.subject}`}\n`,
-  )
-}
-
-export interface WikiReviewUnverifyInput extends WikiCommonInput {
-  sha: string
-}
-
-export async function runWikiReviewUnverify(input: WikiReviewUnverifyInput): Promise<void> {
-  const format = readFormat(input)
-  const projectRoot = singleProjectRoot(await resolveContext(input))
-  await requireGitWorktree(projectRoot)
-  const result = await removeWikiReviewMark(projectRoot, input.sha)
-  if (result.removed.length === 0) {
-    emitErrorAndExit('NOT_FOUND', `no review mark matches "${input.sha}"`)
-  }
-  if (format === 'json') {
-    emitJson(result)
-    return
-  }
-  process.stdout.write(
-    `removed ${result.removed.length} mark(s): ${result.removed.join(', ')}\nverifiedThrough: ${
-      result.verifiedThrough ?? 'none'
-    }\n`,
-  )
 }
 
 // ---------- memon wiki commit ----------
@@ -1702,8 +1387,6 @@ export async function runWikiCommit(input: WikiCommitInput): Promise<void> {
   }
   const sha = (await git(projectRoot, ['rev-parse', 'HEAD'], 'bypass')).stdout.trim()
 
-  // No review state is derived here: verification is whole-wiki and belongs to
-  // `wiki review diff` / `wiki review verify`, never to a per-page claim.
   const pages = pageIds.map((id) => ({
     id,
     change: verbFor(changes.get(id)!.change),

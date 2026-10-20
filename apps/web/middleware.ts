@@ -95,13 +95,10 @@ function appendSetCookie(headers: Headers, value: string): void {
 /**
  * Owner-only writes that intentionally identify a valid share viewer so the
  * denial is an explicit 403 instead of the cheaper fail-closed 401: the
- * Results-View CRUD and the wiki review marks.
+ * Results-View CRUD.
  */
 function isViewerVisibleMutation(method: string, pathname: string): boolean {
   if (method === 'POST' && pathname === '/api/experiment-results-views') return true
-  if ((method === 'POST' || method === 'DELETE') && /^\/api\/wiki\/review\/[^/]+$/.test(pathname)) {
-    return true
-  }
   if (method !== 'PATCH' && method !== 'DELETE') return false
   return /^\/api\/experiment-results-views\/[^/]+$/.test(pathname)
 }

@@ -242,7 +242,7 @@ export class FilesystemMutationService implements BackendMutationService {
    * fails the write and is only logged.
    */
   private index(project: ProjectConfig): IndexSink {
-    return { projectRoot: project.root, role: this.indexRole, now: this.now }
+    return { projectRoot: project.root, role: this.indexRole, now: this.now, publishSnapshot: true }
   }
   private project(name: string) {
     const p = this.projects.get(name)
@@ -339,12 +339,20 @@ export class FilesystemMutationService implements BackendMutationService {
       { run: id, status: input.status },
       async (ctx) => {
         const run = await this.run(project, projectName, id)
+        if (run.recordFormat === 'json')
+          throw new BackendMutationError(
+            'BAD_REQUEST',
+            'Update lightweight Run execution and active selection through the source CLI so result files and inventory are published together',
+          )
         ctx.addDetail({ kind: 'target', type: 'run', id })
         const result = await setRunStatus({
           fs: port,
           index: this.index(project),
           now: this.now,
-          readmePath: join(run.path, 'README.md'),
+          readmePath: await resolveContained(
+            project.root,
+            run.recordPath ?? join(run.path, 'README.md'),
+          ),
           status: input.status as never,
           lock: lockOf(input.expectedMtime, input.expectedHash),
         })
@@ -368,12 +376,20 @@ export class FilesystemMutationService implements BackendMutationService {
       { run: id, archived: input.archived },
       async (ctx) => {
         const run = await this.run(project, projectName, id)
+        if (run.recordFormat === 'json')
+          throw new BackendMutationError(
+            'BAD_REQUEST',
+            'Update lightweight Run execution and active selection through the source CLI so result files and inventory are published together',
+          )
         ctx.addDetail({ kind: 'target', type: 'run', id })
         const result = await setRunArchiveState({
           fs: port,
           index: this.index(project),
           now: this.now,
-          readmePath: join(run.path, 'README.md'),
+          readmePath: await resolveContained(
+            project.root,
+            run.recordPath ?? join(run.path, 'README.md'),
+          ),
           archived: input.archived,
           lock: lockOf(input.expectedMtime),
         })
@@ -544,7 +560,10 @@ export class FilesystemMutationService implements BackendMutationService {
         fs: port,
         index: this.index(project),
         now: this.now,
-        readmePath: join(run.path, 'README.md'),
+        readmePath: await resolveContained(
+          project.root,
+          run.recordPath ?? join(run.path, 'README.md'),
+        ),
         content: input.content,
         updatedAt: 'stamp',
         lock: lockOf(input.expectedMtime, input.expectedHash),

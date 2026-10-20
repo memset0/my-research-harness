@@ -21,6 +21,9 @@ import { cn } from '../lib/utils'
 import { Badge } from './ui/badge'
 
 const STATUS_ICON: Readonly<Record<Status, LucideIcon>> = {
+  READY: Circle,
+  QUEUED: Clock,
+  RESUME_READY: PauseCircle,
   PENDING: Clock,
   RUNNING: Loader2,
   FINISHED: CheckCircle2,
@@ -30,6 +33,9 @@ const STATUS_ICON: Readonly<Record<Status, LucideIcon>> = {
 }
 
 const STATUS_CLASS: Readonly<Record<Status, string>> = {
+  READY: 'border-border bg-muted text-muted-foreground',
+  QUEUED: 'border-border bg-muted text-muted-foreground',
+  RESUME_READY: 'border-border bg-muted text-muted-foreground',
   PENDING:
     'border-slate-300 bg-slate-50 text-slate-700 dark:border-slate-700/40 dark:bg-slate-900/40 dark:text-slate-300',
   RUNNING:
@@ -49,6 +55,7 @@ const STATUS_CLASS: Readonly<Record<Status, string>> = {
 // items." Keeps the same color family so the underlying status is still
 // readable, just dimmed.
 const STATUS_CLASS_ARCHIVED: Readonly<Record<Status, string>> = {
+  ...STATUS_CLASS,
   PENDING:
     'border-slate-200 bg-slate-50/60 text-slate-500 dark:border-slate-800/40 dark:bg-slate-900/20 dark:text-slate-400',
   RUNNING:

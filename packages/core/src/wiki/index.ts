@@ -1,5 +1,5 @@
 // `@memon/core` wiki surface: discovery, frontmatter, lint, evidence,
-// deprecation, structural component scanning, review, and the projections the
+// deprecation, structural component scanning, and the projections the
 // CLI / Backend / dashboard all serve.
 
 export { COMPONENT_LATEST_VERSION, COMPONENT_TYPES } from './component-names.generated.js'
@@ -42,7 +42,6 @@ export {
   type WikiLintPage,
   type WikiReference,
 } from './lint.js'
-export * from './review.js'
 export {
   collectWikiSourceReferences,
   experimentEffectiveUpdatedAtMs,

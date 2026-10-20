@@ -25,9 +25,9 @@ hand-written HTML/CSS/JavaScript, SVG, Canvas, Web Components, or statically
 built output from React, Vue, Svelte, Vega, Plotly, or another suitable
 library. Memon does not prescribe the framework.
 
-Choose the bundle form only when the page genuinely needs shipped assets:
+Choose the bundle form only when the page needs shipped assets:
 
-- an interactive explorer or dashboard the user asked for;
+- an interactive explorer or dashboard that helps the research question;
 - a `showcase` whose artifacts are files rather than prose;
 - a data file too large or too shared to inline.
 

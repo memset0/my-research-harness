@@ -111,7 +111,6 @@ function backendWikiDocument() {
     deprecatedSections: [],
     stale: false,
     staleSources: [],
-    review: null,
     format: 'markdown',
     mtime: 1,
     createdAt: '2026-05-01T10:00:00+08:00',
@@ -251,14 +250,14 @@ describe('central Wiki proxy projection', () => {
             'content-type': 'application/json',
             'content-encoding': 'gzip',
             'content-length': String(Buffer.byteLength(encoded)),
-            etag: '\"backend-page\"',
+            etag: '"backend-page"',
             'last-modified': 'Mon, 01 May 2026 02:00:00 GMT',
           },
         }),
     )
     const response = await proxy(
       new Request('https://central.example.test/api/wiki/W0001?host=host-a&project=project-a', {
-        headers: { 'if-none-match': '\"backend-page\"', range: 'bytes=0-10' },
+        headers: { 'if-none-match': '"backend-page"', range: 'bytes=0-10' },
       }),
       fetchImpl,
     )
@@ -301,25 +300,6 @@ describe('central Wiki proxy projection', () => {
       ),
     ).rejects.toMatchObject({ code: 'UNSUPPORTED_CAPABILITY' })
     expect(fetchImpl).not.toHaveBeenCalled()
-  })
-
-  it('forwards shell-class review marks to a read-only Backend', async () => {
-    const fetchImpl = vi.fn<typeof fetch>(async () =>
-      Response.json({ verifiedThrough: null, commits: [] }),
-    )
-    const registry = usableRegistry({ ...CAPABILITIES, mutations: false })
-    const response = await proxy(
-      new Request(
-        'https://central.example.test/api/wiki/review/next?host=host-a&project=project-a',
-        { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' },
-      ),
-      fetchImpl,
-      registry,
-    )
-    expect(response.status).toBe(200)
-    expect(String(fetchImpl.mock.calls[0]?.[0])).toBe(
-      'https://backend-a.example.test/api/backend/v1/wiki/review/next?project=project-a',
-    )
   })
 })
 

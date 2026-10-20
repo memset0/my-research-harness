@@ -1,7 +1,9 @@
 import { basename, join, relative, resolve, sep } from '@memon/file-protocol/paths'
+import { registeredSnapshot } from '../derived-index/registered.js'
 import { discoverRuns } from '../discovery/discover.js'
 import { isRunPath } from '../ids.js'
 import { projectFs as fs } from '../project-file-store.js'
+import { lightweightRunIdentity } from '../runs/metadata.js'
 import type { ProjectConfig } from '../types.js'
 import { listExperimentPaths } from './discover.js'
 import { parseExperimentReadme } from './parse.js'
@@ -29,13 +31,14 @@ export async function resolveDeclaredRunPath(root: string, path: string): Promis
     throw new Error('Run path escapes project root')
   }
   if (!(await fs.stat(realTarget)).isDirectory()) throw new Error('Run path is not a directory')
-  try {
-    const readme = relative(realRoot, await fs.realpath(join(target, 'README.md')))
-    if (readme === '..' || readme.startsWith(`..${sep}`))
-      throw new Error('Run README escapes project root')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-  }
+  for (const record of ['README.md', 'run.json'])
+    try {
+      const readme = relative(realRoot, await fs.realpath(join(target, record)))
+      if (readme === '..' || readme.startsWith(`..${sep}`))
+        throw new Error('Run record escapes project root')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
   return target
 }
 
@@ -51,9 +54,11 @@ export async function resolveRunReference(
       throw error
     }
   }
-  const matches = (await discoverRuns(project, { includeArchived: true })).filter(
-    (path) => basename(path) === reference,
-  )
+  const snapshot = await registeredSnapshot(project.root)
+  const paths = snapshot
+    ? Object.keys(snapshot.runs).map((path) => join(project.root, path))
+    : await discoverRuns(project, { includeArchived: true })
+  const matches = paths.filter((path) => basename(path) === reference)
   if (matches.length > 1)
     throw new Error(
       `Ambiguous Run ID; use a project-relative path: ${matches.map((path) => projectRunPath(project.root, path)).join(', ')}`,
@@ -67,6 +72,17 @@ export async function declaredRunOwner(
   projectName = '(project-root)',
 ): Promise<string | null> {
   const path = projectRunPath(root, directory)
+  const snapshot = await registeredSnapshot(root)
+  if (snapshot) return snapshot.runs[path]?.owner ?? null
+  const layout = lightweightRunIdentity(path)
+  if (layout) {
+    const matches = [...(await listExperimentPaths(root)).keys()].filter((id) =>
+      id.startsWith(`${layout.experimentId}-`),
+    )
+    if (matches.length > 1)
+      throw new Error(`Multiple Experiment folders share ${layout.experimentId}`)
+    return matches[0] ?? null
+  }
   const owners: string[] = []
   let legacyTarget: string | null | undefined
   for (const [id, document] of await listExperimentPaths(root)) {

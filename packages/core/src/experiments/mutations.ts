@@ -457,6 +457,38 @@ export function buildExperimentBundle(input: ExperimentBundleInput): ExperimentB
   }
 }
 
+/** FS11 creates only research prose and the small Variant/table declaration. */
+export function buildLightweightExperimentBundle(
+  input: ExperimentBundleInput,
+): Record<string, string> & { 'README.md': string; 'experiment.json': string } {
+  if (input.importedRun)
+    throw new MutationError(
+      'BAD_REQUEST',
+      'Import existing Runs through the reviewed filesystem migration; lightweight ownership comes from directories',
+    )
+  const description = { ...emptyExperimentDescription(), format: 'lightweight' as const }
+  const readme = serializeExperimentReadme({
+    frontMatter: {
+      id: input.id,
+      slug: input.slug,
+      title: input.title ?? input.slug,
+      status: 'ACTIVE',
+      archived: false,
+      runs: [],
+      hypotheses: input.hypotheses ?? [],
+      tags: input.tags ?? [],
+      createdAt: input.timestamp,
+      updatedAt: input.timestamp,
+    },
+    sections: { motivation: null, conclusion: null, method: null, plan: null, caveats: null },
+    rawBody: `# ${input.title ?? input.slug}\n`,
+  })
+    .replace(/^runs: \[\]\n/m, '')
+    .replace(/^hypotheses: \[\]\n/m, '')
+    .replace(/^tags: \[\]\n/m, '')
+  return { 'README.md': readme, 'experiment.json': serializeExperimentDescription(description) }
+}
+
 export interface CreateExperimentInput extends MutationBase {
   projectRoot: string
   projectName: string
@@ -542,11 +574,13 @@ export async function createExperiment(
   }
   const runPath = run ? projectRunPath(projectRoot, run.path) : null
   let researchVersioned = false
+  let lightweight = false
   try {
     const marker = JSON.parse(
       await fs.readFile(join(projectRoot, '.memon', 'version.json'), 'utf8'),
     )
     researchVersioned = marker.fs_convention_version === 10
+    lightweight = marker.fs_convention_version >= 11
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
   }
@@ -586,7 +620,7 @@ export async function createExperiment(
     }
 
     const stamp = timestamp(input)
-    const bundle = buildExperimentBundle({
+    const bundle = (lightweight ? buildLightweightExperimentBundle : buildExperimentBundle)({
       researchVersioned,
       id,
       slug,
@@ -605,8 +639,8 @@ export async function createExperiment(
             }
           : null,
     })
-    const files = CANONICAL_EXPERIMENT_BUNDLE_FILES.map(
-      (name) => [join(directory, name), bundle[name as keyof ExperimentBundle]] as const,
+    const files = Object.entries(bundle).map(
+      ([name, body]) => [join(directory, name), body] as const,
     )
     try {
       await Promise.all(
@@ -668,6 +702,18 @@ async function bindRun(
   const { fs, experiment, run } = input
   const state = await readDocumentState(fs, experiment.path)
   assertDocumentLock(state, input.lock)
+  try {
+    const description = parseExperimentDescription(
+      await fs.readFile(join(dirname(experiment.path), EXPERIMENT_DESCRIPTION_FILE), 'utf8'),
+    )
+    if (description.data?.format === 'lightweight')
+      throw new MutationError(
+        'BAD_STATE',
+        'Lightweight Run ownership comes from logs/<experiment>/<variant>/<run>; use run update --active to select evidence instead of linking README membership',
+      )
+  } catch (error) {
+    if (!isEnoent(error)) throw error
+  }
   let runDocument: DocumentState | undefined
   if (input.runLock) {
     runDocument = await readDocumentState(fs, join(run.path, 'README.md'))
@@ -799,7 +845,7 @@ async function usesExperimentLifecycle(
         'utf8',
       ),
     )
-    return source.research !== undefined
+    return source.research !== undefined || source.format === 'lightweight'
   } catch (error) {
     if (!isEnoent(error) && !(error instanceof SyntaxError)) throw error
     return false
@@ -1046,6 +1092,17 @@ export async function deleteExperiment(
   }
   const legacyFile = basename(experiment.path) === `${id}.md`
   const target = legacyFile ? experiment.path : dirname(experiment.path)
+  if (!legacyFile) {
+    const raw = await fs.readFile(join(target, 'experiment.json'), 'utf8').catch((error) => {
+      if (isEnoent(error)) return null
+      throw error
+    })
+    if (raw && parseExperimentDescription(raw).data?.format === 'lightweight')
+      throw new MutationError(
+        'BAD_STATE',
+        'Use lifecycle RETIRED for lightweight Experiments. Legacy cascade-unlink deletion cannot preserve directory-owned Run membership.',
+      )
+  }
   if (!input.force && !legacyFile) {
     let siblings: string[] = []
     try {

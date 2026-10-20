@@ -21,6 +21,7 @@ import {
   buildExperimentDocumentView,
   buildExperimentRecord,
   computeMembership,
+  deriveVariantStatus,
   discoverRuns,
   EXPERIMENT_DESCRIPTION_FILE,
   type Experiment,
@@ -58,7 +59,7 @@ import {
 } from '@memon/core'
 import { basename, dirname, join, relative, resolve, sep } from '@memon/file-protocol/paths'
 import { resolveContained } from './containment.js'
-import { prepareProjectIndex } from './derived-index-mirror.js'
+import { prepareProjectIndex, runSummaryFromEntry } from './derived-index-mirror.js'
 import type {
   BackendWikiArtifactOptions,
   BackendWikiArtifactReferences,
@@ -91,6 +92,7 @@ import {
   registerProjectRoots,
   STRICT_READ_POLICY,
 } from './read-index.js'
+import { experimentRunPaths, registeredProjectSnapshot } from './registered-index.js'
 import {
   backendResultsError,
   type DeclaredRunLookup,
@@ -425,6 +427,15 @@ export class FilesystemProjectService implements BackendProjectReadService {
     const prepared = await this.preparedProject(projectName)
     if (options.inventoryOnly) {
       const project = prepared
+      const snapshot = await registeredProjectSnapshot(project)
+      if (snapshot)
+        return BackendResourceInventoryResponseSchema.parse({
+          items: Object.entries(snapshot.runs).map(([path, entry]) => ({
+            id: path,
+            slug: entry.row.id,
+            resource: `${path}/${entry.row.record_format === 'json' ? 'run.json' : 'README.md'}`,
+          })),
+        })
       const paths = await withAutomaticProjectFileContext(() =>
         discoverRuns(project, { includeArchived: true }),
       )
@@ -487,7 +498,7 @@ export class FilesystemProjectService implements BackendProjectReadService {
       warnings: run.warnings,
       warningsRaw: run.warningsRaw,
       resources: null,
-      result: await runResult(project, run.path),
+      result: await runResult(project, run.path, run.recordFormat === 'json'),
     })
   }
 
@@ -496,6 +507,15 @@ export class FilesystemProjectService implements BackendProjectReadService {
     const project = await this.preparedProject(projectName)
     const maxAge = this.policy.listMaxAgeMs
     if (options.inventoryOnly) {
+      const snapshot = await registeredProjectSnapshot(project)
+      if (snapshot)
+        return BackendResourceInventoryResponseSchema.parse({
+          items: Object.values(snapshot.experiments).map((entry) => ({
+            id: entry.id,
+            slug: entry.slug,
+            resource: `${entry.dir}/README.md`,
+          })),
+        })
       const { folders, legacy } = await withAutomaticProjectFileContext(() =>
         experimentListing(project, maxAge),
       )
@@ -517,6 +537,102 @@ export class FilesystemProjectService implements BackendProjectReadService {
       })
     }
     const documents = await indexedExperimentDocuments(project, maxAge)
+    const snapshot = await registeredProjectSnapshot(project)
+    if (snapshot)
+      return BackendExperimentListResponseSchema.parse({
+        experiments: documents.map((document) => {
+          const entry = Object.values(snapshot.experiments).find((item) => item.id === document.id)!
+          const members = document.parsed.frontMatter.runs
+            .map((path) => snapshot.runs[path])
+            .filter((item) => !!item)
+          const running = members.filter((run) => run.status === 'RUNNING').length
+          if (entry.format === 'lightweight') {
+            const formal = Object.entries(snapshot.runs).filter(([path]) =>
+              path.startsWith(`logs/${entry.id.slice(0, 5)}/V`),
+            )
+            const ids = [
+              ...new Set(
+                formal.filter(([, run]) => run.row.active).map(([path]) => path.split('/')[2]!),
+              ),
+            ].filter((id) => !entry.variants?.[id]?.deprecated)
+            const selected = formal.filter(
+              ([path, run]) =>
+                ids.includes(path.split('/')[2]!) && run.row.active && !run.deprecated,
+            )
+            const currentRunning = selected.filter(([, run]) => run.status === 'RUNNING').length
+            const completed =
+              ids.length > 0 &&
+              ids.every((id) => {
+                const runs = selected.filter(([path]) => path.split('/')[2] === id)
+                return (
+                  runs.length > 0 &&
+                  runs.every(
+                    ([, run]) =>
+                      run.status === 'FINISHED' && run.row.assessment?.kind !== 'INVALID',
+                  )
+                )
+              })
+            return {
+              ...experimentListRow(
+                project,
+                document,
+                portableReadmeResource(project, document.path),
+              ),
+              displayStatus:
+                entry.status === 'ACTIVE'
+                  ? running
+                    ? 'RUNNING'
+                    : completed
+                      ? 'COMPLETED'
+                      : 'ACTIVE'
+                  : entry.status,
+              requiredVariantCount: ids.length,
+              currentRunningRunCount: currentRunning,
+              runningRunCount: running,
+            }
+          }
+          const variants = Object.entries(entry.variants ?? {}).filter(
+            ([id, variant]) =>
+              id !== 'V0000' &&
+              id !== 'smoke' &&
+              !variant.deprecated &&
+              variant.legacy_status !== 'DROPPED',
+          )
+          const states = variants.map(([, variant]) =>
+            deriveVariantStatus(
+              variant.legacy_status ?? null,
+              variant.active_runs.map((run) => {
+                const record = snapshot.runs[run]
+                return record
+                  ? { status: record.status, deprecated: record.deprecated, stop_reason: null }
+                  : null
+              }),
+              variant.frozen_status ?? null,
+            ),
+          )
+          const completed = states.length > 0 && states.every((state) => state === 'COMPLETED')
+          const currentRunning = variants
+            .flatMap(([, variant]) => variant.active_runs)
+            .filter(
+              (path) =>
+                snapshot.runs[path]?.status === 'RUNNING' && !snapshot.runs[path]?.deprecated,
+            ).length
+          return {
+            ...experimentListRow(project, document, portableReadmeResource(project, document.path)),
+            displayStatus:
+              entry.status === 'ACTIVE'
+                ? currentRunning
+                  ? 'RUNNING'
+                  : completed
+                    ? 'COMPLETED'
+                    : 'ACTIVE'
+                : entry.status,
+            requiredVariantCount: variants.length,
+            currentRunningRunCount: currentRunning,
+            runningRunCount: running,
+          }
+        }),
+      })
     const lookup = declaredRunLookup(project, maxAge)
     const experiments = await mapWithConcurrency(documents, 4, async (document) => ({
       ...experimentListRow(project, document, portableReadmeResource(project, document.path)),
@@ -893,6 +1009,10 @@ export class FilesystemProjectService implements BackendProjectReadService {
     if (!experiment) {
       throw new BackendProjectServiceError('RESOURCE_NOT_FOUND', 'Experiment not found')
     }
+    if (experiment.documents?.description?.data?.format === 'lightweight') {
+      const snapshot = await registeredProjectSnapshot(project)
+      experiment.frontMatter.runs = snapshot ? experimentRunPaths(snapshot, experiment.id) : []
+    }
     return experiment
   }
 
@@ -930,6 +1050,32 @@ export class FilesystemProjectService implements BackendProjectReadService {
    */
   private async buildProject(projectName: string): Promise<ProjectData> {
     const project = this.requireProject(projectName)
+    const snapshot = await registeredProjectSnapshot(project)
+    if (snapshot) {
+      const runs = Object.entries(snapshot.runs)
+        .map(([path, entry]) =>
+          requestRun(runSummaryFromEntry(project, join(project.root, path), entry)),
+        )
+        .sort((a, b) =>
+          String(b.frontMatter.createdAt).localeCompare(String(a.frontMatter.createdAt)),
+        )
+      const documents = await indexedExperimentDocuments(project, this.policy.listMaxAgeMs)
+      const experiments = documents.map((document) => experimentRecord(project, document))
+      const runsByPath = new Map(runs.map((run) => [projectRunPath(project.root, run.path), run]))
+      return {
+        project,
+        runs,
+        runsById: runsByPath,
+        experiments,
+        membership: computeMembership({
+          experiments,
+          runs,
+          project: project.name,
+          projectRoot: project.root,
+          declaredRuns: runsByPath,
+        }),
+      }
+    }
     // An unreadable or missing Project root is an error, never an empty one.
     const rootStat = await fs.stat(project.root)
     if (!rootStat.isDirectory()) throw new Error('Project root is not a directory')
@@ -1003,7 +1149,9 @@ export class FilesystemProjectService implements BackendProjectReadService {
   }
 
   /** Every Run directory, through the index's shared walk. */
-  private walk(project: ProjectConfig): Promise<readonly string[]> {
+  private async walk(project: ProjectConfig): Promise<readonly string[]> {
+    const snapshot = await registeredProjectSnapshot(project)
+    if (snapshot) return Object.keys(snapshot.runs).map((path) => join(project.root, path))
     return projectReadIndex(project.root).walk(project, this.policy.walkRefreshMs, (target) =>
       discoverRuns(target, { includeArchived: true }),
     )
@@ -1016,6 +1164,16 @@ export class FilesystemProjectService implements BackendProjectReadService {
    */
   private async declaredOwner(project: ProjectConfig, dir: string): Promise<string | null> {
     const path = projectRunPath(project.root, dir)
+    const ownerPrefix = /^logs\/(E\d{4})\/(?:V\d{4}|smoke)\//.exec(path)?.[1]
+    if (ownerPrefix) {
+      const snapshot = await registeredProjectSnapshot(project)
+      if (snapshot)
+        return (
+          Object.values(snapshot.experiments).find((entry) =>
+            entry.id.startsWith(`${ownerPrefix}-`),
+          )?.id ?? null
+        )
+    }
     const name = basename(dir)
     const owners: string[] = []
     let legacyTarget: Promise<string | null> | undefined
@@ -1095,6 +1253,9 @@ function safeRunSummary(run: IndexedRun, project: ProjectConfig): BackendRunSumm
     mtime: run.mtime,
     readmeMtime: run.readmeMtime,
     hasReadme: run.hasReadme,
+    recordFormat: run.recordFormat,
+    metadata: run.metadata,
+    recordMtime: run.recordMtime,
     stale: run.stale,
     archived: run.archived,
     deprecated: run.deprecated,
@@ -1105,7 +1266,9 @@ function safeRunSummary(run: IndexedRun, project: ProjectConfig): BackendRunSumm
       status: frontMatter.status,
       createdAt: frontMatter.createdAt,
       updatedAt: frontMatter.updatedAt,
+      startedAt: frontMatter.startedAt,
       finishedAt: frontMatter.finishedAt,
+      scheduler: frontMatter.scheduler,
       experiment: frontMatter.experiment,
       host: frontMatter.host,
       pid: frontMatter.pid,
@@ -1152,7 +1315,10 @@ function runReadmeResource(
   project: ProjectConfig,
   run: Run,
 ): ReturnType<typeof ResourceIdSchema.parse> {
-  return portableReadmeResource(project, join(run.path, 'README.md'))
+  return portableReadmeResource(
+    project,
+    join(run.path, run.recordFormat === 'json' ? 'run.json' : 'README.md'),
+  )
 }
 
 function portableReadmeResource(
@@ -1240,7 +1406,7 @@ async function deprecatedRunIds(
   for (const summary of summaries) {
     if (!summary) continue
     if (summary.eligibilityError !== null) throw new Error(summary.eligibilityError)
-    if (!summary.run.hasReadme || !summary.run.frontMatter.deprecated) continue
+    if (!summary.run.frontMatter.deprecated) continue
     const path = projectRunPath(project.root, summary.run.path)
     if (wanted.has(path)) deprecated.push(path)
     if (wanted.has(basename(summary.run.path))) deprecated.push(basename(summary.run.path))
@@ -1421,14 +1587,14 @@ const RUN_RESULT_ROW_LIMIT = 5_000
  * The Run's `result.csv` as parsed rows for the Run detail (FS v9), or null
  * when the Run has none. A symbolic link or non-file is not followed.
  */
-async function runResult(project: ProjectConfig, runPath: string) {
+async function runResult(project: ProjectConfig, runPath: string, lightweight = false) {
   const path = join(runPath, RESULT_FILE_NAME)
   const stat = await missingOrThrow(fs.lstat(path))
   if (!stat?.isFile()) return null
   const content = await missingOrThrow(fs.readFile(path, 'utf8'))
   if (content === null) return null
   const resource = portableProjectResource(project, path)
-  const parsed = parseResultFile(content, resource)
+  const parsed = parseResultFile(content, resource, { lightweight, metadataPaths: lightweight })
   const rows = parsed.rows.filter((row) => row.path.length > 0)
   return {
     resource,

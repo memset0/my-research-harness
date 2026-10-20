@@ -1,9 +1,11 @@
+import { splitH2Sections } from '../readme/sections.js'
 import type { Experiment, ManagedExperimentSection } from '../types.js'
 import {
   type ExperimentDocumentDiagnostic,
   lintExperimentDocument,
   MANAGED_EXPERIMENT_SECTIONS,
   MANAGED_SECTION_HEADINGS,
+  MANAGED_SECTION_POINTERS,
   type ResultsRenderContext,
   renderExperimentManagedSection,
 } from './documents.js'
@@ -39,6 +41,64 @@ export function buildExperimentDocumentView(
   experiment: Experiment,
   resultsContext?: ResultsRenderContext,
 ): ExperimentDocumentView {
+  if (experiment.documents?.description?.data?.format === 'lightweight') {
+    const diagnostics = lintExperimentDocument(experiment)
+    const sections = (experiment.rawSections ?? []).map((section): ExperimentDisplaySection => {
+      const kind = MANAGED_EXPERIMENT_SECTIONS.find(
+        (kind) =>
+          MANAGED_SECTION_HEADINGS[kind] === section.heading &&
+          section.body.trim() === MANAGED_SECTION_POINTERS[kind],
+      )
+      const sourceExists = kind === 'results' || (kind && experiment.documents?.[kind].exists)
+      if (kind && sourceExists) {
+        const rendered = renderExperimentManagedSection(
+          experiment,
+          kind,
+          kind === 'results' ? resultsContext : undefined,
+        )
+        return {
+          ...section,
+          supported: true,
+          managed: true,
+          pointerValid: true,
+          body: rendered.markdown,
+          rawBody: section.body,
+          source: rendered.source,
+          diagnostics: rendered.diagnostics,
+        }
+      }
+      return {
+        ...section,
+        supported: true,
+        managed: false,
+        pointerValid: null,
+        rawBody: section.body,
+        source: 'readme',
+        diagnostics: [],
+      }
+    })
+    const preamble = splitH2Sections(experiment.body).preamble.trim()
+    if (preamble) {
+      for (const section of sections) section.index += 1
+      sections.unshift({
+        heading: 'Overview',
+        index: 0,
+        occurrence: 1,
+        body: preamble,
+        rawBody: preamble,
+        supported: true,
+        managed: false,
+        pointerValid: null,
+        source: 'readme',
+        diagnostics: [],
+      })
+    }
+    return {
+      sections,
+      diagnostics,
+      readOnly: diagnostics.some((diagnostic) => diagnostic.severity === 'error'),
+    }
+  }
   if (!experiment.rawSections) return buildLegacyProjection(experiment)
   const lintDiagnostics = lintExperimentDocument(experiment)
   const managedByHeading = new Map<string, ManagedExperimentSection>(

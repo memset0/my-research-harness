@@ -86,7 +86,13 @@ describe('memon index status', () => {
     expect(status.present).toBe(false)
     expect(status.snapshot.state).toBe('missing')
     expect(status.runDirs.effective).toEqual({
-      patterns: ['logs/*', 'outputs/*', 'experiments/*'],
+      patterns: [
+        'logs/*',
+        'outputs/*',
+        'experiments/*',
+        'logs/E????/V????/*',
+        'logs/E????/smoke/*',
+      ],
       source: 'default',
     })
     expect(process.exitCode ?? 0).toBe(0)

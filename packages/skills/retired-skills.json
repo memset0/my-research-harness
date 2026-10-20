@@ -68,6 +68,30 @@
     {
       "name": "memon-update-journal",
       "deposit_digests": ["d0c2eeeba19d26c6db972e5f8adc7df0692b14558c6901a609288c3137de2029"]
+    },
+    {
+      "name": "memon-drive",
+      "deposit_digests": ["ad1ea207e8b4382321cdf561a6c6781bcbaa246ac219cdf2149ea8b19d4e6318"]
+    },
+    {
+      "name": "memon-read-results",
+      "deposit_digests": ["03eefc0341d76628670300c70e5383c9157793eb5f4d4ca490d63d2be82c0ab7"]
+    },
+    {
+      "name": "memon-write-experiment-doc",
+      "deposit_digests": ["b77c9abbf21eb53a4ba52fcebdd8da956a1cf05c7104b04b144e278c2df2a35c"]
+    },
+    {
+      "name": "memon-write-script",
+      "deposit_digests": ["a8760bf8ac35a16f0928207e38567956c2fd550bdcc1bc5b268aa3418984921f"]
+    },
+    {
+      "name": "memon-run-experiment",
+      "deposit_digests": ["775ecff1bb75c7ebcb4e828576fb8dc25ee241cffc9f162ddc7bdf6a7e4c7510"]
+    },
+    {
+      "name": "memon-propose",
+      "deposit_digests": ["855267788a4827a4bac9ad56e28e9cfd45753ec9f4463252dedb10b5a2132b7a"]
     }
   ]
 }

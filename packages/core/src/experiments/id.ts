@@ -73,7 +73,7 @@ export async function resolveExperimentId(
     const m = entry.match(EXPERIMENT_DIR_REGEX) ?? entry.match(EXPERIMENT_FILENAME_REGEX)
     if (!m) continue
     const slug = m[2]
-    if (slug === needle) matches.push(`E${m[1]}-${slug}`)
+    if (slug === needle || `E${m[1]}` === needle) matches.push(`E${m[1]}-${slug}`)
   }
   if (matches.length === 1) return matches[0] ?? null
   return null

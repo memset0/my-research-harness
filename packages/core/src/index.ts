@@ -74,7 +74,7 @@ export type { ListFilter, SearchScope } from './discovery/index.js'
 export { matchesRunDeprecationFilter, RunIndex } from './discovery/index.js'
 export type { PollerCallback, PollerOptions } from './discovery/poller.js'
 export { Poller } from './discovery/poller.js'
-export { readRunDir, runFromReadme } from './discovery/read.js'
+export { readRunDir, runFromMetadata, runFromReadme } from './discovery/read.js'
 export {
   DEFAULT_RUN_DIRS,
   matchesRunDirPatterns,
@@ -177,6 +177,7 @@ export {
   assertDocumentLock,
   assertExperimentReadmeWritable,
   buildExperimentBundle,
+  buildLightweightExperimentBundle,
   CANONICAL_EXPERIMENT_BUNDLE_FILES,
   createExperiment,
   deleteExperiment,
@@ -377,6 +378,11 @@ export type {
 } from './log/line-index.js'
 export { DEFAULT_ANCHOR_EVERY, LineIndex } from './log/line-index.js'
 export {
+  applyLightweightMigration,
+  type LightweightMigrationPlan,
+  planLightweightMigration,
+} from './migrations/lightweight.js'
+export {
   type ApplyMembershipMigrationOptions,
   applyMembershipMigration,
   type MembershipMigrationPlan,
@@ -462,6 +468,8 @@ export {
 export * from './release-compatibility.js'
 export * from './release-policy.js'
 export * from './results/index.js'
+export * from './runs/metadata.js'
+export * from './runs/metadata-mutations.js'
 export type {
   RenameRunInput,
   RenameRunResult,

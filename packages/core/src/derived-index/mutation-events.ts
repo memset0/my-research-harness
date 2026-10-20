@@ -11,6 +11,7 @@ import { dirname, join } from '@memon/file-protocol/paths'
 import { RUN_DIR_REGEX, RUN_ROOT_DIRECTORIES } from '../ids.js'
 import { EXPERIMENT_DESCRIPTION_FILE } from '../results/description.js'
 import { RESULT_FILE_NAME } from '../results/result-file.js'
+import { lightweightRunIdentity, RUN_METADATA_FILE } from '../runs/metadata.js'
 import { deriveExperimentEntry, deriveRunEntry, experimentLocation, indexKey } from './entries.js'
 import {
   type AppendIndexEventResult,
@@ -19,7 +20,10 @@ import {
   type IndexEventWarning,
   type IndexSink,
 } from './events.js'
+import { defaultIndexFs } from './fs.js'
+import { resolveIndexPaths } from './paths.js'
 import type { ExperimentIndexEntry, RunIndexEntry } from './schema.js'
+import { parseSnapshot } from './schema.js'
 
 /** The changed file of a write, as the primitives report it. */
 export interface IndexedFileChange {
@@ -41,14 +45,21 @@ const EXPERIMENT_BUNDLE_FILES = new Set([
   'implementation.yaml',
   'investigation.yaml',
   EXPERIMENT_DESCRIPTION_FILE,
+  'results.csv',
 ])
 
 /** Run files an index entry is derived from. */
-const RUN_ENTRY_FILES = new Set(['README.md', RESULT_FILE_NAME])
+const RUN_ENTRY_FILES = new Set(['README.md', RESULT_FILE_NAME, RUN_METADATA_FILE])
 
 type Classified =
   | { kind: 'experiment'; readmePath: string; content?: string }
-  | { kind: 'run'; dir: string; content?: string | null; resultContent?: string | null }
+  | {
+      kind: 'run'
+      dir: string
+      content?: string | null
+      resultContent?: string | null
+      metadataContent?: string | null
+    }
 
 /** Which index entry a changed absolute path belongs to, if any. */
 export function classifyIndexedPath(
@@ -56,7 +67,7 @@ export function classifyIndexedPath(
   path: string,
 ):
   | { kind: 'experiment'; readmePath: string }
-  | { kind: 'run'; dir: string; file: 'README.md' | 'result.csv' }
+  | { kind: 'run'; dir: string; file: 'README.md' | 'result.csv' | 'run.json' }
   | null {
   const key = indexKey(projectRoot, path)
   if (key.startsWith('..') || key.startsWith('/')) return null
@@ -75,12 +86,13 @@ export function classifyIndexedPath(
     segments.length >= 3 &&
     RUN_ENTRY_FILES.has(segments.at(-1)!) &&
     (RUN_ROOT_DIRECTORIES as readonly string[]).includes(segments[0]!) &&
-    RUN_DIR_REGEX.test(segments.at(-2)!)
+    (RUN_DIR_REGEX.test(segments.at(-2)!) ||
+      lightweightRunIdentity(segments.slice(0, -1).join('/')))
   ) {
     return {
       kind: 'run',
       dir: dirname(path),
-      file: segments.at(-1) === 'README.md' ? 'README.md' : 'result.csv',
+      file: segments.at(-1)! as 'README.md' | 'result.csv' | 'run.json',
     }
   }
   return null
@@ -98,8 +110,18 @@ export async function publishMutationEvent(
   extras: MutationIndexExtras = {},
 ): Promise<IndexEventWarning[]> {
   if (!sink) return []
+  let registered = false
   try {
     const root = sink.projectRoot
+    if (sink.publishSnapshot) {
+      const io = sink.fs ?? defaultIndexFs
+      try {
+        const marker = JSON.parse(await io.readFile(join(root, '.memon/version.json'), 'utf8'))
+        registered = marker.fs_convention_version >= 11
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+    }
     const targets = new Map<string, Classified>()
     for (const change of changes) {
       const classified = classifyIndexedPath(root, change.path)
@@ -126,7 +148,8 @@ export async function publishMutationEvent(
         if (classified.file === 'README.md') {
           if (change.after === null) delete next.content
           else next.content = change.after
-        } else next.resultContent = change.after
+        } else if (classified.file === RUN_METADATA_FILE) next.metadataContent = change.after
+        else next.resultContent = change.after
         targets.set(key, next)
       }
     }
@@ -145,6 +168,9 @@ export async function publishMutationEvent(
             projectRoot: root,
             runDir: target.dir,
             ...(target.content === undefined ? {} : { content: target.content }),
+            ...(target.metadataContent === undefined
+              ? {}
+              : { metadataContent: target.metadataContent }),
             ...(target.resultContent === undefined ? {} : { resultContent: target.resultContent }),
             ...(sink.fs ? { fs: sink.fs } : {}),
             ...(now ? { now } : {}),
@@ -191,12 +217,32 @@ export async function publishMutationEvent(
         ...(removedExperiments.size > 0 ? { experiments: [...removedExperiments].sort() } : {}),
       },
     })
-    return result.warnings
+    if (!registered) return result.warnings
+    if (result.warnings.length)
+      return result.warnings.map((warning) => ({ ...warning, incomplete: true }))
+    // A missing/corrupt snapshot needs an explicit rebuild, never a partial
+    // inventory containing only this command's files.
+    const io = sink.fs ?? defaultIndexFs
+    const current = parseSnapshot(
+      JSON.parse(await io.readFile(resolveIndexPaths(root).snapshot, 'utf8')),
+    )
+    if (!current.ok) throw new Error('registered index is invalid; run memon index rebuild')
+    const { compactIndex } = await import('./compact.js')
+    const publication = await compactIndex(root, {
+      role: sink.role,
+      fs: io,
+      now: sink.now,
+      release: sink.release,
+    })
+    if (publication.status !== 'compacted' && publication.status !== 'unchanged')
+      throw new Error(`registered index publication ${publication.status}; run memon index compact`)
+    return []
   } catch (error) {
     return [
       {
         code: INDEX_EVENT_FAILED,
-        message: `derived index event not written: ${(error as Error)?.message ?? String(error)}`,
+        message: `${registered ? 'Files saved, inventory incomplete; run memon index rebuild' : 'derived index event not written'}: ${(error as Error)?.message ?? String(error)}`,
+        ...(registered ? { incomplete: true } : {}),
       },
     ]
   }

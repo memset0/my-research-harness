@@ -14,6 +14,7 @@ import type {
   SummaryColumn,
   SummaryVariant,
 } from './results/summary.js'
+import { RunMetadataSchema } from './runs/metadata.js'
 import { EXPERIMENT_STATUS_VALUES, type ExperimentStatus, VARIANT_STATUS_VALUES } from './types.js'
 
 export const BACKEND_API_MAJOR = 1 as const
@@ -222,7 +223,13 @@ const BackendRunFrontMatterSchema = z
     status: z.string(),
     createdAt: z.string(),
     updatedAt: z.string(),
+    startedAt: z.string().nullable().optional(),
     finishedAt: z.string().nullable(),
+    scheduler: z
+      .object({ system: z.string().optional(), job_id: z.string() })
+      .passthrough()
+      .nullable()
+      .optional(),
     experiment: z.string().nullable(),
     host: z.string().nullable(),
     pid: z.number().int().nullable(),
@@ -247,6 +254,9 @@ export const BackendRunSummarySchema = z
     mtime: z.number().nonnegative(),
     readmeMtime: z.number().nonnegative(),
     hasReadme: z.boolean(),
+    recordFormat: z.enum(['json', 'readme']).optional(),
+    metadata: RunMetadataSchema.optional(),
+    recordMtime: z.number().nonnegative().optional(),
     stale: z.boolean(),
     archived: z.boolean(),
     /** v6: mirrors `frontMatter.deprecated`; excluded from research by default. */
@@ -884,6 +894,8 @@ export const BackendResearchStateSchema = z
 
 export const BackendResultsVariantSchema = z
   .object({
+    draft: z.union([z.string(), z.record(z.unknown())]).optional(),
+    runNotes: z.record(z.string()).optional(),
     id: z.string().min(1).max(256),
     name: z.string().min(1).max(4096),
     description: z.string().max(RESULT_TEXT_MAX).optional(),
@@ -984,6 +996,7 @@ export type BackendResultsSummaryError = z.infer<typeof BackendResultsSummaryErr
 
 export const BackendResultsSummarySchema = z
   .object({
+    format: z.literal('lightweight').optional(),
     research: BackendResearchSchema.optional(),
     historicalResults: z.record(z.string(), z.string()).optional(),
     experimentSchemaVersion: z.number().int().positive().nullable(),
@@ -1208,6 +1221,8 @@ function wireVariant(variant: SummaryVariant): BackendResultsVariant {
   for (const [key, cell] of Object.entries(variant.cells)) cells[key] = wireCell(cell)
   const provenance = wireProvenance(variant.provenance)
   return {
+    ...(variant.draft === undefined ? {} : { draft: variant.draft }),
+    ...(variant.run_notes === undefined ? {} : { runNotes: variant.run_notes }),
     id: variant.id,
     name: variant.name,
     ...(variant.description === undefined ? {} : { description: boundedText(variant.description) }),
@@ -1293,6 +1308,7 @@ export function toBackendResultsSummary(summary: ResultsSummary): BackendResults
   }
   const failed = summary.outcome !== 'ok'
   return {
+    ...(summary.format ? { format: summary.format } : {}),
     ...(summary.research
       ? {
           research: {
@@ -1444,14 +1460,6 @@ const BackendWikiSlugSchema = z
  */
 const BackendWikiTimestampSchema = z.string().max(128)
 
-export const BACKEND_WIKI_REVIEW_STATES = [
-  'VERIFIED',
-  'CHANGED_SINCE_VERIFY',
-  'UNVERIFIED',
-] as const
-export const BackendWikiReviewStateSchema = z.enum(BACKEND_WIKI_REVIEW_STATES)
-export type BackendWikiReviewState = z.infer<typeof BackendWikiReviewStateSchema>
-
 /** One wiki page citing an artifact. */
 export const BackendWikiBacklinkSchema = z
   .object({
@@ -1463,7 +1471,6 @@ export const BackendWikiBacklinkSchema = z
     status: z.string().max(64).nullable(),
     stale: z.boolean(),
     deprecated: z.boolean(),
-    reviewState: BackendWikiReviewStateSchema.nullable(),
     updatedAt: BackendWikiTimestampSchema,
   })
   .strict()
@@ -1713,12 +1720,10 @@ export const BackendReportResponseSchema = BackendReportDocumentSchema
 export const BACKEND_WIKI_ROUTE = '/wiki'
 export const BACKEND_WIKI_PAGE_ROUTE = '/wiki/:id'
 export const BACKEND_WIKI_BACKLINKS_ROUTE = '/wiki/backlinks/:artifact'
-export const BACKEND_WIKI_REVIEW_ROUTE = '/wiki/review'
-export const BACKEND_WIKI_REVIEW_MARK_ROUTE = '/wiki/review/:sha'
 export const BACKEND_WIKI_ASSET_ROUTE = '/wiki-assets/:project/:id/*'
 
 // `BackendWikiIdSchema`, `BackendWikiSlugSchema`, `BackendWikiTimestampSchema`,
-// and the review-state enum are declared beside `BackendWikiBacklinkSchema`
+// are declared beside `BackendWikiBacklinkSchema`
 // above, which the Experiment detail needs.
 const BackendWikiDiagnosticSchema = z
   .object({
@@ -1726,20 +1731,6 @@ const BackendWikiDiagnosticSchema = z
     severity: z.enum(['error', 'warn']),
     message: z.string().max(4096),
     line: z.number().int().positive().optional(),
-  })
-  .strict()
-
-/** Derived per-page verification; `null` when the Project is not a git worktree. */
-const BackendWikiReviewSchema = z
-  .object({
-    state: BackendWikiReviewStateSchema,
-    verifiedThrough: BackendSha1Schema.nullable(),
-    verifiedAt: BackendWikiTimestampSchema.nullable(),
-    unverifiedCommits: z.array(BackendSha1Schema).max(10_000),
-    unverifiedRanges: z
-      .array(z.tuple([z.number().int().positive(), z.number().int().positive()]))
-      .max(10_000),
-    dirty: z.boolean(),
   })
   .strict()
 
@@ -1774,7 +1765,6 @@ export const BackendWikiSummarySchema = z
     deprecatedSections: z.array(z.string().min(1).max(512)).max(1024),
     stale: z.boolean(),
     staleSources: z.array(z.string().min(1).max(512)).max(1024),
-    review: BackendWikiReviewSchema.nullable(),
     format: z.enum(['markdown', 'bundle']),
     mtime: z.number().finite().nonnegative(),
     createdAt: BackendWikiTimestampSchema,
@@ -1810,38 +1800,6 @@ export const BackendWikiInventoryResponseSchema = z
   })
   .strict()
 export type BackendWikiInventoryResponse = z.infer<typeof BackendWikiInventoryResponseSchema>
-
-export const BackendWikiReviewCommitSchema = z
-  .object({
-    sha: BackendSha1Schema,
-    authoredAt: BackendWikiTimestampSchema,
-    subject: z.string().max(1024),
-    pages: z.array(BackendWikiIdSchema).max(10_000),
-    verified: z.boolean(),
-    verifiedAt: BackendWikiTimestampSchema.optional(),
-    note: z.string().max(4096).optional(),
-  })
-  .strict()
-
-/** Wiki commits oldest first; `verifiedThrough` is the newest sequential mark. */
-export const BackendWikiReviewResponseSchema = z
-  .object({
-    verifiedThrough: BackendSha1Schema.nullable(),
-    commits: z.array(BackendWikiReviewCommitSchema).max(100_000),
-  })
-  .strict()
-
-/** Out-of-order verification; `nextSha` is the oldest markable wiki commit. */
-export const BackendWikiReviewOrderResponseSchema = z
-  .object({
-    error: z.object({ code: z.literal('REVIEW_ORDER'), message: z.string().max(256) }).strict(),
-    nextSha: BackendSha1Schema.nullable(),
-  })
-  .strict()
-
-export const BackendWikiReviewMarkRequestSchema = z
-  .object({ note: z.string().max(4096).optional() })
-  .strict()
 
 export const BackendCodeReviewCompletionSchema = z
   .object({
@@ -2757,7 +2715,6 @@ export const BACKEND_EVENT_TOPICS = [
   'code-reviews-change',
   'reports-change',
   'wiki-change',
-  'wiki-review-change',
 ] as const
 
 export const BackendEventTopicSchema = z.enum(BACKEND_EVENT_TOPICS)

@@ -123,20 +123,6 @@ describe('authorizeCentralServerRequest', () => {
     expect(mutation).toMatchObject({ ok: false, status: 403 })
   })
 
-  it('returns 403 to a valid viewer on shell-class wiki review writes', async () => {
-    const shareValidator = validator()
-    const result = await authorizeCentralServerRequest({
-      request: incoming('/api/wiki/review/next?host=host-a&project=project-x', 'POST', {
-        cookie: `${SHARES_COOKIE_NAME}=${viewerCookie()}`,
-      }),
-      route: resolveCentralApiRoute('/api/wiki/review/next'),
-      shareValidator,
-      runtimeAuth,
-    })
-    expect(result).toMatchObject({ ok: false, status: 403 })
-    expect(shareValidator.validate).toHaveBeenCalledOnce()
-  })
-
   it('returns 401 for invalid credentials and 429 before credential work when exhausted', async () => {
     const unauthorized = await authorizeCentralServerRequest({
       request: incoming('/api/runs?host=host-a&project=project-x'),

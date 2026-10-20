@@ -104,7 +104,7 @@ export function registerExperimentResultsCommands(
   results
     .command('rebuild [id-or-slug]')
     .description(
-      'regenerate Results summaries under .memon/index/results/ (one Experiment, or every one with --all)',
+      'write lightweight results.csv or rebuild a legacy Results summary (one Experiment, or --all)',
     )
     .option('--all', 'rebuild the summary of every Experiment', false)
     .action(async (idOrSlug: string | undefined, opts: { all?: boolean }) => {
@@ -148,7 +148,7 @@ export function registerExperimentResultsCommands(
     )
 
   const schema = experiment
-    .command('schema')
+    .command('schema', { hidden: true })
     .description('Experiment result-schema commands: upgrade <id> --to <N> [--apply]')
   schema
     .command('upgrade <id-or-slug>')

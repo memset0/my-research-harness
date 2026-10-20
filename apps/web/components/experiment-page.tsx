@@ -43,8 +43,10 @@ import { ExperimentWikiCitations } from './experiment-wiki-citations'
 import { LogViewer } from './log-viewer'
 import { ManualRefreshButton } from './manual-refresh-button'
 import { Markdown } from './markdown'
+import { RunRecordNotes } from './run-record-notes'
 import { RunResultTree } from './run-result-tree'
 import { StatusEdit } from './status-edit'
+import { StatusPill } from './status-pill'
 import { TimestampLocal } from './timestamp'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
@@ -96,6 +98,23 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
   const documentSections: ExperimentDisplaySection[] =
     exp.documentSections ?? legacyDocumentSections(exp)
   const resultsSections = documentSections.filter((section) => section.heading === 'Results')
+  if (
+    exp.documents?.results?.summary?.format === 'lightweight' &&
+    !resultsSections.some((section) => section.managed)
+  ) {
+    resultsSections.unshift({
+      index: -1,
+      heading: 'Results',
+      occurrence: 1,
+      body: '',
+      rawBody: '',
+      source: 'yaml',
+      managed: true,
+      supported: true,
+      pointerValid: true,
+      diagnostics: [],
+    })
+  }
   const nonResultsSections = documentSections.filter((section) => section.heading !== 'Results')
   const inlineDiagnosticKeys = new Set(
     documentSections.flatMap((section) => section.diagnostics.map(diagnosticKey)),
@@ -578,7 +597,6 @@ function RunPanel({
 
 function RunBody({
   project,
-  experimentId,
   runId,
 }: {
   project: ProjectTarget
@@ -630,22 +648,26 @@ function RunBody({
     >
       {/* Action stripe */}
       <div className="flex flex-wrap items-center gap-2 border-t p-3">
-        <EditMarkdownButton path={run.path} target={{ kind: 'run', id: runId, project }} />
+        {run.recordFormat !== 'json' && (
+          <EditMarkdownButton path={run.path} target={{ kind: 'run', id: runId, project }} />
+        )}
         <ManualRefreshButton
           label="Reload this run from disk"
           queryKeys={[queryKeys.run(project, runId), queryKeys.runFiles(project, runId)]}
         />
-        {run.frontMatter.deprecated && (
+        {run.recordFormat !== 'json' && run.frontMatter.deprecated && (
           <Badge variant="outline">deprecated — excluded from research</Badge>
         )}
-        {run.hasReadme ? (
+        {run.recordFormat === 'json' ? (
+          <StatusPill status={run.frontMatter.status} stale={run.stale} />
+        ) : run.hasReadme ? (
           <>
             <StatusEdit
               project={project}
               id={runId}
               status={run.frontMatter.status}
               stale={run.stale}
-              expectedMtime={run.readmeMtime}
+              expectedMtime={run.recordMtime ?? run.readmeMtime}
             />
             <ArchiveToggle
               project={project}
@@ -653,12 +675,12 @@ function RunBody({
               id={runId}
               archived={run.frontMatter.archived}
               runStatus={run.frontMatter.status}
-              expectedMtime={run.readmeMtime}
+              expectedMtime={run.recordMtime ?? run.readmeMtime}
             />
           </>
         ) : (
           <Badge variant="outline" className="text-[10px]">
-            no README
+            execution record missing
           </Badge>
         )}
         {run.parseErrors.length > 0 && (
@@ -685,8 +707,13 @@ function RunBody({
             {run.body}
           </Markdown>
         )}
+        <RunRecordNotes
+          metadata={run.metadata}
+          project={project}
+          documentPath={runSourceDocumentPath}
+        />
         {run.result && <RunResultTree result={run.result} />}
-        {run.hasReadme && (run.resource || run.path) && (
+        {(run.hasReadme || run.recordFormat === 'json') && (run.resource || run.path) && (
           <LogViewer project={project} runResource={run.resource} expPath={run.path} />
         )}
         {files?.tree.children && files.tree.children.length > 0 && (
@@ -717,6 +744,17 @@ function RunFrontmatterStripe({ run, project }: { run: FullExperiment; project: 
       <FmField label="finished">
         <TimestampLocal value={fm.finishedAt} variant="long" />
       </FmField>
+      {fm.startedAt && (
+        <FmField label="started">
+          <TimestampLocal value={fm.startedAt} variant="long" />
+        </FmField>
+      )}
+      {fm.scheduler && (
+        <FmField
+          label="scheduler job"
+          value={`${fm.scheduler.system ?? ''} ${fm.scheduler.job_id}`.trim()}
+        />
+      )}
       <FmField label="host" value={fm.host ?? '—'} />
       <FmField label="pid" value={fm.pid !== null ? String(fm.pid) : '—'} />
       <FmField label="gpus" value={fm.gpus.length > 0 ? fm.gpus.join(', ') : '—'} />

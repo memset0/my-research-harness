@@ -11,7 +11,7 @@ import { BodyTranslation } from './body-translation'
 
 import type { WikiDiagnostic } from '@memon/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, History, List, PanelLeftClose, PanelLeftOpen, Pencil, X } from 'lucide-react'
+import { ChevronDown, List, PanelLeftClose, PanelLeftOpen, Pencil, X } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -22,7 +22,6 @@ import {
   type ProjectTarget,
   projectHost,
   projectName,
-  projectQueryKey,
   projectWebPath,
   putWikiPage,
   type WikiListItem,
@@ -71,11 +70,9 @@ import {
   WikiDeprecatedBadge,
   WikiKindBadge,
   WikiPageCard,
-  WikiReviewBadge,
   WikiStaleIndicator,
   WikiStatusBadge,
 } from './wiki-page-card'
-import { WikiChangesDialog, WikiReviewPanel } from './wiki-review-panel'
 
 const WIKI_RAIL_PREFERENCE_KEY = 'memon:wiki:rail-open'
 const WIKI_TIMESTAMP_KEYS = ['created_at', 'updated_at', 'date'] as const
@@ -443,9 +440,7 @@ function WikiSelectedPane({
   onShowRail?: () => void
 }) {
   const [editing, setEditing] = useState(false)
-  const [historyOpen, setHistoryOpen] = useState(false)
   const [widthLimited, setWidthLimited] = useState(true)
-  const isOwner = useIsOwner()
   const notFound = (error as (Error & { status?: number }) | null)?.status === 404
 
   if (isLoading && !page) {
@@ -478,7 +473,6 @@ function WikiSelectedPane({
   const outline = extractMarkdownOutline(splitFrontmatter(page.content).body, {
     headingIdPrefix: `wiki-${page.id}`,
   })
-  const showHistory = isOwner && page.review !== null
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -510,12 +504,6 @@ function WikiSelectedPane({
           >
             {widthLimited ? '800px' : 'Full width'}
           </Button>
-          {showHistory && (
-            <Button size="sm" variant="outline" onClick={() => setHistoryOpen(true)}>
-              <History className="size-3.5" />
-              History
-            </Button>
-          )}
           <Button
             size="sm"
             variant={editing ? 'secondary' : 'outline'}
@@ -576,10 +564,6 @@ function WikiSelectedPane({
             <WikiEditor project={project} page={page} onClose={() => setEditing(false)} />
           </SheetContent>
         </Sheet>
-      )}
-
-      {showHistory && (
-        <WikiReviewPanel project={project} open={historyOpen} onOpenChange={setHistoryOpen} />
       )}
     </div>
   )
@@ -699,23 +683,11 @@ export function WikiDocumentView({
   widthLimited?: boolean
 }) {
   const { frontmatter, body } = useMemo(() => splitFrontmatter(page.content), [page.content])
-  // `unverifiedRanges` and checklist edits are file lines; the body starts
-  // after the frontmatter block, so tell both where its line 1 lands.
+  // Checklist edits use source-file lines, including the frontmatter block.
   const bodyStartLine = useMemo(
     () => page.content.slice(0, page.content.length - body.length).split('\n').length,
     [body, page.content],
   )
-  const unverified = useMemo(() => {
-    if (!page.review || page.review.state !== 'CHANGED_SINCE_VERIFY') return undefined
-    return {
-      ranges: page.review.unverifiedRanges,
-      lineOffset: bodyStartLine,
-      title: page.review.dirty
-        ? 'changed since verification (uncommitted)'
-        : `changed since verification (${page.review.unverifiedCommits.map((sha) => sha.slice(0, 8)).join(', ') || 'later commits'})`,
-    }
-  }, [bodyStartLine, page.review])
-  const wholeBodyUnverified = page.review?.state === 'UNVERIFIED'
   const checklistWrite = useWikiChecklistWrite(project, page, bodyStartLine)
   const componentDocumentPath = page.resource ?? page.path
   const componentDocument = componentDocumentPath
@@ -760,15 +732,12 @@ export function WikiDocumentView({
 
       {frontmatter && <FrontmatterPanel data={frontmatter} timestampKeys={WIKI_TIMESTAMP_KEYS} />}
 
-      <WikiReviewSummary project={project} page={page} />
       <WikiDiagnosticsBlock diagnostics={page.diagnostics} />
 
       <div
         className={cn('mx-auto w-full', widthLimited && 'max-w-[800px]')}
         data-wiki-document-body=""
         lang={page.language === 'zh' ? 'zh-CN' : 'en'}
-        title={wholeBodyUnverified ? 'no line of this page is verified' : undefined}
-        data-wiki-unverified-body={wholeBodyUnverified ? '' : undefined}
       >
         <BodyTranslation
           document={{
@@ -787,7 +756,6 @@ export function WikiDocumentView({
                 resourceBaseUrl={
                   page.format === 'bundle' ? wikiResourceBaseUrl(project, page.id) : undefined
                 }
-                unverified={unverified}
                 headingIdPrefix={`wiki-${page.id}`}
                 document={componentDocument}
               >
@@ -855,47 +823,6 @@ function useWikiChecklistWrite(
       },
     }),
     [isOwner, mutation],
-  )
-}
-
-function WikiReviewSummary({ project, page }: { project: ProjectTarget; page: WikiPageDetail }) {
-  const [open, setOpen] = useState(false)
-  if (!page.review) return null
-  const { review } = page
-  return (
-    <div
-      className="mb-4 flex flex-wrap items-center gap-2 text-xs"
-      data-wiki-review-summary=""
-      data-review-state={review.state}
-    >
-      <WikiReviewBadge state={review.state} verifiedAt={review.verifiedAt} />
-      <span className="text-muted-foreground">verified through</span>
-      <span className="font-mono">
-        {review.verifiedThrough ? review.verifiedThrough.slice(0, 8) : '—'}
-      </span>
-      {review.state !== 'VERIFIED' && review.verifiedThrough && (
-        <>
-          <Button
-            type="button"
-            variant="link"
-            size="sm"
-            className="h-auto p-0 text-xs"
-            onClick={() => setOpen(true)}
-          >
-            changes since verification
-          </Button>
-          <WikiChangesDialog
-            project={project}
-            pageId={page.id}
-            pagePath={page.path ?? page.resource ?? ''}
-            review={review}
-            open={open}
-            onOpenChange={setOpen}
-          />
-        </>
-      )}
-      {review.dirty && <span className="text-muted-foreground">(uncommitted edits)</span>}
-    </div>
   )
 }
 
@@ -1074,4 +1001,4 @@ function WikiMobileRail({
   )
 }
 
-export { WikiDeprecatedBadge, WikiKindBadge, WikiReviewBadge, WikiStaleIndicator, WikiStatusBadge }
+export { WikiDeprecatedBadge, WikiKindBadge, WikiStaleIndicator, WikiStatusBadge }

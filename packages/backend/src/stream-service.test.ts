@@ -183,3 +183,12 @@ describe('FilesystemStreamService', () => {
     expect(Buffer.concat(bChunks).toString()).toBe('{"project":"b"}')
   })
 })
+
+it('lists native logs beside a JSON execution record without a README', async () => {
+  const directory = join(rootA, 'logs', 'E0001', 'V0001', 'trial')
+  await fs.mkdir(directory, { recursive: true })
+  await fs.writeFile(join(directory, 'run.json'), '{}')
+  await fs.writeFile(join(directory, 'train.log'), 'started\n')
+  const result = await service.listLogFiles('project-a', 'logs/E0001/V0001/trial/run.json')
+  expect(result.files.map((file) => file.resource)).toEqual(['logs/E0001/V0001/trial/train.log'])
+})

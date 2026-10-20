@@ -5,8 +5,6 @@ import {
   JournalRecordingError,
   type JournalRecordingFailure,
   ShareNotFoundError,
-  WikiReviewError,
-  WikiReviewOrderError,
 } from '@memon/core'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BACKEND_ACTOR_CONTEXT_HEADER, BackendActorContextError } from './actor-context.js'
@@ -117,8 +115,6 @@ describe('toHttpError: one status per error class', () => {
     ['stream ambiguous', new BackendStreamServiceError('AMBIGUOUS_RESOURCE', 'x'), 409, 'CONFLICT'],
     ['stream missing', new BackendStreamServiceError('RESOURCE_NOT_FOUND', 'x'), 404, 'NOT_FOUND'],
     ['stream deadline', new BackendStreamDeadlineError('x'), 504, 'UNAVAILABLE'],
-    ['review order', new WikiReviewOrderError('a'.repeat(40)), 409, 'CONFLICT'],
-    ['review unavailable', new WikiReviewError('NOT_A_REPOSITORY' as never, 'x'), 404, 'NOT_FOUND'],
     ['share missing', new ShareNotFoundError('x'), 404, 'NOT_FOUND'],
     ['share ambiguous', new AmbiguousShareError('x', []), 409, 'CONFLICT'],
   ]
@@ -130,11 +126,7 @@ describe('toHttpError: one status per error class', () => {
     expect(toHttpError(new Error('boom'))).toBeNull()
   })
 
-  it('keeps the review-order and conflict bodies', () => {
-    expect(toHttpError(new WikiReviewOrderError('a'.repeat(40)))?.body).toMatchObject({
-      error: { code: 'REVIEW_ORDER' },
-      nextSha: 'a'.repeat(40),
-    })
+  it('keeps conflict bodies', () => {
     expect(
       toHttpError(
         new BackendMutationError('CONFLICT', 'changed', {

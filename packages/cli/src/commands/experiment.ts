@@ -11,6 +11,8 @@ import {
   formatIsoLocal,
   nodeMutationFs,
   RunTargetIndex,
+  readDocumentState,
+  readRunDir,
   STATUS_VALUES,
   type Status,
   setRunArchiveState,
@@ -21,6 +23,7 @@ import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { runWalkOptions } from '../lib/discovery-options.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { cliIndexSink, indexWarningFields } from '../lib/index-sink.js'
+import { publishLightweightWrite } from '../lib/lightweight-publication.js'
 import { cliMutation } from '../lib/mutation-error.js'
 import { emitJson } from '../lib/output.js'
 
@@ -43,7 +46,8 @@ async function resolveRun(
   if (!runDir) {
     emitErrorAndExit('NOT_FOUND', `experiment "${runId}" not found in ${projectRoot}`)
   }
-  return { runDir, readmePath: join(runDir, 'README.md'), projectRoot }
+  const record = await readRunDir(runDir, '(project-root)')
+  return { runDir, readmePath: record.recordPath ?? join(runDir, 'README.md'), projectRoot }
 }
 
 function journalPath(projectRoot: string): string {
@@ -62,7 +66,8 @@ export interface StatusSetInput {
   cwd: string
   runId: string
   to: string
-  expectedMtime: number
+  expectedMtime?: number
+  expectedHash?: string
 }
 
 export async function runStatusSet(input: StatusSetInput): Promise<void> {
@@ -70,6 +75,7 @@ export async function runStatusSet(input: StatusSetInput): Promise<void> {
     emitErrorAndExit('BAD_REQUEST', `--to must be one of: ${STATUS_VALUES.join(', ')}`)
   }
   const { readmePath, projectRoot } = await resolveRun(input, input.runId)
+  const state = await readDocumentState(nodeMutationFs, readmePath)
   const result = await cliMutation(
     () =>
       setRunStatus({
@@ -77,7 +83,10 @@ export async function runStatusSet(input: StatusSetInput): Promise<void> {
         index: cliIndexSink(projectRoot),
         readmePath,
         status: input.to as Status,
-        lock: { expectedMtime: input.expectedMtime },
+        lock: {
+          expectedMtime: input.expectedMtime ?? state.mtime,
+          expectedHash: input.expectedHash ?? state.hash,
+        },
       }),
     (error) =>
       error.code === 'NOT_FOUND'
@@ -88,6 +97,11 @@ export async function runStatusSet(input: StatusSetInput): Promise<void> {
             ? { details: { id: input.runId } }
             : undefined,
   )
+
+  if (readmePath.endsWith('/run.json')) {
+    const runPath = readmePath.slice(projectRoot.length + 1, -'/run.json'.length)
+    result.indexWarnings = await publishLightweightWrite(projectRoot, runPath, result.changes)
+  }
 
   // Idempotent: on-disk already at the requested status (even with a stale
   // lock) is a noop success.

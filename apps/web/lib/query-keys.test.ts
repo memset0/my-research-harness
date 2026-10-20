@@ -30,7 +30,6 @@ describe('queryKeys', () => {
         "fileAccess",
         "gitBranches",
         "gitCommit",
-        "gitCommitAtRoot",
         "gitDiff",
         "gitLog",
         "gitRange",
@@ -57,7 +56,6 @@ describe('queryKeys', () => {
         "wikiBacklinks",
         "wikiInventory",
         "wikiPage",
-        "wikiReview",
       ]
     `)
   })
@@ -441,22 +439,6 @@ describe('queryKeys', () => {
     `)
   })
 
-  it('wikiReview', () => {
-    expect(queryKeys.wikiReview(STANDALONE)).toMatchInlineSnapshot(`
-      [
-        "wiki-review",
-        "project-a",
-      ]
-    `)
-    expect(queryKeys.wikiReview(HOSTED)).toMatchInlineSnapshot(`
-      [
-        "wiki-review",
-        "host-a",
-        "project-a",
-      ]
-    `)
-  })
-
   it('wikiBacklinks', () => {
     expect(queryKeys.wikiBacklinks(STANDALONE, 'E0001-alpha')).toMatchInlineSnapshot(`
       [
@@ -638,24 +620,6 @@ describe('queryKeys', () => {
         "host-a",
         "project-a",
         "",
-        "abc123",
-      ]
-    `)
-  })
-
-  it('gitCommitAtRoot', () => {
-    expect(queryKeys.gitCommitAtRoot(STANDALONE, 'abc123')).toMatchInlineSnapshot(`
-      [
-        "git-commit",
-        "project-a",
-        "abc123",
-      ]
-    `)
-    expect(queryKeys.gitCommitAtRoot(HOSTED, 'abc123')).toMatchInlineSnapshot(`
-      [
-        "git-commit",
-        "host-a",
-        "project-a",
         "abc123",
       ]
     `)

@@ -31,7 +31,6 @@ export function renderWikiKindGuidance(registry: WikiKindRegistry): string {
       `- Recommended H2s (warning only; also used by create): ${kind.policy.recommendedHeadings.join(', ') || 'none; free-form'}.`,
       '- Required H2s: none.',
       `- Body evidence warning: ${kind.policy.bodyEvidenceWarning ? 'yes' : 'no'}.`,
-      `- Human-review warning at status: ${kind.policy.reviewWarningStatus ?? 'none'}.`,
       `- Related kinds: ${kind.relatedKinds.join(', ') || 'none'}.`,
       '',
     )

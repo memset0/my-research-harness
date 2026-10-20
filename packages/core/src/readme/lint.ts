@@ -33,6 +33,14 @@ const ISO_OFFSET = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}
  * warnings/infos, then the structural checks in frontmatter key order.
  */
 export function lintRun(run: Run): RunLintDiagnostic[] {
+  if (run.recordFormat === 'json')
+    return run.parseErrors.map((issue) => ({
+      code: 'RUN_METADATA_INVALID',
+      severity: issue.severity,
+      file: 'run.json',
+      ...(issue.field ? { field: issue.field } : {}),
+      message: issue.message,
+    }))
   const diagnostics: RunLintDiagnostic[] = run.parseErrors.map((issue) =>
     fromParseIssue(issue, 'error'),
   )

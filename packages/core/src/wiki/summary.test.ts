@@ -70,7 +70,6 @@ function summary(overrides: Partial<WikiSummary>): WikiSummary {
     deprecatedSections: [],
     stale: false,
     staleSources: [],
-    review: null,
     format: 'markdown',
     path: 'docs/wiki/note/W0001-alpha.md',
     mtime: 0,
@@ -127,7 +126,6 @@ deprecated:
       sources: ['E0001'],
       deprecatedSections: ['Old approach'],
       stale: false,
-      review: null,
       updatedAt: '2026-05-04T10:00:00+08:00',
     })
     expect(result.deprecated?.superseded_by).toBe('W0006')
@@ -304,7 +302,6 @@ Notes.
         status: 'TENTATIVE',
         stale: true,
         deprecated: false,
-        reviewState: null,
         updatedAt: '2026-09-01T10:00:00+08:00',
       },
     ])

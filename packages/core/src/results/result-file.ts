@@ -78,7 +78,7 @@ export interface ParsedResultFile {
 
 // ---------- CSV tokenizer ----------
 
-interface CsvRecord {
+export interface CsvRecord {
   line: number
   start: number
   end: number
@@ -87,15 +87,15 @@ interface CsvRecord {
   problem: string | null
 }
 
-interface Tokens {
+export interface CsvTokens {
   records: CsvRecord[]
   eol: '\n' | '\r\n' | null
   fatal: { line: number; message: string } | null
 }
 
-function tokenize(text: string, from: number): Tokens {
+export function tokenizeResultCsv(text: string, from = 0): CsvTokens {
   const records: CsvRecord[] = []
-  let eol: Tokens['eol'] = null
+  let eol: CsvTokens['eol'] = null
   let index = from
   let line = 1
   while (index < text.length) {
@@ -307,6 +307,7 @@ function pairKey(path: string, stat: string): string {
 export function parseResultFile(
   content: string,
   file: string = RESULT_FILE_NAME,
+  options: { lightweight?: boolean; metadataPaths?: boolean } = {},
 ): ParsedResultFile {
   const bom = content.charCodeAt(0) === 0xfeff
   const diagnostics: ResultsDiagnostic[] = []
@@ -324,7 +325,7 @@ export function parseResultFile(
     duplicates: [],
     diagnostics,
   }
-  const tokens = tokenize(content, bom ? 1 : 0)
+  const tokens = tokenizeResultCsv(content, bom ? 1 : 0)
   if (tokens.eol) parsed.eol = tokens.eol
   if (tokens.fatal) {
     diagnostics.push(
@@ -464,7 +465,9 @@ export function parseResultFile(
       continue
     }
     sawValueRow = true
-    const pathError = resultPathError(path)
+    const pathError = resultPathError(
+      options.metadataPaths && path.startsWith('run.') ? `env.${path.slice(4)}` : path,
+    )
     if (pathError !== null) {
       row.valid = false
       diagnostics.push(
@@ -500,7 +503,7 @@ export function parseResultFile(
     }
     parsed.rows.push(row)
   }
-  if (!reservedSeen.has(RESULT_SCHEMA_VERSION_PATH))
+  if (!options.lightweight && !reservedSeen.has(RESULT_SCHEMA_VERSION_PATH))
     diagnostics.push(
       resultsDiagnostic(
         'RESULT_SCHEMA_VERSION_MISSING',
@@ -796,6 +799,7 @@ export interface ResultPair {
 }
 
 export interface ResultFileEdit {
+  lightweight?: boolean
   /** The version a created file records, and the one an existing file must record. */
   schemaVersion: number
   set?: readonly ResultFileRowInput[]
@@ -833,7 +837,9 @@ export function editResultFileContent(
   if (content === null) {
     const rows = [...sets.values()]
     return {
-      content: serializeResultFile(edit.schemaVersion, rows),
+      content: edit.lightweight
+        ? `path,stat,value\n${rows.map((row) => `${formatResultRecord(row.path, row.stat ?? '', row.value)}\n`).join('')}`
+        : serializeResultFile(edit.schemaVersion, rows),
       created: true,
       changed: true,
       replaced: 0,
@@ -841,13 +847,16 @@ export function editResultFileContent(
       removed: 0,
     }
   }
-  const parsed = parseResultFile(content)
+  const parsed = parseResultFile(content, RESULT_FILE_NAME, {
+    lightweight: edit.lightweight,
+    metadataPaths: edit.lightweight,
+  })
   if (!parsed.ok)
     throw new ResultFileEditError(
       'RESULT_FILE_INVALID',
       `the result file is not a readable result table: ${parsed.diagnostics.map((item) => item.message).join('; ')}`,
     )
-  if (parsed.schemaVersion !== edit.schemaVersion)
+  if (!edit.lightweight && parsed.schemaVersion !== edit.schemaVersion)
     throw new ResultFileEditError(
       'RESULT_SCHEMA_MISMATCH',
       `the result file records experiment_schema_version ${parsed.schemaVersion ?? 'none'}, the Experiment is at ${edit.schemaVersion}`,

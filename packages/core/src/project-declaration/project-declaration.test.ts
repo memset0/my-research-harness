@@ -109,7 +109,16 @@ describe('effective run_dirs precedence', () => {
   })
 
   it('falls back to the FS v8 default (also for a schema-only declaration)', async () => {
-    const fallback = { patterns: ['logs/*', 'outputs/*', 'experiments/*'], source: 'default' }
+    const fallback = {
+      patterns: [
+        'logs/*',
+        'outputs/*',
+        'experiments/*',
+        'logs/E????/V????/*',
+        'logs/E????/smoke/*',
+      ],
+      source: 'default',
+    }
     expect(await resolveEffectiveRunDirs({ root })).toEqual(fallback)
     await declare('schema_version: 1\n')
     expect(await resolveEffectiveRunDirs({ root })).toEqual(fallback)

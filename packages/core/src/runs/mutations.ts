@@ -39,6 +39,8 @@ function renameDescription(raw: string, previousPath: string, nextPath: string) 
 
 import { formatIsoLocal, parseSlugFromRunDir } from '../time.js'
 import type { Status } from '../types.js'
+import { parseRunMetadata } from './metadata.js'
+import { updateRunMetadata } from './metadata-mutations.js'
 
 function timestamp(base: MutationBase): string {
   return formatIsoLocal((base.now ?? (() => new Date()))())
@@ -88,6 +90,39 @@ export interface RunStatusResult extends ToggleResult {
  */
 export async function setRunStatus(input: RunStatusInput): Promise<RunStatusResult> {
   const state = await readDocumentState(input.fs, input.readmePath)
+  if (input.readmePath.endsWith('/run.json')) {
+    const metadata = parseRunMetadata(state.content).data
+    if (!metadata) throw new MutationError('BAD_STATE', 'Invalid run.json')
+    if (metadata.status === input.status)
+      return {
+        changed: false,
+        ...state,
+        changes: [],
+        prevStatus: metadata.status,
+        nextStatus: metadata.status,
+        archived: metadata.archived ?? false,
+      }
+    const result = await updateRunMetadata({
+      ...input,
+      path: input.readmePath,
+      patch: { status: input.status },
+      lock: {
+        expectedMtime: input.lock?.expectedMtime ?? state.mtime,
+        expectedHash: input.lock?.expectedHash ?? state.hash,
+      },
+    })
+    return {
+      ...result,
+      prevStatus: metadata.status,
+      nextStatus: input.status,
+      archived: metadata.archived ?? false,
+    }
+  }
+  if (['READY', 'QUEUED', 'RESUME_READY'].includes(input.status))
+    throw new MutationError(
+      'BAD_REQUEST',
+      'This state requires a lightweight run.json record; migrate explicitly first',
+    )
   const doc = parseReadme(state.content)
   const prevStatus = doc.frontMatter.status
   const archived = doc.frontMatter.archived
@@ -153,6 +188,11 @@ export interface RunArchiveResult extends ToggleResult {
  */
 export async function setRunArchiveState(input: RunArchiveInput): Promise<RunArchiveResult> {
   const state = await readDocumentState(input.fs, input.readmePath)
+  if (input.readmePath.endsWith('/run.json'))
+    throw new MutationError(
+      'BAD_REQUEST',
+      'Lightweight Runs use active selection; use run update --active false instead of an archive flag',
+    )
   const doc = parseReadme(state.content)
   const prevArchived = doc.frontMatter.archived
   const prevStatus = doc.frontMatter.status
@@ -228,6 +268,11 @@ export function canonicalRunSansUpdatedAt(content: string): string {
  * no-op; `archived: true` with `status: RUNNING` is refused.
  */
 export async function writeRunReadme(input: RunReadmeInput): Promise<RunReadmeResult> {
+  if (input.readmePath.endsWith('/run.json'))
+    throw new MutationError(
+      'BAD_REQUEST',
+      'run.json is execution metadata, not a README; use the Run metadata update command',
+    )
   let state: DocumentState
   try {
     state = await readDocumentState(input.fs, input.readmePath)
@@ -321,6 +366,15 @@ export interface RenameRunResult extends IndexWarnings {
  */
 export async function renameRun(input: RenameRunInput): Promise<RenameRunResult> {
   const { fs, projectRoot, projectName, newSlug } = input
+  try {
+    await fs.stat(join(input.runDir, 'run.json'))
+    throw new MutationError(
+      'BAD_REQUEST',
+      'JSON Run identity is stable; create a new attempt or change the Variant name instead',
+    )
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
   if (!SLUG_REGEX.test(newSlug)) {
     throw new MutationError('BAD_REQUEST', `new slug "${newSlug}" must match ${SLUG_REGEX}`, {
       reason: 'INVALID_SLUG',

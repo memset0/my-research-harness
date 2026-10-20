@@ -138,7 +138,8 @@ export function isRunPath(value: string): boolean {
     !/[\\\0]/.test(value) &&
     !/%(?:2f|5c)/i.test(value) &&
     parts.every((part) => part !== '' && part !== '.' && part !== '..') &&
-    RUN_DIR_REGEX.test(parts.at(-1)!)
+    (RUN_DIR_REGEX.test(parts.at(-1)!) ||
+      /^logs\/E\d{4}\/(?:V\d{4}|smoke)\/[^/.][^/]*$/.test(value))
   )
 }
 

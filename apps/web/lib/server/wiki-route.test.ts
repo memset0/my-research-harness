@@ -41,7 +41,6 @@ function summary(diagnostics: WikiSummary['diagnostics'] = []): WikiSummary {
     deprecatedSections: [],
     stale: false,
     staleSources: [],
-    review: null,
     format: 'markdown',
     path: 'docs/wiki/note/W0004-note.md',
     mtime: 1,

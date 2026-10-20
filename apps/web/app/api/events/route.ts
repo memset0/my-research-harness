@@ -35,7 +35,6 @@ const STANDALONE_TOPICS = [
   'anomaly',
   'code-reviews-change',
   'wiki-change',
-  'wiki-review-change',
 ] as const
 type StandaloneTopic = (typeof STANDALONE_TOPICS)[number]
 
@@ -46,8 +45,7 @@ function eventProject(topic: StandaloneTopic, evt: unknown): string | null {
     topic === 'anomaly' ||
     topic === 'code-reviews-change' ||
     topic === 'journal-change' ||
-    topic === 'wiki-change' ||
-    topic === 'wiki-review-change'
+    topic === 'wiki-change'
   ) {
     return typeof e.project === 'string' ? e.project : null
   }

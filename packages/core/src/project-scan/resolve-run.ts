@@ -16,6 +16,7 @@
 
 import { existsSync, statSync } from 'node:fs'
 import { basename, resolve } from '@memon/file-protocol/paths'
+import { registeredSnapshot } from '../derived-index/registered.js'
 import { discoverRuns } from '../discovery/discover.js'
 import { readRunDir } from '../discovery/read.js'
 import {
@@ -91,13 +92,16 @@ export class RunTargetIndex {
     if (!Number.isSafeInteger(readConcurrency) || readConcurrency <= 0) {
       throw new Error('readConcurrency must be a positive safe integer')
     }
-    const paths = await discoverRuns({
-      name: options.projectName ?? '(project-root)',
-      root: abs,
-      include: options.include ?? [],
-      exclude: options.exclude ?? [],
-      ...(options.runDirs === undefined ? {} : { runDirs: options.runDirs }),
-    })
+    const registered = await registeredSnapshot(abs)
+    const paths = registered
+      ? Object.keys(registered.runs).map((path) => resolve(abs, path))
+      : await discoverRuns({
+          name: options.projectName ?? '(project-root)',
+          root: abs,
+          include: options.include ?? [],
+          exclude: options.exclude ?? [],
+          ...(options.runDirs === undefined ? {} : { runDirs: options.runDirs }),
+        })
     const dirsById = new Map<string, string[]>()
     for (const path of paths) {
       const id = basename(path)

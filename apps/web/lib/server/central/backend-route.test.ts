@@ -86,3 +86,23 @@ describe('mapCentralApiToBackend', () => {
     })
   })
 })
+
+it('routes contained directory-qualified Run identities without allowing arbitrary separators', () => {
+  for (const run of [
+    'logs/E0001/V0001/trial',
+    'logs/E0001/smoke/check',
+    'logs/legacy-260901-120000',
+  ]) {
+    for (const suffix of ['', '/files', '/status']) {
+      const path = `/api/runs/${encodeURIComponent(run)}${suffix}`
+      expect(
+        mapCentralApiToBackend(suffix === '/status' ? 'PATCH' : 'GET', path).backendPath,
+      ).toContain(encodeURIComponent(run))
+    }
+  }
+  for (const path of ['logs/E0001/V0001/../secret', '/etc/passwd', 'docs/wiki/note/page.md'])
+    expectRouteError(
+      () => mapCentralApiToBackend('GET', `/api/runs/${encodeURIComponent(path)}`),
+      'INVALID_PATH',
+    )
+})

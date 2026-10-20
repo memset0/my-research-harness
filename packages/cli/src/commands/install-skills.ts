@@ -29,6 +29,7 @@ import {
   type FsVersionStatus,
   formatIsoLocal,
   readFsVersion,
+  rebuildIndex,
   writeFsVersion,
 } from '@memon/core'
 import { emitErrorAndExit } from '../lib/emit-error.js'
@@ -530,6 +531,14 @@ async function preflightAndMaybeWriteMarker(
 
   if (status === 'uninitialised' && !dryRun) {
     const installedAt = formatIsoLocal(new Date())
+    if (available >= 11) {
+      const registration = await rebuildIndex(projectRoot, { role: 'cli' })
+      if (registration.status !== 'rebuilt')
+        emitErrorAndExit(
+          'CONFLICT',
+          'Index initialization incomplete; run memon index rebuild and retry',
+        )
+    }
     await writeFsVersion(projectRoot, {
       fs_convention_version: available,
       installed_at: installedAt,

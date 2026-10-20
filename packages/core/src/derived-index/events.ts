@@ -22,6 +22,8 @@ export const INDEX_EVENT_FAILED = 'INDEX_EVENT_FAILED'
 export interface IndexEventWarning {
   code: typeof INDEX_EVENT_FAILED
   message: string
+  /** Primary files were written, but a registered inventory was not published. */
+  incomplete?: boolean
 }
 
 /**
@@ -38,6 +40,8 @@ export interface IndexSink {
   now?: () => Date
   /** Release recorded as `writer.release` (defaults to `MEMON_RELEASE`). */
   release?: string
+  /** Source-side writers publish FS11 snapshots before reporting success. */
+  publishSnapshot?: boolean
 }
 
 export type IndexEventBody = Pick<IndexEvent, 'upserts' | 'removals'>

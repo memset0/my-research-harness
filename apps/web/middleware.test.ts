@@ -121,7 +121,6 @@ describe('middleware', () => {
         'DELETE',
         'http://localhost/api/experiment-results-views/view-a?project=project-a&experiment=E0001-demo',
       ],
-      ['POST', 'http://localhost/api/wiki/review/next?project=project-a'],
     ] as const
 
     for (const [method, url] of requests) {

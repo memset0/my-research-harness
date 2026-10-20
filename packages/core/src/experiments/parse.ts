@@ -311,6 +311,7 @@ export function buildExperimentRecord(
     documents?: ExperimentManagedDocuments | null
   },
 ): Experiment {
+  const lightweight = meta.documents?.description?.data?.format === 'lightweight'
   return {
     id: meta.id,
     project: meta.project,
@@ -319,13 +320,22 @@ export function buildExperimentRecord(
     readmeMtime: meta.readmeMtime ?? meta.mtime,
     frontMatter: parsed.frontMatter,
     sections: parsed.sections,
-    rawSections: parsed.rawSections,
+    rawSections: lightweight
+      ? parsed.rawSections.map((section) => ({
+          ...section,
+          supported: true,
+          managed: false,
+          pointerValid: null,
+        }))
+      : parsed.rawSections,
     documents: meta.documents ?? null,
     warnings: parsed.warnings,
     warningsRaw: parsed.warningsRaw,
     body: parsed.body,
     parseErrors: parsed.parseErrors,
-    parseWarnings: parsed.parseWarnings,
+    parseWarnings: lightweight
+      ? parsed.parseWarnings.filter((issue) => !issue.field?.startsWith('section.'))
+      : parsed.parseWarnings,
   }
 }
 

@@ -12,6 +12,7 @@
 import { basename, join } from '@memon/file-protocol/paths'
 import { projectFs as fs } from '../project-file-store.js'
 import { parseReadme } from '../readme/parse.js'
+import { lightweightRunIdentity, parseRunMetadata, RUN_METADATA_FILE } from '../runs/metadata.js'
 import { parseTimestampFromRunDir } from '../time.js'
 import type { ParsedReadme, Run } from '../types.js'
 
@@ -22,6 +23,21 @@ export async function readRunDir(dirPath: string, projectName: string): Promise<
   const dirStat = await fs.stat(dirPath)
   let mtime = dirStat.mtimeMs
   let readmeMtime = 0
+
+  try {
+    const path = join(dirPath, RUN_METADATA_FILE)
+    const stat = await fs.stat(path)
+    if (!stat.isFile()) return runFromMetadata(dirPath, projectName, '', mtime, stat.mtimeMs)
+    return runFromMetadata(
+      dirPath,
+      projectName,
+      await fs.readFile(path, 'utf8'),
+      mtime,
+      stat.mtimeMs,
+    )
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
 
   let hasReadme = false
   let parsed: ParsedReadme
@@ -36,6 +52,12 @@ export async function readRunDir(dirPath: string, projectName: string): Promise<
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       parsed = synthesizeFromDirname(id, projectName)
+      if (lightweightRunIdentity(dirPath.split('/').slice(-4).join('/'))) {
+        parsed.frontMatter.createdAt = ''
+        parsed.frontMatter.updatedAt = ''
+        parsed.parseWarnings = []
+        parsed.parseErrors = [{ message: 'no run.json execution record', severity: 'error' }]
+      }
     } else {
       throw err
     }
@@ -70,6 +92,15 @@ export async function readRunDir(dirPath: string, projectName: string): Promise<
     mtime,
     readmeMtime,
     hasReadme,
+    recordFormat:
+      !hasReadme && lightweightRunIdentity(dirPath.split('/').slice(-4).join('/'))
+        ? 'json'
+        : 'readme',
+    recordPath:
+      !hasReadme && lightweightRunIdentity(dirPath.split('/').slice(-4).join('/'))
+        ? join(dirPath, RUN_METADATA_FILE)
+        : readmePath,
+    recordMtime: readmeMtime,
     frontMatter: parsed.frontMatter,
     sections: parsed.sections,
     warnings: parsed.warnings,
@@ -110,6 +141,9 @@ export function runFromReadme(
     mtime: Math.max(dirMtime, readmeMtime),
     readmeMtime,
     hasReadme: true,
+    recordFormat: 'readme',
+    recordPath: join(dirPath, 'README.md'),
+    recordMtime: readmeMtime,
     frontMatter: parsed.frontMatter,
     sections: parsed.sections,
     warnings: parsed.warnings,
@@ -118,6 +152,63 @@ export function runFromReadme(
     parseErrors: parsed.parseErrors,
     parseWarnings: parsed.parseWarnings,
     frontMatterKeys: parsed.frontMatterKeys,
+  }
+}
+
+/** JSON records keep the shared display shape, without pretending to contain Markdown. */
+export function runFromMetadata(
+  dirPath: string,
+  projectName: string,
+  content: string,
+  dirMtime: number,
+  metadataMtime: number,
+): Run {
+  const id = basename(dirPath)
+  const { data, issues } = parseRunMetadata(content)
+  const empty = synthesizeFromDirname(id, projectName)
+  const fm = empty.frontMatter
+  // No directory-name or filesystem-time inference for the new record format.
+  fm.createdAt = data?.created_at ?? ''
+  fm.updatedAt = data?.updated_at ?? fm.createdAt
+  fm.name = data?.name ?? id
+  fm.id = data?.id ?? id
+  fm.status = data?.status ?? 'UNKNOWN'
+  fm.startedAt = data?.started_at ?? null
+  fm.finishedAt = data?.finished_at ?? null
+  fm.host = data?.host ?? null
+  fm.pid = data?.pid ?? null
+  fm.gpus = data?.gpus ?? []
+  fm.entry = data?.entry ?? ''
+  fm.command = data?.command ?? ''
+  fm.wandb = data?.wandb ?? null
+  fm.scheduler = data?.scheduler ?? null
+  fm.archived = data?.archived ?? false
+  fm.deprecated = data?.active === undefined ? (data?.deprecated ?? false) : !data.active
+  if (data && data.id !== id)
+    issues.push({
+      field: 'id',
+      message: 'Run id does not match directory basename',
+      severity: 'error',
+    })
+  return {
+    id: fm.id,
+    project: projectName,
+    path: dirPath,
+    mtime: Math.max(dirMtime, metadataMtime),
+    readmeMtime: 0,
+    hasReadme: false,
+    recordFormat: 'json',
+    recordPath: join(dirPath, RUN_METADATA_FILE),
+    recordMtime: metadataMtime,
+    ...(data ? { metadata: data } : {}),
+    frontMatter: fm,
+    sections: empty.sections,
+    warnings: [],
+    warningsRaw: null,
+    body: '',
+    parseErrors: issues,
+    parseWarnings: [],
+    frontMatterKeys: [...Object.keys(data ?? {}), 'archived'],
   }
 }
 

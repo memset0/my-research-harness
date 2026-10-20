@@ -22,6 +22,8 @@ import {
 } from '../experiments/mutations.js'
 import { declaredRunOwner, projectRunPath } from '../experiments/run-path.js'
 import { projectFs as nodeFs } from '../project-file-store.js'
+import { parseRunMetadata, serializeRunMetadata } from '../runs/metadata.js'
+import { formatIsoLocal } from '../time.js'
 import { EXPERIMENT_DESCRIPTION_FILE, parseExperimentDescription } from './description.js'
 import type { ResultsDiagnostic } from './diagnostics.js'
 import { type CheckIgnore, resolveRunRealPath, resultFileIgnoredWarning } from './ignore.js'
@@ -30,6 +32,7 @@ import {
   editResultFileContent,
   encodeResultValue,
   interpretResultText,
+  parseResultFile,
   parseResultNumber,
   RESULT_FILE_NAME,
   ResultFileEditError,
@@ -70,7 +73,7 @@ export interface WriteRunResultResult extends IndexWarnings {
   file: string
   /** Declaring Experiment. */
   owner: string
-  experimentSchemaVersion: number
+  experimentSchemaVersion: number | null
   created: boolean
   changed: boolean
   /** sha256 of the content now on disk. */
@@ -292,7 +295,12 @@ export async function writeRunResult(input: WriteRunResultInput): Promise<WriteR
   }
   let edit: ReturnType<typeof editResultFileContent>
   try {
-    edit = editResultFileContent(before, { schemaVersion: version, set: rows, unset })
+    edit = editResultFileContent(before, {
+      schemaVersion: version,
+      lightweight: description.format === 'lightweight',
+      set: rows,
+      unset,
+    })
   } catch (error) {
     if (!(error instanceof ResultFileEditError)) throw error
     if (error.code === 'RESULT_SCHEMA_MISMATCH') {
@@ -321,7 +329,7 @@ export async function writeRunResult(input: WriteRunResultInput): Promise<WriteR
   const result: WriteRunResultResult = {
     file,
     owner,
-    experimentSchemaVersion: version,
+    experimentSchemaVersion: description.format === 'lightweight' ? null : version,
     created: false,
     changed: false,
     hash: before === null ? resultContentHash('') : resultContentHash(before),
@@ -335,6 +343,33 @@ export async function writeRunResult(input: WriteRunResultInput): Promise<WriteR
   if (!edit.changed || (before === null && rows.length === 0)) return result
   await replaceDocumentAtomic(fs, path, edit.content)
   const changes: FileChange[] = [{ path, before, after: edit.content }]
+  if (
+    description.format === 'lightweight' &&
+    [...(input.set ?? []), ...(input.unset ?? [])].some((row) => row.path.startsWith('params.'))
+  ) {
+    const metadataPath = join(input.runDir, 'run.json')
+    const metadataBefore = await fs.readFile(metadataPath, 'utf8')
+    const metadata = parseRunMetadata(metadataBefore).data
+    if (!metadata)
+      throw new MutationError(
+        'BAD_STATE',
+        'Result saved but parameter export requires a valid run.json',
+      )
+    const parsed = parseResultFile(edit.content, file, { lightweight: true, metadataPaths: true })
+    metadata.params = Object.fromEntries(
+      parsed.rows
+        .filter((row) => row.path.startsWith('params.') && !row.stat)
+        .map((row) => {
+          const column = description.columns.find((item) => item.path === row.path)
+          const value = interpretResultText(row.value, column?.type ?? 'string', column?.options)
+          return [row.path.slice(7), value.ok ? value.value : row.value]
+        }),
+    )
+    metadata.updated_at = formatIsoLocal((input.now ?? (() => new Date()))())
+    const after = serializeRunMetadata(metadata)
+    await replaceDocumentAtomic(fs, metadataPath, after)
+    changes.push({ path: metadataPath, before: metadataBefore, after })
+  }
   const warnings: ResultsDiagnostic[] = []
   if (edit.created && input.checkIgnore !== false) {
     const ignored = await resultFileIgnoredWarning({

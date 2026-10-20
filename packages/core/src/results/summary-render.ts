@@ -159,9 +159,7 @@ export function renderResultsSummaryMarkdown(
     'Variant',
     'Status',
     ...columns.map(columnHeader),
-    'Entry',
-    'Recipe',
-    'Commit',
+    ...(summary.format === 'lightweight' ? [] : ['Entry', 'Recipe', 'Commit']),
     'Runs',
     'Other Runs',
   ]
@@ -176,9 +174,13 @@ export function renderResultsSummaryMarkdown(
       ...columns.map(
         (column) => escapeTable(formatSummaryCell(variant.cells[column.path], column)) || '—',
       ),
-      provenanceCell(variant, 'entry'),
-      provenanceCell(variant, 'recipe'),
-      provenanceCell(variant, 'commit'),
+      ...(summary.format === 'lightweight'
+        ? []
+        : [
+            provenanceCell(variant, 'entry'),
+            provenanceCell(variant, 'recipe'),
+            provenanceCell(variant, 'commit'),
+          ]),
       variant.evidence.length > 0
         ? variant.evidence.map((run) => runReference(run, context)).join('<br>')
         : '—',
@@ -226,7 +228,9 @@ export function renderResultsSummaryDigestMarkdown(summary: ResultsSummary): str
     0,
   )
   lines.push(
-    `- Experiment schema version: ${summary.experiment_schema_version ?? '—'}`,
+    ...(summary.format === 'lightweight'
+      ? []
+      : [`- Experiment schema version: ${summary.experiment_schema_version ?? '—'}`]),
     `- Variants: ${summary.variants.length}`,
     `- Columns: ${summary.columns.length} (${declared} declared)`,
     `- Groups: ${Object.keys(summary.groups).length}`,

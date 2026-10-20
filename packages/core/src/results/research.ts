@@ -36,6 +36,11 @@ export interface ResearchMutationResult extends DocumentState {
 }
 
 function requireResearch(description: ExperimentDescription) {
+  if (description.format === 'lightweight')
+    throw new MutationError(
+      'BAD_STATE',
+      'Lightweight Experiments have no research versions; create a new Experiment when the research basis changes',
+    )
   if (!description.research)
     throw new MutationError(
       'BAD_STATE',
@@ -54,6 +59,8 @@ export function initializeExperimentResearch(
   now: string | Date,
   reason: string,
 ): ExperimentDescription {
+  if (description.format === 'lightweight')
+    throw new MutationError('BAD_STATE', 'Lightweight Experiments do not use research versions')
   if (description.research)
     throw new MutationError('BAD_STATE', 'Experiment already has research versions')
   if (new Set(description.variants.map((v) => v.id)).size !== description.variants.length)

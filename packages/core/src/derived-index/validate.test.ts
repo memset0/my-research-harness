@@ -153,7 +153,16 @@ describe('verifyIndex', () => {
         kind: 'walk',
         key: 'run_dirs',
         field: 'run_dirs',
-        indexed: { patterns: ['logs/*', 'outputs/*', 'experiments/*'], source: 'default' },
+        indexed: {
+          patterns: [
+            'logs/*',
+            'outputs/*',
+            'experiments/*',
+            'logs/E????/V????/*',
+            'logs/E????/smoke/*',
+          ],
+          source: 'default',
+        },
         disk: { patterns: ['outputs/*/*'], source: 'project' },
       },
     ])

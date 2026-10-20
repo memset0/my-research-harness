@@ -56,8 +56,6 @@ export const BACKEND_REPORT_ASSET_ROUTE = `${BACKEND_API_PREFIX}/report-assets/[
 export const BACKEND_WIKI_ROUTE = `${BACKEND_API_PREFIX}/wiki`
 export const BACKEND_WIKI_PAGE_ROUTE = `${BACKEND_API_PREFIX}/wiki/[id]`
 export const BACKEND_WIKI_BACKLINKS_ROUTE = `${BACKEND_API_PREFIX}/wiki/backlinks/[artifact]`
-export const BACKEND_WIKI_REVIEW_ROUTE = `${BACKEND_API_PREFIX}/wiki/review`
-export const BACKEND_WIKI_REVIEW_MARK_ROUTE = `${BACKEND_API_PREFIX}/wiki/review/[sha]`
 export const BACKEND_WIKI_ASSET_ROUTE = `${BACKEND_API_PREFIX}/wiki-assets/[project]/[id]/[...path]`
 
 export const MAX_BACKEND_CONTROL_JSON_BYTES = 1024 * 1024

@@ -139,7 +139,7 @@ export function CommitMarkEditor({
       <div className="flex flex-wrap items-center gap-2">
         <span
           className="text-muted-foreground"
-          title="Superseded by wiki review; kept for compatibility."
+          title="Legacy commit marks, kept for compatibility."
         >
           mark (deprecated):
         </span>

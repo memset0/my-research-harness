@@ -36,7 +36,6 @@ import {
   type WikiFrontmatter,
   type WikiPageFormat,
   type WikiProjectDiagnostic,
-  type WikiReview,
 } from './types.js'
 
 const H2_REGEX = /^ {0,3}##\s+(.+?)\s*#*\s*$/
@@ -89,8 +88,6 @@ export interface WikiLintContext {
   inventory?: WikiArtifactInventory
   /** `sources` entries `resolveWikiSources` could not resolve. */
   unresolvedSources?: readonly string[]
-  /** Derived review; `undefined`/`null` skips `WIKI_UNREVIEWED_VERIFIED`. */
-  review?: WikiReview | null
   /**
    * Component type names to check for an unpinned declaration. Central passes
    * its live registry; everyone else gets the generated `COMPONENT_TYPES`.
@@ -148,7 +145,7 @@ export function lintWikiPage(page: WikiLintPage, ctx: WikiLintContext = {}): Wik
     })
   }
 
-  lintEvidence(page, masked, frontmatter, ctx, diagnostics, offset)
+  lintEvidence(page, masked, diagnostics, offset)
   lintComponents(page, ctx, diagnostics, offset)
   lintLinks(page, masked, ctx, diagnostics, offset)
 
@@ -504,8 +501,6 @@ function lintMaintenanceRules(
 function lintEvidence(
   page: WikiLintPage,
   masked: string,
-  frontmatter: WikiFrontmatter | null,
-  ctx: WikiLintContext,
   diagnostics: WikiDiagnostic[],
   offset: number,
 ): void {
@@ -521,19 +516,6 @@ function lintEvidence(
       severity: 'warn',
       message: `${page.kind} body cites no Experiment, Variant, or run identifier; point the prose at the evidence, not only \`sources\``,
       line: offset + 1,
-    })
-  }
-  const review = ctx.review
-  if (
-    review &&
-    policy.reviewWarningStatus &&
-    frontmatter?.status === policy.reviewWarningStatus &&
-    review.state !== 'VERIFIED'
-  ) {
-    diagnostics.push({
-      code: 'WIKI_UNREVIEWED_VERIFIED',
-      severity: 'warn',
-      message: `${page.kind} is \`status: ${policy.reviewWarningStatus}\` but its review state is ${review.state}`,
     })
   }
 }

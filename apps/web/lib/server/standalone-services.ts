@@ -236,7 +236,7 @@ function scopeService<T extends object>(config: Config, service: T, kind: string
           (kind === 'mutations' && key !== 'listWarnings' && key !== 'getExperimentResearch') ||
           /^(put|patch|mark|unmark|set|delete)/.test(String(key)) ||
           (kind === 'shares' && ['add', 'revoke'].includes(String(key)))
-        const control = kind === 'shares' || /WikiReview$/.test(String(key))
+        const control = kind === 'shares'
         const run = <R>(work: () => Promise<R>) =>
           withStandaloneProject(config, name, work, write, control)
         if (kind === 'streaming' && key === 'streamLog') {

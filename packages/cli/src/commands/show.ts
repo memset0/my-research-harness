@@ -4,6 +4,7 @@
 // — that's the most useful thing for a person reading on the command line.
 // In `json` mode we emit a structured `{ frontMatter, body, sections }`.
 
+import { serializeRunMetadata } from '@memon/core'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { buildIndex } from '../lib/index-builder.js'
 import { emitHuman, emitJson, type OutputFormat } from '../lib/output.js'
@@ -26,6 +27,10 @@ export async function runShow(opts: ShowOptions): Promise<void> {
   if (!exp) emitErrorAndExit('NOT_FOUND', `experiment "${opts.id}" not found`)
 
   if (opts.format === 'human') {
+    if (exp.recordFormat === 'json' && exp.metadata) {
+      emitHuman(serializeRunMetadata(exp.metadata).trimEnd())
+      return
+    }
     if (!exp.hasReadme) {
       emitHuman(`(no README.md at ${exp.path})`)
       return
@@ -43,6 +48,10 @@ export async function runShow(opts: ShowOptions): Promise<void> {
     path: exp.path,
     mtime: exp.mtime,
     hasReadme: exp.hasReadme,
+    recordFormat: exp.recordFormat,
+    recordPath: exp.recordPath,
+    recordMtime: exp.recordMtime,
+    metadata: exp.metadata,
     frontMatter: exp.frontMatter,
     sections: exp.sections,
     body: exp.body,

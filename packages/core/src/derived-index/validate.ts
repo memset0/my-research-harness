@@ -86,6 +86,7 @@ async function currentFingerprints(
       [run.readme_fp, await takeFingerprint(join(absolute, 'README.md'), fs)],
       [run.dir_fp, await takeFingerprint(absolute, fs)],
       [run.result_fp, await takeFingerprint(join(absolute, RESULT_FILE_NAME), fs)],
+      [run.metadata_fp ?? null, await takeFingerprint(join(absolute, 'run.json'), fs)],
     ]
   }
   if (kind === 'experiments') {
@@ -98,6 +99,7 @@ async function currentFingerprints(
           [experiment.bundle_fp.implementation, 'implementation.yaml'],
           [experiment.bundle_fp.investigation, 'investigation.yaml'],
           [experiment.bundle_fp.description, EXPERIMENT_DESCRIPTION_FILE],
+          [experiment.bundle_fp.results ?? null, 'results.csv'],
         ] as const
       ).map(
         async ([fingerprint, name]) =>

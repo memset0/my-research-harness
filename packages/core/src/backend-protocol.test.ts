@@ -33,7 +33,6 @@ import {
   BackendWikiBacklinksResponseSchema,
   BackendWikiDocumentSchema,
   BackendWikiPagesResponseSchema,
-  BackendWikiReviewResponseSchema,
   CentralEventSchema,
   HostAvailabilitySchema,
   HostAvailabilityStateSchema,
@@ -773,14 +772,6 @@ describe('shared Backend actor, event, and error schemas', () => {
       deprecatedSections: [],
       stale: true,
       staleSources: ['E0017/V3'],
-      review: {
-        state: 'CHANGED_SINCE_VERIFY',
-        verifiedThrough: 'a'.repeat(40),
-        verifiedAt: '2026-08-26T15:00:00+08:00',
-        unverifiedCommits: ['b'.repeat(40)],
-        unverifiedRanges: [[12, 18]],
-        dirty: true,
-      },
       format: 'markdown',
       mtime: 1,
       createdAt: '2026-08-20T09:00:00+08:00',
@@ -817,7 +808,7 @@ describe('shared Backend actor, event, and error schemas', () => {
     // Unknown kind directories stay readable; the mismatch is a diagnostic.
     expect(
       BackendWikiPagesResponseSchema.safeParse({
-        pages: [{ ...summary, kind: 'retro', review: null }],
+        pages: [{ ...summary, kind: 'retro' }],
       }).success,
     ).toBe(true)
 
@@ -833,7 +824,6 @@ describe('shared Backend actor, event, and error schemas', () => {
             status: summary.status,
             stale: summary.stale,
             deprecated: false,
-            reviewState: summary.review.state,
             updatedAt: summary.updatedAt,
           },
         ],
@@ -853,48 +843,8 @@ describe('shared Backend actor, event, and error schemas', () => {
     ).toBe(true)
   })
 
-  it('reports wiki review as an ordered commit log with a verified prefix', () => {
-    const log = {
-      verifiedThrough: 'a'.repeat(40),
-      commits: [
-        {
-          sha: 'a'.repeat(40),
-          authoredAt: '2026-08-20T09:00:00+08:00',
-          subject: 'wiki: record attention finding',
-          pages: ['W0004'],
-          verified: true,
-          verifiedAt: '2026-08-26T15:00:00+08:00',
-          note: 'checked against E0017',
-        },
-        {
-          sha: 'b'.repeat(40),
-          authoredAt: '2026-08-26T18:00:00+08:00',
-          subject: 'wiki: revise tail analysis',
-          pages: ['W0004', 'W0009'],
-          verified: false,
-        },
-      ],
-    }
-    expect(BackendWikiReviewResponseSchema.parse(log)).toEqual(log)
-    expect(BackendWikiReviewResponseSchema.parse({ ...log, verifiedThrough: null })).toMatchObject({
-      verifiedThrough: null,
-    })
-    expect(
-      BackendWikiReviewResponseSchema.safeParse({
-        verifiedThrough: 'abc1234',
-        commits: [],
-      }).success,
-    ).toBe(false)
-    expect(
-      BackendWikiReviewResponseSchema.safeParse({
-        verifiedThrough: null,
-        commits: [{ ...log.commits[1], pages: ['R0004'] }],
-      }).success,
-    ).toBe(false)
-  })
-
   it('accepts wiki event topics on Backend frames', () => {
-    for (const topic of ['wiki-change', 'wiki-review-change']) {
+    for (const topic of ['wiki-change']) {
       expect(
         BackendEventFrameSchema.parse({
           kind: 'event',

@@ -22,13 +22,16 @@ import {
   type BackendResultsSummaryError,
   EXPERIMENT_DESCRIPTION_FILE,
   EXPERIMENT_DIR_REGEX,
+  EXPERIMENT_RESULTS_FILE,
   type Experiment,
   formatIsoLocal,
+  generateLightweightResultsSummary,
   generateResultsSummary,
   generateResultsSummaryFromDisk,
   type IndexRole,
   isResultsSummaryFresh,
   isRunPath,
+  lightweightPublicationErrorPath,
   MEMON_RELEASE,
   missingExperimentDescription,
   type PersistedFingerprint,
@@ -46,9 +49,12 @@ import {
   writeResultsSummary,
 } from '@memon/core'
 import { join } from '@memon/file-protocol/paths'
+import { resolveContained } from './containment.js'
+import { runSummaryFromEntry } from './derived-index-mirror.js'
 import { indexedDeclaredRun, type RunSummary, runSummaryKey } from './indexed-runs.js'
 import { withAutomaticProjectFileContext } from './project-file-context.js'
 import { projectReadIndex, statObservation } from './read-index.js'
+import { registeredProjectSnapshot } from './registered-index.js'
 
 /** Re-take (0) or reuse member fingerprints within the detail's member window. */
 export type MemberWindow = number | ((summary: RunSummary | null) => number)
@@ -75,7 +81,14 @@ export function declaredRunLookup(project: ProjectConfig, window: MemberWindow):
   return (run) => {
     let pending = memo.get(run)
     if (!pending) {
-      pending = indexedDeclaredRun(project, run, window)
+      pending = (async () => {
+        const snapshot = await registeredProjectSnapshot(project)
+        if (snapshot) {
+          const entry = snapshot.runs[run]
+          return entry ? runSummaryFromEntry(project, join(project.root, run), entry) : null
+        }
+        return indexedDeclaredRun(project, run, window)
+      })()
       memo.set(run, pending)
     }
     return pending
@@ -354,6 +367,60 @@ export async function experimentResultsSummary(
   experiment: Experiment,
   options: ExperimentResultsSummaryOptions,
 ): Promise<ExperimentResultsSummary> {
+  const lightweight = experiment.documents?.description
+  if (lightweight?.data?.format === 'lightweight') {
+    const experimentDir = `docs/experiments/${experiment.id}`
+    const path = await resolveContained(
+      project.root,
+      join(project.root, experimentDir, EXPERIMENT_RESULTS_FILE),
+      { allowMissing: true },
+    )
+    const resultsCsv = path
+      ? await projectReadIndex(project.root).file(
+          path,
+          'lightweight-results-csv',
+          0,
+          (content) => content,
+        )
+      : null
+    const snapshot = await registeredProjectSnapshot(project)
+    const runRecords = Object.fromEntries(
+      Object.entries(snapshot?.runs ?? {}).map(([key, entry]) => [
+        key,
+        {
+          status: entry.status,
+          deprecated: entry.deprecated,
+          stop_reason: null,
+          ...entry.row,
+          name: entry.row.name === entry.row.id ? undefined : entry.row.name,
+        },
+      ]),
+    )
+    const errorPath = await resolveContained(
+      project.root,
+      join(project.root, lightweightPublicationErrorPath(experiment.id)),
+      { allowMissing: true },
+    )
+    const publicationError = errorPath
+      ? await projectReadIndex(project.root).file(
+          errorPath,
+          'lightweight-publication-error',
+          0,
+          (content) => content,
+        )
+      : null
+    const summary = generateLightweightResultsSummary({
+      experimentId: experiment.id,
+      experimentDir,
+      description: lightweight,
+      resultsCsv,
+      publicationError,
+      generatedAt: formatIsoLocal(new Date()),
+      generator: { release: MEMON_RELEASE, role: options.role },
+      runRecords,
+    })
+    return { summary, warnings: [], cache: 'hit' }
+  }
   const set = resultsInputSet(experiment)
   if (!set)
     return { summary: bundleLessSummary(experiment, options.role), warnings: [], cache: 'hit' }

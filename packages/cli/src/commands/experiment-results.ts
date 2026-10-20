@@ -14,16 +14,20 @@
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import {
+  aggregateLightweightExperiment,
   assertDocumentLock,
   EXPERIMENT_DESCRIPTION_FILE,
+  EXPERIMENT_RESULTS_FILE,
   EXPERIMENTS_RELDIR,
   type IndexEventWarning,
   LEGACY_RESULTS_FILE,
   type LoadedResultsSummary,
+  listExperimentIds,
   loadResultsSummary,
   nodeMutationFs,
   type ParsedExperimentDescription,
   parseExperimentDescription,
+  parseSnapshot,
   projectResultsTable,
   publishMutationEvent,
   type ResultsDiagnostic,
@@ -36,6 +40,7 @@ import {
   resolveExperimentId,
   resultsShapeFromDescription,
   type SummaryColumn,
+  serializeLightweightSummaryResults,
   upsertDescriptionColumnAnnotation,
   writeFileAtomic,
 } from '@memon/core'
@@ -150,10 +155,36 @@ async function loadSummary(
     emitErrorAndExit('BAD_REQUEST', '--research-version must be a positive integer')
   const loaded = await loadResultsSummary(projectRoot, id, {
     role: 'cli',
+    runRecords: await indexedRunRecords(projectRoot),
     ...(researchVersion === undefined ? {} : { researchVersion }),
   })
   if (!loaded) emitErrorAndExit('NOT_FOUND', `experiment "${id}" not found`)
   return loaded
+}
+
+async function indexedRunRecords(projectRoot: string) {
+  const raw = await fs
+    .readFile(join(projectRoot, '.memon/index/snapshot.json'), 'utf8')
+    .catch(() => null)
+  if (raw === null) return undefined
+  try {
+    const snapshot = parseSnapshot(JSON.parse(raw))
+    if (!snapshot.ok) return undefined
+    return Object.fromEntries(
+      Object.entries(snapshot.value.runs).map(([path, run]) => [
+        path,
+        {
+          status: run.status,
+          deprecated: run.deprecated,
+          stop_reason: null,
+          ...run.row,
+          name: run.row.name === run.row.id ? undefined : run.row.name,
+        },
+      ]),
+    )
+  } catch {
+    return undefined
+  }
 }
 
 // ---------- results table ----------
@@ -235,6 +266,30 @@ export async function runExperimentResults(input: ExperimentResultsInput): Promi
       process.stdout.write(renderMarkdownResultsTable(table, summary))
       return
     case 'csv':
+      if (summary.format === 'lightweight') {
+        if (!variants.length && !statuses.length && !columns.length && group === 'all') {
+          process.stdout.write(
+            await fs
+              .readFile(join(projectRoot, EXPERIMENTS_RELDIR, id, EXPERIMENT_RESULTS_FILE), 'utf8')
+              .catch((error) => {
+                if ((error as NodeJS.ErrnoException).code === 'ENOENT')
+                  return 'variant,path,stat,value\n'
+                throw error
+              }),
+          )
+        } else {
+          const ids = new Set(table.rows.map((row) => row.variantId))
+          const paths = new Set(table.columns.map((column) => column.path))
+          process.stdout.write(
+            serializeLightweightSummaryResults({
+              ...summary,
+              columns: summary.columns.filter((column) => paths.has(column.path)),
+              variants: summary.variants.filter((variant) => ids.has(variant.id)),
+            }),
+          )
+        }
+        return
+      }
       process.stdout.write(renderCsvResultsTable(table))
       return
     default:
@@ -465,10 +520,37 @@ export async function runExperimentResultsRebuild(
     if (!id) emitErrorAndExit('NOT_FOUND', `experiment "${input.idOrSlug}" not found`)
     experiments = [id]
   }
-  const rebuilt = await rebuildResultsSummaries(projectRoot, {
-    role: 'cli',
-    ...(experiments ? { experiments } : {}),
-  })
+  const rebuilt: Awaited<ReturnType<typeof rebuildResultsSummaries>> = []
+  let conflict = false
+  for (const id of experiments ?? (await listExperimentIds(projectRoot))) {
+    const description = await readDescription(projectRoot, id)
+    if (description?.data?.format !== 'lightweight') {
+      rebuilt.push(
+        ...(await rebuildResultsSummaries(projectRoot, { role: 'cli', experiments: [id] })),
+      )
+      continue
+    }
+    try {
+      const result = await aggregateLightweightExperiment({ projectRoot, experimentId: id })
+      const event = await publishMutationEvent(cliIndexSink(projectRoot), 'experiment.results', [
+        { path: result.path, after: result.content },
+      ])
+      indexWarningFields({ indexWarnings: event })
+      rebuilt.push({ id, status: result.changed ? 'regenerated' : 'unchanged', warnings: [] })
+    } catch (error) {
+      conflict ||= (error as { code?: string }).code === 'CONFLICT'
+      rebuilt.push({
+        id,
+        status: 'failed',
+        error: {
+          code: 'INVALID_RESULTS',
+          message: (error as Error).message,
+          files: [{ path: `${EXPERIMENTS_RELDIR}/${id}/${EXPERIMENT_RESULTS_FILE}` }],
+        },
+        warnings: [],
+      })
+    }
+  }
   const counts = { regenerated: 0, unchanged: 0, failed: 0 }
   for (const item of rebuilt) counts[item.status] += 1
   for (const item of rebuilt) reportWarnings(item.warnings)
@@ -499,7 +581,7 @@ export async function runExperimentResultsRebuild(
       `${lines.length > 0 ? lines.join('\n') : '(no experiments)'}\n${counts.regenerated} regenerated, ${counts.unchanged} unchanged, ${counts.failed} failed\n`,
     )
   } else emitJson(output)
-  if (counts.failed > 0) process.exitCode = 1
+  if (counts.failed > 0) process.exitCode = conflict ? 9 : 1
 }
 
 // ---------- annotation read/write ----------

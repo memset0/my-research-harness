@@ -5,10 +5,23 @@
 // so internal code is idiomatic TypeScript.
 
 import type { ParsedExperimentDescription } from './results/description.js'
+import type { RunMetadata } from './runs/metadata.js'
 
-export type Status = 'PENDING' | 'RUNNING' | 'FINISHED' | 'INTERRUPTED' | 'FAILED' | 'UNKNOWN'
+export type Status =
+  | 'READY'
+  | 'QUEUED'
+  | 'RESUME_READY'
+  | 'PENDING'
+  | 'RUNNING'
+  | 'FINISHED'
+  | 'INTERRUPTED'
+  | 'FAILED'
+  | 'UNKNOWN'
 
 export const STATUS_VALUES: readonly Status[] = [
+  'READY',
+  'QUEUED',
+  'RESUME_READY',
   'PENDING',
   'RUNNING',
   'FINISHED',
@@ -18,6 +31,9 @@ export const STATUS_VALUES: readonly Status[] = [
 ] as const
 
 export const STATUS_EMOJI: Readonly<Record<Status, string>> = {
+  READY: '📝',
+  QUEUED: '⏳',
+  RESUME_READY: '⏸️',
   PENDING: '📝',
   RUNNING: '🟢',
   FINISHED: '✅',
@@ -160,6 +176,8 @@ export interface RunFrontMatter {
   project: string
   status: Status
   createdAt: string // ISO8601 with offset
+  startedAt?: string | null
+  scheduler?: RunMetadata['scheduler']
   finishedAt: string | null
   host: string | null
   pid: number | null
@@ -276,6 +294,11 @@ export interface ParsedReadme {
  * `hasReadme` before relying on `command` / `entry` content.
  */
 export interface Run {
+  /** Actual persisted execution record; absent means legacy README. */
+  recordFormat?: 'json' | 'readme'
+  recordPath?: string
+  recordMtime?: number
+  metadata?: RunMetadata
   /** Directory base name (matches RUN_DIR_REGEX) */
   id: string
   /**

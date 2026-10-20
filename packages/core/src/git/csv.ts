@@ -1,5 +1,4 @@
-// RFC 4180 record parsing and field quoting shared by the git commit-marks
-// CSV and the wiki review CSV.
+// RFC 4180 record parsing and field quoting for the git commit-marks CSV.
 
 /** Quote a field when it contains a comma, quote or line break. */
 export function quoteCsvField(s: string): string {

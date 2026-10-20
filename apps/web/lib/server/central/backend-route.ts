@@ -1,3 +1,4 @@
+import { isRunPath } from '@memon/core'
 import type { ApiMethod, ApiRouteOwnership } from '../api-route-manifest'
 import { API_ROUTE_MANIFEST } from '../api-route-manifest'
 
@@ -65,7 +66,8 @@ function assertSafePath(pathname: string): void {
   if (!pathname.startsWith('/api/') || pathname.includes('\\') || pathname.includes('\0')) {
     throw new BackendRouteError('INVALID_PATH', 'central API path is invalid')
   }
-  for (const segment of pathname.split('/').slice(2)) {
+  const segments = pathname.split('/').slice(2)
+  for (const [index, segment] of segments.entries()) {
     if (segment.length === 0) continue
     let decoded: string
     try {
@@ -73,7 +75,12 @@ function assertSafePath(pathname: string): void {
     } catch {
       throw new BackendRouteError('INVALID_PATH', 'central API path encoding is invalid')
     }
-    if (decoded.includes('/') || decoded.includes('\\') || decoded.includes('\0')) {
+    const runReference = index === 1 && segments[0] === 'runs' && isRunPath(decoded)
+    if (
+      (!runReference && decoded.includes('/')) ||
+      decoded.includes('\\') ||
+      decoded.includes('\0')
+    ) {
       throw new BackendRouteError('INVALID_PATH', 'encoded path separators are not allowed')
     }
   }

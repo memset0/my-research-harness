@@ -67,18 +67,6 @@ export interface MarkdownTableOfContentsOptions {
   maxDepth?: number
 }
 
-export interface MarkdownUnverifiedOptions {
-  /**
-   * Inclusive 1-based line ranges, in SOURCE FILE coordinates, whose content
-   * is not covered by the verified wiki-commit prefix.
-   */
-  ranges: readonly (readonly [number, number])[]
-  /** Source-file line number of the first line of `children`. Defaults to 1. */
-  lineOffset?: number
-  /** Hover title applied to every tinted block. */
-  title?: string
-}
-
 const ArtifactLinkContext = createContext<MarkdownArtifactLinkContext | null>(null)
 
 /**
@@ -169,7 +157,6 @@ export function Markdown({
   artifactLinks,
   tableOfContents,
   headingIdPrefix,
-  unverified,
   document,
 }: {
   children: string
@@ -196,8 +183,6 @@ export function Markdown({
    * Ignored when `tableOfContents` is set, which already anchors them.
    */
   headingIdPrefix?: string
-  /** Tints the top-level blocks whose source lines are not yet verified. */
-  unverified?: MarkdownUnverifiedOptions
   document?: ComponentDocumentRef
 }) {
   const inheritedArtifactLinks = useContext(ArtifactLinkContext)
@@ -374,13 +359,6 @@ export function Markdown({
         : null,
     [headingIdPrefix, tableOfContents],
   )
-  const unverifiedRemarkPlugin = useMemo(
-    () =>
-      unverified && unverified.ranges.length > 0
-        ? () => (tree: MarkdownAstNode) => transformUnverifiedRegions(tree, unverified)
-        : null,
-    [unverified],
-  )
   const remarkPlugins = useMemo(
     () => [
       remarkGfm,
@@ -391,15 +369,8 @@ export function Markdown({
       ...(artifactRemarkPlugin ? [artifactRemarkPlugin] : []),
       ...(tableOfContentsRemarkPlugin ? [tableOfContentsRemarkPlugin] : []),
       ...(headingIdRemarkPlugin ? [headingIdRemarkPlugin] : []),
-      ...(unverifiedRemarkPlugin ? [unverifiedRemarkPlugin] : []),
     ],
-    [
-      artifactRemarkPlugin,
-      headingIdRemarkPlugin,
-      tableOfContentsRemarkPlugin,
-      unverifiedRemarkPlugin,
-      translationPlugin,
-    ],
+    [artifactRemarkPlugin, headingIdRemarkPlugin, tableOfContentsRemarkPlugin, translationPlugin],
   )
 
   return (
@@ -630,42 +601,6 @@ function transformReportTableOfContents(
   if (entries.length === 0) return
   const title = options.title ?? 'Table of contents'
   root.children.unshift(buildTableOfContentsNode(entries, title, minDepth))
-}
-
-/**
- * Tint the top-level blocks whose source lines intersect an unverified range.
- *
- * Only root children are considered: the review data is line-based, and a
- * whole block is the smallest unit a reader can attribute to a commit.
- */
-function transformUnverifiedRegions(
-  root: MarkdownAstNode,
-  options: MarkdownUnverifiedOptions,
-): void {
-  const offset = (options.lineOffset ?? 1) - 1
-  for (const child of root.children ?? []) {
-    const start = child.position?.start.line
-    const end = child.position?.end.line
-    if (start === undefined || end === undefined) continue
-    const absoluteStart = start + offset
-    const absoluteEnd = end + offset
-    const intersects = options.ranges.some(
-      ([rangeStart, rangeEnd]) => rangeStart <= absoluteEnd && rangeEnd >= absoluteStart,
-    )
-    if (!intersects) continue
-    child.data = {
-      ...child.data,
-      hProperties: {
-        ...child.data?.hProperties,
-        'data-wiki-unverified': '',
-        ...(options.title ? { title: options.title } : {}),
-        className: mergeClassNames(
-          child.data?.hProperties?.className,
-          'border-l-4 border-l-muted-foreground/40 bg-muted/50 pl-3',
-        ),
-      },
-    }
-  }
 }
 
 function buildTableOfContentsNode(

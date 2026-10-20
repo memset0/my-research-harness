@@ -106,7 +106,12 @@ export class FilesystemStreamService implements BackendStreamService {
   async listLogFiles(projectName: string, runResourceInput: string) {
     const project = this.requireProject(projectName)
     const runResource = parseResource(runResourceInput)
-    if (runResource !== 'README.md' && !runResource.endsWith('/README.md')) invalid()
+    if (
+      !['README.md', 'run.json'].some(
+        (name) => runResource === name || runResource.endsWith(`/${name}`),
+      )
+    )
+      invalid()
     await this.resolveContained(project, runResource, 'file')
     const runDirectoryResource = dirname(runResource)
     const candidates: Array<{ name: string; resource: string; size: number; mtime: number }> = []

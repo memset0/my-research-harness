@@ -145,6 +145,8 @@ export interface SummaryOtherRun {
 }
 
 export interface SummaryVariant {
+  draft?: string | Record<string, unknown>
+  run_notes?: Record<string, string>
   deprecated?: boolean
   deprecation?: VariantDeprecation
   id: string
@@ -161,6 +163,7 @@ export interface SummaryVariant {
 }
 
 export interface ResultsSummary {
+  format?: 'lightweight'
   research?: {
     current_version: number
     selected_version: number
@@ -187,6 +190,11 @@ export interface ResultsSummary {
 
 /** The Run record facts a summary reads. */
 export interface SummaryRunRecord {
+  active?: boolean
+  name?: string
+  params?: Record<string, unknown>
+  description?: string
+  assessment?: { kind: 'INVALID' | 'LIMITED' | 'SUPERSEDED' | 'OTHER'; reason: string }
   status: Status
   deprecated: boolean
   stop_reason: string | null
@@ -249,7 +257,7 @@ function finish(summary: Omit<ResultsSummary, 'digest'>): ResultsSummary {
 
 // ---------- status derivation ----------
 
-const IN_PROGRESS: ReadonlySet<Status> = new Set(['PENDING', 'RUNNING', 'INTERRUPTED'])
+const IN_PROGRESS: ReadonlySet<Status> = new Set(['QUEUED', 'PENDING', 'RUNNING', 'INTERRUPTED'])
 
 /**
  * The effective status of a Variant from its declared status, the records
@@ -262,6 +270,8 @@ export function deriveVariantStatus(
 ): VariantStatus {
   if (declared === 'DROPPED' || declared === 'INCONCLUSIVE') return declared
   if (listed.length > 0) {
+    if (listed.every((record) => record?.status === 'READY' || record?.status === 'RESUME_READY'))
+      return 'PLANNED'
     if (listed.some((record) => record !== null && IN_PROGRESS.has(record.status))) return 'RUNNING'
     if (listed.some((record) => record?.status === 'FINISHED' && !record.deprecated))
       return 'COMPLETED'
@@ -566,6 +576,13 @@ export function generateResultsSummary(input: GenerateResultsSummaryInput): Resu
     })
   }
   const ledger = description.research
+  if (description.format === 'lightweight')
+    return failed(input, null, {
+      code: 'INVALID_RESULTS',
+      message:
+        'Lightweight Experiment results come from the saved results.csv; use generateLightweightResultsSummary',
+      files: [{ path: descriptionFile }],
+    })
   const selectedVersion = input.researchVersion ?? ledger?.current_version ?? 1
   const historical = ledger !== undefined && selectedVersion !== ledger.current_version
   const integrity = researchDescriptionProblem(

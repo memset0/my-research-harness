@@ -1,6 +1,6 @@
 ---
 name: memon-write-code-review
-description: Author or update a human-facing code-review doc for one reviewable unit, with immutable commit/line links and unchecked review progress. Use project-wide scope or an Experiment's code-review directory; when it supports an Implementation item, link the finished review through memon-write-experiment-doc.
+description: Author or update a human-facing code-review doc for one reviewable unit, with immutable commit/line links and unchecked review progress. Use project-wide scope or an Experiment's code-review directory; when it supports an Implementation item, link the finished review through memon-research.
 ---
 
 # memon-write-code-review
@@ -28,9 +28,9 @@ handoff. Do not write the doc unless the FS check says `match`.
 
 - A one-line project-level observation, request, or open question → the project
   wiki through `memon-wiki`; if that surface is missing, ask the user.
-- Execution facts or Experiment write-up → `memon-run-experiment` /
-  `memon-drive`; a theme report → `memon-write-report`; an Experiment warning or
-  limitation → `memon-write-experiment-doc`.
+- Execution facts or Experiment write-up → `memon-research` /
+  `memon-research`; a theme report → `memon-write-report`; an Experiment warning or
+  limitation → `memon-research`.
 - A doc per commit. One doc per session or large change.
 
 ## File naming and scope
@@ -179,7 +179,7 @@ When a section needs a component block, follow `memon-components`.
    A project-wide doc under `docs/code-review/` is outside the accepted scope —
    do not submit it.
 8. When it supports an Implementation item, invoke
-   `memon-write-experiment-doc` to add the review's Experiment-relative path to
+   `memon-research` to add the review's Experiment-relative path to
    that item's `code_reviews`. Never create an item just because a review exists,
    and never edit `implementation.yaml` from here.
 9. Tell the user in the conversation that the review is ready, with its path.

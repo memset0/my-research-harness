@@ -45,7 +45,6 @@ export const WikiKindDefinitionSchema = z
         recommendedHeadings: uniqueTexts,
         requiredHeadings: z.array(z.never()).max(0),
         bodyEvidenceWarning: z.boolean(),
-        reviewWarningStatus: text.nullable(),
       })
       .strict(),
   })
@@ -78,12 +77,6 @@ export const WikiKindRegistrySchema = z
         if (!knownIds.has(related) || related === kind.id) {
           issue(['relatedKinds'], `Invalid related kind: ${related}`)
         }
-      }
-      if (
-        kind.policy.reviewWarningStatus !== null &&
-        !kind.policy.statuses.includes(kind.policy.reviewWarningStatus)
-      ) {
-        issue(['policy', 'reviewWarningStatus'], 'Must reference a declared status')
       }
     }
   })

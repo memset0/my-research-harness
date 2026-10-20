@@ -141,6 +141,8 @@ export const CLI_LEDGER_CLASSES: Readonly<Record<string, CliLedgerClass>> = {
   'run resolve-exp': 'readonly',
   'run lint': 'readonly',
   'run record': 'project',
+  'run create': 'project',
+  'run update': 'project',
   'run archive': 'project',
   'run unarchive': 'project',
   'run deprecate': 'project',
@@ -168,10 +170,6 @@ export const CLI_LEDGER_CLASSES: Readonly<Record<string, CliLedgerClass>> = {
   'wiki undeprecate': 'project',
   'wiki delete': 'project',
   'wiki commit': 'project',
-  'wiki review log': 'readonly',
-  'wiki review diff': 'readonly',
-  'wiki review verify': 'project',
-  'wiki review unverify': 'project',
   'wiki kinds ls': 'readonly',
   'wiki kinds show': 'readonly',
 
@@ -206,6 +204,7 @@ export function classifyCliCommand(
   if (path === 'install-skills' && typeof options.target === 'string') return 'host'
   // `experiment schema upgrade` writes only with `--apply`; otherwise it is a dry run.
   if (path === 'experiment schema upgrade' && options.apply !== true) return 'readonly'
+  if (path === 'experiment migrate' && typeof options.apply !== 'string') return 'readonly'
   return declared
 }
 

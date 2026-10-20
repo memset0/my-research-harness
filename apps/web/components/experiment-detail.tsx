@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useIsDesktop } from '@/hooks/use-is-desktop'
-import { type FullExperiment, fetchExperiment, projectQueryKey } from '../lib/api'
+import { type FullExperiment, fetchExperiment } from '../lib/api'
 import { queryKeys } from '../lib/query-keys'
 import { WarningBadge } from './colored-badge'
 import { DocumentArtifactLinkProvider } from './document-artifact-link-provider'
@@ -13,8 +13,10 @@ import { ManualRefreshButton } from './manual-refresh-button'
 import { Markdown } from './markdown'
 import { ReadmeEditorProvider } from './readme-editor-context'
 import { ReadmeSidePanel } from './readme-side-panel'
+import { RunRecordNotes } from './run-record-notes'
 import { DetailSkeleton } from './skeletons'
 import { StatusEdit } from './status-edit'
+import { StatusPill } from './status-pill'
 import { TimestampLocal } from './timestamp'
 import { Badge } from './ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
@@ -56,22 +58,29 @@ function ExperimentDetailLayout({ exp, project }: { exp: FullExperiment; project
     <div className="flex h-[calc(100svh-3rem)] overflow-hidden">
       <div className="min-w-0 flex-1 overflow-y-auto">
         <div className="flex flex-col gap-4 p-4 md:p-6">
+          <RunRecordNotes
+            metadata={exp.metadata}
+            project={project}
+            documentPath={exp.resource ? `${exp.resource}/run.json` : undefined}
+          />
           <Card>
             <CardHeader>
               <div className="flex flex-wrap items-center gap-2">
                 <CardTitle className="font-mono">{exp.id}</CardTitle>
-                {exp.hasReadme ? (
+                {exp.recordFormat === 'json' ? (
+                  <StatusPill status={fm.status} stale={exp.stale} />
+                ) : exp.hasReadme ? (
                   <StatusEdit
                     project={project}
                     id={exp.id}
                     status={fm.status}
                     stale={exp.stale}
-                    expectedMtime={exp.readmeMtime}
+                    expectedMtime={exp.recordMtime ?? exp.readmeMtime}
                   />
                 ) : (
-                  <WarningBadge>no README — status edit unavailable</WarningBadge>
+                  <WarningBadge>execution record missing</WarningBadge>
                 )}
-                {fm.deprecated && (
+                {exp.recordFormat !== 'json' && fm.deprecated && (
                   <Badge variant="outline">deprecated — excluded from research</Badge>
                 )}
                 {exp.parseErrors.length > 0 && (
@@ -103,6 +112,17 @@ function ExperimentDetailLayout({ exp, project }: { exp: FullExperiment; project
               <Field label="finished">
                 <TimestampLocal value={fm.finishedAt} variant="long" />
               </Field>
+              {fm.startedAt && (
+                <Field label="started">
+                  <TimestampLocal value={fm.startedAt} variant="long" />
+                </Field>
+              )}
+              {fm.scheduler && (
+                <Field
+                  label="scheduler job"
+                  value={`${fm.scheduler.system ?? ''} ${fm.scheduler.job_id}`.trim()}
+                />
+              )}
               <Field label="host" value={fm.host ?? '—'} />
               <Field label="pid" value={fm.pid !== null ? String(fm.pid) : '—'} />
               <Field label="gpus" value={fm.gpus.length > 0 ? fm.gpus.join(', ') : '—'} />

@@ -24,7 +24,6 @@ Use date-prefixed slugs where useful. Cite discussed Experiments in sources. Ext
 - Recommended H2s (warning only; also used by create): Attendees, Notes, Decisions, Action items.
 - Required H2s: none.
 - Body evidence warning: no.
-- Human-review warning at status: none.
 - Related kinds: decision, finding.
 
 ## roadmap
@@ -46,7 +45,6 @@ Use headings and nested lists as the content demands; no page status or recommen
 - Recommended H2s (warning only; also used by create): none; free-form.
 - Required H2s: none.
 - Body evidence warning: no.
-- Human-review warning at status: none.
 - Related kinds: initiative, question.
 
 ## finding
@@ -59,7 +57,7 @@ Examples (advisory): A method outperforms a baseline under stated conditions
 
 Distinctions: Not an unanswered question or an unsupported claim disguised as a note.
 
-Make Claim quotable. Attribute every number to an Experiment, Variant or run in Evidence and state coverage limits. Cite evidence in prose as well as sources. VERIFIED means claims reproduce from cited Results, otherwise retain TENTATIVE. Retract disproven claims with an explanation rather than deleting them. Page status is independent of human git review.
+Make Claim quotable. Attribute every number to an Experiment, Variant or run in Evidence and state coverage limits. Cite evidence in prose as well as sources. VERIFIED means claims reproduce from cited Results, otherwise retain TENTATIVE. Retract disproven claims with an explanation rather than deleting them.
 
 - Status vocabulary: TENTATIVE / VERIFIED / RETRACTED.
 - Creation default: TENTATIVE.
@@ -68,7 +66,6 @@ Make Claim quotable. Attribute every number to an Experiment, Variant or run in 
 - Recommended H2s (warning only; also used by create): Claim, Evidence, Limits.
 - Required H2s: none.
 - Body evidence warning: yes.
-- Human-review warning at status: VERIFIED.
 - Related kinds: question, note.
 
 ## bottleneck
@@ -90,7 +87,6 @@ Quantify impact where possible and cite numbers. Compare candidate options with 
 - Recommended H2s (warning only; also used by create): Problem, Impact, Status, Candidates.
 - Required H2s: none.
 - Body evidence warning: no.
-- Human-review warning at status: none.
 - Related kinds: question, initiative.
 
 ## showcase
@@ -112,7 +108,6 @@ Usually use a bundle with data/ and views/<slug>/index.html. Explain exact repro
 - Recommended H2s (warning only; also used by create): What to show, How to reproduce, Assets.
 - Required H2s: none.
 - Body evidence warning: no.
-- Human-review warning at status: none.
 - Related kinds: catalog, finding.
 
 ## question
@@ -134,7 +129,6 @@ State a falsifiable question, why it matters now and what was ruled out. Leave A
 - Recommended H2s (warning only; also used by create): Question, Context, Answer.
 - Required H2s: none.
 - Body evidence warning: no.
-- Human-review warning at status: none.
 - Related kinds: finding, bottleneck.
 
 ## decision
@@ -156,7 +150,6 @@ State the decision in one imperative sentence. Name alternatives and discriminat
 - Recommended H2s (warning only; also used by create): Decision, Rationale, Consequences.
 - Required H2s: none.
 - Body evidence warning: no.
-- Human-review warning at status: none.
 - Related kinds: meeting.
 
 ## note
@@ -178,7 +171,6 @@ Write free-form, useful context without a status or prescribed scaffold. If the 
 - Recommended H2s (warning only; also used by create): none; free-form.
 - Required H2s: none.
 - Body evidence warning: no.
-- Human-review warning at status: none.
 - Related kinds: finding, catalog.
 
 ## harness-feedback
@@ -200,7 +192,6 @@ Describe the concrete moment the gap hurt and cite the affected page or task. Pr
 - Recommended H2s (warning only; also used by create): Motivation, Proposal, Status.
 - Required H2s: none.
 - Body evidence warning: no.
-- Human-review warning at status: none.
 - Related kinds: bottleneck.
 
 ## initiative
@@ -222,7 +213,6 @@ Explain intent, evolving phases, evidence-backed progress, blockers, decisions a
 - Recommended H2s (warning only; also used by create): none; free-form.
 - Required H2s: none.
 - Body evidence warning: no.
-- Human-review warning at status: none.
 - Related kinds: roadmap, bottleneck, decision.
 
 ## catalog
@@ -244,7 +234,6 @@ Explain meaningful families, differences, suitability, maturity and evidence lim
 - Recommended H2s (warning only; also used by create): none; free-form.
 - Required H2s: none.
 - Body evidence warning: no.
-- Human-review warning at status: none.
 - Related kinds: showcase, note, finding.
 
 ## digest
@@ -266,7 +255,6 @@ Describe the covered period, meaningful progress, evidence limits and unresolved
 - Recommended H2s (warning only; also used by create): none; free-form.
 - Required H2s: none.
 - Body evidence warning: no.
-- Human-review warning at status: none.
 - Related kinds: meeting, finding, note.
 
 ## Reserved directories

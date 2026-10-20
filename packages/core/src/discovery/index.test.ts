@@ -137,3 +137,21 @@ describe('RunIndex', () => {
     expect(idx.search('foo', 'body')).toEqual([])
   })
 })
+
+it('keeps equal Run basenames under different Variants and rejects ambiguous shorthand', () => {
+  const index = new RunIndex()
+  const a = makeExp(
+    { id: 'trial' },
+    { path: '/project/logs/E0001/V0001/trial', recordFormat: 'json' },
+  )
+  const b = makeExp(
+    { id: 'trial' },
+    { path: '/project/logs/E0001/V0002/trial', recordFormat: 'json' },
+  )
+  index.set(a)
+  index.set(b)
+  expect(index.size()).toBe(2)
+  expect(index.get(a.path)).toBe(a)
+  expect(() => index.get('trial')).toThrow(/Ambiguous/)
+  expect(() => index.delete('trial')).toThrow(/Ambiguous/)
+})

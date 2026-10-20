@@ -80,7 +80,6 @@ export const queryKeys = {
     ['wiki-page', ...projectQueryKey(project), id] as const,
   wikiInventory: (project: ProjectTarget) =>
     ['wiki-inventory', ...projectQueryKey(project)] as const,
-  wikiReview: (project: ProjectTarget) => ['wiki-review', ...projectQueryKey(project)] as const,
   wikiBacklinks: (project: ProjectTarget, artifactId: string) =>
     ['wiki-backlinks', ...projectQueryKey(project), artifactId] as const,
 
@@ -119,9 +118,6 @@ export const queryKeys = {
   /** Commit detail in the history dialog (submodule slot always present). */
   gitCommit: (project: ProjectTarget, submodule: string | undefined, sha: string | null) =>
     ['git-commit', ...projectQueryKey(project), submodule, sha] as const,
-  /** Commit detail in the wiki review panel (no submodule slot). */
-  gitCommitAtRoot: (project: ProjectTarget, sha: string) =>
-    ['git-commit', ...projectQueryKey(project), sha] as const,
   commitMarks: (project: ProjectTarget) => ['commit-marks', ...projectQueryKey(project)] as const,
 
   // Logs and shares

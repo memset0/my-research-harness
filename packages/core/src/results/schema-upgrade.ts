@@ -738,6 +738,11 @@ export async function planSchemaUpgrade(
         details: { path: set.descriptionKey },
       },
     )
+  if (description.format === 'lightweight')
+    throw new MutationError(
+      'BAD_STATE',
+      'Lightweight Experiments do not use result schema versions; edit the declaration and rebuild results.csv',
+    )
   if (!Number.isInteger(to) || to < 1)
     throw new MutationError('BAD_REQUEST', `--to must be a positive integer, got ${to}`, {
       reason: 'SCHEMA_UPGRADE_INVALID',

@@ -65,6 +65,11 @@ function codes(diagnostics: { code: string }[]): string[] {
 }
 
 describe('lintWikiPage', () => {
+  it('treats VERIFIED as a content status without requiring human review', () => {
+    const diagnostics = lintWikiPage(makePage(VALID_FINDING))
+    expect(codes(diagnostics)).not.toContain('WIKI_UNREVIEWED_VERIFIED')
+  })
+
   it('reports nothing for a complete finding', () => {
     expect(lintWikiPage(makePage(VALID_FINDING), { inventory: INVENTORY })).toEqual([])
   })
@@ -337,23 +342,6 @@ memon wiki lint
       lintWikiPage(
         makePage(withoutEvidence.replace('Trust me.', 'See zero-snr-eval-260902-110000.')),
       ),
-    ).toEqual([])
-  })
-
-  it('warns when a VERIFIED finding is not review-verified', () => {
-    const review = {
-      state: 'CHANGED_SINCE_VERIFY' as const,
-      verifiedThrough: 'a'.repeat(40),
-      verifiedAt: '2026-09-02T09:00:00+08:00',
-      unverifiedCommits: ['b'.repeat(40)],
-      unverifiedRanges: [[12, 18] as [number, number]],
-      dirty: false,
-    }
-    expect(codes(lintWikiPage(makePage(VALID_FINDING), { review }))).toEqual([
-      'WIKI_UNREVIEWED_VERIFIED',
-    ])
-    expect(
-      lintWikiPage(makePage(VALID_FINDING), { review: { ...review, state: 'VERIFIED' } }),
     ).toEqual([])
   })
 

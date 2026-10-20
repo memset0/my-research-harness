@@ -9,7 +9,7 @@ import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { useState } from 'react'
-import { fetchWikiBacklinks, type ProjectTarget, projectQueryKey } from '../lib/api'
+import { fetchWikiBacklinks, type ProjectTarget } from '../lib/api'
 import { queryKeys } from '../lib/query-keys'
 import { setWikiWorkspaceUrl } from '../lib/wiki-workspace-url'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
@@ -17,7 +17,6 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collap
 import {
   WikiDeprecatedBadge,
   WikiKindBadge,
-  WikiReviewBadge,
   WikiStaleIndicator,
   WikiStatusBadge,
 } from './wiki-page-card'
@@ -100,7 +99,6 @@ export function ExperimentWikiCitations({
                     <WikiKindBadge kind={page.kind} />
                     <WikiStatusBadge status={page.status} />
                     <WikiStaleIndicator stale={page.stale} staleSources={[]} />
-                    <WikiReviewBadge state={page.reviewState} />
                     <WikiDeprecatedBadge deprecated={page.deprecated} />
                   </Link>
                 ))

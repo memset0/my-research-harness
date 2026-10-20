@@ -2,7 +2,7 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import type { WikiListItem, WikiPageDetail } from '../lib/api'
+import { fetchWiki, fetchWikiPage, type WikiListItem, type WikiPageDetail } from '../lib/api'
 import { renderWithQuery } from '../test/utils'
 import { WikiDocumentView, WikiShell } from './wiki-shell'
 
@@ -31,13 +31,6 @@ vi.mock('./markdown', () => ({
   ),
 }))
 vi.mock('./readme-monaco', () => ({ ReadmeMonaco: () => <div>editor</div> }))
-vi.mock('./wiki-review-panel', () => ({
-  WikiReviewPanel: () => null,
-  WikiChangesDialog: () => null,
-}))
-
-import { fetchWiki, fetchWikiPage } from '../lib/api'
-
 function summary(
   id: string,
   updatedAt: string,
@@ -60,7 +53,6 @@ function summary(
     deprecatedSections: [],
     stale: false,
     staleSources: [],
-    review: null,
     format: 'markdown',
     path: `docs/wiki/finding/${id}-page.md`,
     project: 'project-a',
@@ -82,31 +74,19 @@ function detail(base: WikiListItem, content: string): WikiPageDetail {
 }
 
 describe('WikiShell', () => {
-  it('keeps unverified prose plain and width-limited without an inline mobile outline', () => {
+  it('keeps prose plain without review decoration and width-limited without an inline mobile outline', () => {
     const page = detail(
-      summary('W0002', '2026-05-04T08:00:00+00:00', {
-        review: {
-          state: 'UNVERIFIED',
-          verifiedThrough: null,
-          verifiedAt: null,
-          unverifiedCommits: [],
-          unverifiedRanges: [],
-          dirty: false,
-        },
-      }),
+      summary('W0002', '2026-05-04T08:00:00+00:00', {}),
       '## Evidence\nPlain prose.',
     )
     const { container } = renderWithQuery(
       <WikiDocumentView project="project-a" page={page} sourceSurface="side-wiki" />,
     )
-    const body = container.querySelector('[data-wiki-unverified-body]')
+    const body = container.querySelector('[data-wiki-document-body]')
     expect(body).toHaveClass('mx-auto', 'w-full', 'max-w-[800px]')
     expect(body).not.toHaveClass('rounded-md', 'border-l-4', 'bg-muted/50', 'py-2', 'pl-3')
-    expect(body).toHaveAttribute('title', 'no line of this page is verified')
-    expect(container.querySelector('[data-wiki-review-summary]')).toHaveAttribute(
-      'data-review-state',
-      'UNVERIFIED',
-    )
+    expect(container.querySelector('[data-wiki-review-summary]')).toBeNull()
+    expect(container.querySelector('[data-wiki-unverified]')).toBeNull()
     expect(container.querySelector('[data-wiki-inline-toc]')).toBeNull()
   })
 
@@ -183,6 +163,8 @@ describe('WikiShell', () => {
       'max-w-[800px]',
       'min-w-0',
     )
+    expect(container.querySelector('[data-wiki-review-summary]')).toBeNull()
+    expect(container.querySelector('[data-wiki-unverified]')).toBeNull()
     expect(container.querySelector('[data-wiki-inline-toc]')).toBeNull()
     expect(outline).toHaveTextContent('Evidence')
     expect(outline).toHaveTextContent('Limits')

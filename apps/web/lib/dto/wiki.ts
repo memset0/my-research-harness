@@ -1,4 +1,4 @@
-// Response DTOs: Wiki listings, pages, review log and backlinks (`/api/wiki/**`).
+// Response DTOs: Wiki listings, pages and backlinks (`/api/wiki/**`).
 // Shared by the route handlers that build these bodies and the client
 // fetchers in `lib/api.ts`. Types and pure helpers only — no server imports.
 
@@ -33,24 +33,6 @@ export interface WikiPutResponse {
   page: WikiPageDetail
   /** Content as written — the editor re-baselines its buffer from this. */
   finalContent: string
-}
-
-export interface WikiReviewCommit {
-  sha: string
-  authoredAt: string
-  subject: string
-  /** Page ids the commit touched. */
-  pages: string[]
-  verified: boolean
-  verifiedAt: string | null
-  note: string | null
-}
-
-export interface WikiReviewResponse {
-  /** Newest sequentially verified wiki commit, or null when none is marked. */
-  verifiedThrough: string | null
-  /** Wiki commits, oldest first. */
-  commits: WikiReviewCommit[]
 }
 
 export interface WikiBacklinksResponse {

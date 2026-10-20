@@ -323,15 +323,6 @@ const RULES: Rule[] = [
     projectFor: projectGlobal(),
   },
 
-  // Wiki review marks are owner-only shell-class writes. This deliberately
-  // bypasses the generic mutation capability: read-only Backends accept
-  // review marks because `.memon/` is control state, not project content.
-  {
-    match: methodIs(['POST', 'DELETE'], startsWith('/api/wiki/review/')),
-    class: 'shell',
-    projectFor: projectQueryOrMulti(),
-  },
-
   // Merged diagnostic history (legacy Journal + invocation receipts) is an
   // owner-only read: receipt paths and error codes can name project internals
   // outside a viewer's share scope. It is deliberately NOT `read`, and it must
@@ -396,11 +387,6 @@ const RULES: Rule[] = [
   },
   {
     match: methodIs(['GET'], exact('/api/wiki')),
-    class: 'read',
-    projectFor: projectQueryOrMulti(),
-  },
-  {
-    match: methodIs(['GET'], exact('/api/wiki/review')),
     class: 'read',
     projectFor: projectQueryOrMulti(),
   },

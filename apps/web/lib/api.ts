@@ -134,8 +134,6 @@ export type {
   WikiPageDetail,
   WikiPagesResponse,
   WikiPutResponse,
-  WikiReviewCommit,
-  WikiReviewResponse,
 } from './dto/wiki'
 
 import type {
@@ -143,7 +141,6 @@ import type {
   WikiPageDetail,
   WikiPagesResponse,
   WikiPutResponse,
-  WikiReviewResponse,
 } from './dto/wiki'
 
 export type {
@@ -430,31 +427,6 @@ export async function putWikiPage(
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(payload),
-  })
-}
-
-export async function fetchWikiReview(project: ProjectTarget): Promise<WikiReviewResponse> {
-  return jsonFetch(projectQueryUrl('/api/wiki/review', project))
-}
-
-export async function markWikiReview(
-  project: ProjectTarget,
-  sha: string,
-  note?: string,
-): Promise<WikiReviewResponse> {
-  return jsonFetch(projectQueryUrl(`/api/wiki/review/${encodeURIComponent(sha)}`, project), {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(note === undefined ? {} : { note }),
-  })
-}
-
-export async function unmarkWikiReview(
-  project: ProjectTarget,
-  sha: string,
-): Promise<WikiReviewResponse> {
-  return jsonFetch(projectQueryUrl(`/api/wiki/review/${encodeURIComponent(sha)}`, project), {
-    method: 'DELETE',
   })
 }
 

@@ -25,6 +25,7 @@ import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import {
   enrollCreatedResearchRun,
   formatIsoLocal,
+  lightweightRunIdentity,
   linkExperimentRun,
   nestedRunAncestor,
   nodeMutationFs,
@@ -48,6 +49,7 @@ import { cliIndexSink, indexWarningFields } from '../lib/index-sink.js'
 import { withCliWriterLock } from '../lib/invocation.js'
 import { cliMutation } from '../lib/mutation-error.js'
 import { emitJson, type OutputFormat } from '../lib/output.js'
+import { runRunCreate } from './run-metadata.js'
 
 /** Discovery entry directories a Run record must live under to be visible. */
 const RUN_ENTRY_DIRS = ['logs', 'outputs', 'experiments'] as const
@@ -71,6 +73,9 @@ export interface RunRecordInput {
   name?: string
   createdAt?: string
   finishedAt?: string
+  startedAt?: string
+  jobId?: string
+  scheduler?: string
   host?: string
   pid?: number
   gpus?: string
@@ -100,6 +105,24 @@ async function recordLocked(
   if (!contained || contained.startsWith('..') || isAbsolute(contained))
     emitErrorAndExit('BAD_REQUEST', 'Run resolves outside the project root')
   const id = basename(runDir)
+  const layout = lightweightRunIdentity(relative(projectRoot, runDir).split(sep).join('/'))
+  if (layout) {
+    if (input.body !== undefined)
+      emitErrorAndExit(
+        'BAD_REQUEST',
+        'Lightweight Runs have no README body; use run update --description for optional explanations',
+      )
+    if (input.experiment && input.experiment.slice(0, 5) !== layout.experimentId)
+      emitErrorAndExit('BAD_REQUEST', '--experiment disagrees with the Run directory')
+    await runRunCreate({
+      ...input,
+      projectRoot,
+      experiment: layout.experimentId,
+      variant: layout.variantId,
+      id,
+    })
+    return
+  }
 
   if (!RUN_DIR_REGEX.test(id)) {
     emitErrorAndExit(

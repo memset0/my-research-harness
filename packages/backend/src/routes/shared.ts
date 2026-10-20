@@ -66,7 +66,6 @@ export const wikiArtifactParam = parse(
     !value.includes('\0'),
 )
 // `next` is the CLI's "oldest markable commit" alias; core resolves it.
-export const wikiShaParam = parse((value) => value === 'next' || /^[0-9a-f]{4,40}$/.test(value))
 // Any decoded id stays addressable so the service answers 400 for a non-W id.
 export const wikiIdParam = (value: string) => value
 

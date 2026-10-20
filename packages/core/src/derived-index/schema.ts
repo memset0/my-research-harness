@@ -7,6 +7,7 @@
 // writer never replaces a snapshot with a higher `index_version`.
 
 import { z } from 'zod'
+import { VARIANT_STATUS_VALUES } from '../types.js'
 import { isProjectRelativePath } from './paths.js'
 
 export const INDEX_VERSION = 2
@@ -51,6 +52,9 @@ const ParseIssueSchema = z
   .strict()
 
 const RunStatusSchema = z.enum([
+  'READY',
+  'QUEUED',
+  'RESUME_READY',
   'PENDING',
   'RUNNING',
   'FINISHED',
@@ -68,6 +72,20 @@ export const RunRowSchema = z
   .object({
     mtime: z.number().nonnegative(),
     readme_mtime: z.number().nonnegative(),
+    record_format: z.enum(['json', 'readme']).optional(),
+    record_mtime: z.number().nonnegative().optional(),
+    active: z.boolean().optional(),
+    params: z.record(z.unknown()).optional(),
+    description: z.string().optional(),
+    assessment: z
+      .object({ kind: z.enum(['INVALID', 'LIMITED', 'SUPERSEDED', 'OTHER']), reason: z.string() })
+      .optional(),
+    started_at: z.string().nullable().optional(),
+    scheduler: z
+      .object({ system: z.string().optional(), job_id: z.string() })
+      .passthrough()
+      .nullable()
+      .optional(),
     id: z.string(),
     name: z.string(),
     project: z.string(),
@@ -88,6 +106,7 @@ export type RunRow = z.infer<typeof RunRowSchema>
 
 export const RunEntrySchema = z
   .object({
+    metadata_fp: PersistedFingerprintSchema.optional(),
     readme_fp: PersistedFingerprintSchema,
     dir_fp: PersistedFingerprintSchema,
     /** `<runDir>/result.csv` (null when absent). */
@@ -130,6 +149,20 @@ export type ExperimentRow = z.infer<typeof ExperimentRowSchema>
 
 export const ExperimentEntrySchema = z
   .object({
+    format: z.literal('lightweight').optional(),
+    variants: z
+      .record(
+        z
+          .object({
+            name: z.string(),
+            active_runs: z.array(z.string()),
+            legacy_status: z.enum(VARIANT_STATUS_VALUES).optional(),
+            frozen_status: z.enum(VARIANT_STATUS_VALUES).optional(),
+            deprecated: z.boolean().optional(),
+          })
+          .strict(),
+      )
+      .optional(),
     dir: RelativePathSchema,
     id: z.string(),
     slug: z.string(),
@@ -143,6 +176,7 @@ export const ExperimentEntrySchema = z
         investigation: PersistedFingerprintSchema,
         /** The description file `experiment.json`. */
         description: PersistedFingerprintSchema,
+        results: PersistedFingerprintSchema.optional(),
       })
       .strict(),
     verified_at: IsoTimestampSchema,

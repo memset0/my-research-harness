@@ -18,6 +18,8 @@ import type { ResultTableColumn, ResultVariant, SotaRank } from '../../lib/exper
 import { cn } from '../../lib/utils'
 import { TranslatedLiteral } from '../body-translation'
 import { Badge } from '../ui/badge'
+import { Button } from '../ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '../ui/hover-card'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip'
 import { VariantStatusBadge } from '../variant-status-badge'
@@ -45,29 +47,63 @@ export function ResultCell(props: ResultCellProps) {
 
 function VariantCell({ variant }: ResultCellProps) {
   return (
-    <span className="inline-flex items-baseline gap-1.5">
-      <span className="font-mono text-[10px] font-medium text-muted-foreground">{variant.id}</span>
-      {variant.deprecated && (
-        <span className="text-xs text-muted-foreground" title={variant.deprecation?.reason}>
-          Deprecated
-          {variant.deprecation?.successor && (
-            <>
-              {' '}
-              →{' '}
-              <a href={`#variant-${variant.deprecation.successor}`} className="underline">
-                {variant.deprecation.successor}
-              </a>
-            </>
-          )}{' '}
-          · {variant.deprecation?.reason}
+    <div className="min-w-40 max-w-md">
+      <span className="inline-flex items-baseline gap-1.5">
+        <span className="font-mono text-[10px] font-medium text-muted-foreground">
+          {variant.id}
         </span>
-      )}
-      <span className="font-medium text-foreground">
-        <TranslatedLiteral original={renderTextWithBreaks(variant.name)}>
-          {variant.name}
-        </TranslatedLiteral>
+        {variant.deprecated && (
+          <span className="text-xs text-muted-foreground" title={variant.deprecation?.reason}>
+            Deprecated
+            {variant.deprecation?.successor && (
+              <>
+                {' '}
+                →{' '}
+                <a href={`#variant-${variant.deprecation.successor}`} className="underline">
+                  {variant.deprecation.successor}
+                </a>
+              </>
+            )}{' '}
+            · {variant.deprecation?.reason}
+          </span>
+        )}
+        {variant.name !== variant.id && (
+          <span className="font-medium text-foreground">
+            <TranslatedLiteral original={renderTextWithBreaks(variant.name)}>
+              {variant.name}
+            </TranslatedLiteral>
+          </span>
+        )}
       </span>
-    </span>
+      {(variant.draft !== undefined || Object.keys(variant.runNotes ?? {}).length > 0) && (
+        <Collapsible>
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" size="sm" className="h-6 px-0 text-xs">
+              Parameters and Run context
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="space-y-2 whitespace-normal text-xs text-muted-foreground">
+            {variant.draft !== undefined && (
+              <div>
+                <strong>Planned parameters · not measurements</strong>
+                <pre className="whitespace-pre-wrap break-words font-mono">
+                  {typeof variant.draft === 'string'
+                    ? variant.draft
+                    : JSON.stringify(variant.draft, null, 2)}
+                </pre>
+              </div>
+            )}
+            {Object.entries(variant.runNotes ?? {}).map(([run, note]) => (
+              <p key={run}>
+                <code className="break-all">{run.split('/').at(-1)}</code>
+                <br />
+                {note}
+              </p>
+            ))}
+          </CollapsibleContent>
+        </Collapsible>
+      )}
+    </div>
   )
 }
 

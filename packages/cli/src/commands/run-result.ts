@@ -21,6 +21,7 @@ import {
   EXPERIMENTS_RELDIR,
   type ExperimentDescription,
   isResultPathWithin,
+  lightweightRunIdentity,
   MutationError,
   markJournalInvocationOutcome,
   parseExperimentDescription,
@@ -43,6 +44,8 @@ import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { effectiveRunDirs, runWalkOptions } from '../lib/discovery-options.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { cliIndexSink, indexWarningFields } from '../lib/index-sink.js'
+import { withCliWriterLock } from '../lib/invocation.js'
+import { publishLightweightWrite } from '../lib/lightweight-publication.js'
 import { emitJson, emitLintDiagnostics, type OutputFormat } from '../lib/output.js'
 import { readStdin } from './experiment.js'
 
@@ -116,7 +119,11 @@ export interface RunResultGetInput extends RunResultBaseInput {
 export async function runRunResultGet(input: RunResultGetInput): Promise<void> {
   const run = await resolveRun(input)
   const content = await readOrNull(join(run.runDir, RESULT_FILE_NAME))
-  const parsed = content === null ? null : parseResultFile(content, run.file)
+  const lightweight = (await readOrNull(join(run.runDir, 'run.json'))) !== null
+  const parsed =
+    content === null
+      ? null
+      : parseResultFile(content, run.file, { lightweight, metadataPaths: lightweight })
   const rows = (parsed?.rows ?? [])
     .filter((row) => input.path === undefined || isResultPathWithin(row.path, input.path))
     .map((row) => ({ line: row.line, path: row.path, stat: row.stat || null, value: row.value }))
@@ -150,7 +157,9 @@ export async function runRunResultGet(input: RunResultGetInput): Promise<void> {
   ]
   const widths = [0, 1].map((index) => Math.max(...table.map((cells) => cells[index]!.length)))
   const lines = [
-    `${run.file} (experiment_schema_version ${output.experimentSchemaVersion ?? 'missing'})`,
+    lightweight
+      ? run.file
+      : `${run.file} (experiment_schema_version ${output.experimentSchemaVersion ?? 'missing'})`,
     ...table.map(
       (cells) => `${cells[0]!.padEnd(widths[0]!)}  ${cells[1]!.padEnd(widths[1]!)}  ${cells[2]}`,
     ),
@@ -210,9 +219,10 @@ async function ownerVersion(projectRoot: string, runDir: string): Promise<number
     const raw = await readOrNull(
       join(projectRoot, EXPERIMENTS_RELDIR, owner, EXPERIMENT_DESCRIPTION_FILE),
     )
-    return raw === null
+    const description = raw === null ? null : parseExperimentDescription(raw).data
+    return description?.format === 'lightweight'
       ? null
-      : (parseExperimentDescription(raw).data?.experimentSchemaVersion ?? null)
+      : (description?.experimentSchemaVersion ?? null)
   } catch {
     return null
   }
@@ -305,44 +315,52 @@ export async function runRunResultSet(input: RunResultSetInput): Promise<void> {
   }
   if (problems.length > 0) emitErrorAndExit('BAD_REQUEST', problems.join('; '), { problems })
 
-  const runDirs = await runDirPatterns(run.projectRoot)
-  let result: Awaited<ReturnType<typeof writeRunResult>>
-  try {
-    result = await writeRunResult({
-      projectRoot: run.projectRoot,
-      runDir: run.runDir,
-      set: assignments,
-      unset,
-      ...(input.expectedHash === undefined ? {} : { expectedHash: input.expectedHash }),
-      ...(runDirs ? { runDirs } : {}),
-      index: cliIndexSink(run.projectRoot),
-    })
-  } catch (error) {
-    if (error instanceof MutationError) exitWithWriteError(error)
-    throw error
-  }
-  if (!result.changed) markJournalInvocationOutcome('noop')
-  for (const warning of result.warnings) process.stderr.write(`${JSON.stringify({ warning })}\n`)
-  const output = {
-    ok: true,
-    run: run.runPath,
-    file: result.file,
-    owner: result.owner,
-    experimentSchemaVersion: result.experimentSchemaVersion,
-    created: result.created,
-    changed: result.changed,
-    hash: result.hash,
-    replaced: result.replaced,
-    appended: result.appended,
-    removed: result.removed,
-    warnings: result.warnings,
-    ...indexWarningFields(result),
-  }
-  if (input.format === 'human')
-    process.stdout.write(
-      `${result.changed ? (result.created ? 'created' : 'updated') : 'unchanged'} ${result.file} (${result.appended} appended, ${result.replaced} replaced, ${result.removed} removed)\nhash ${result.hash}\n${result.warnings.map((warning) => `[WARNING] ${warning.code}: ${warning.message}\n`).join('')}`,
-    )
-  else emitJson(output)
+  return withCliWriterLock(run.projectRoot, async () => {
+    const runDirs = await runDirPatterns(run.projectRoot)
+    let result: Awaited<ReturnType<typeof writeRunResult>>
+    try {
+      result = await writeRunResult({
+        projectRoot: run.projectRoot,
+        runDir: run.runDir,
+        set: assignments,
+        unset,
+        ...(input.expectedHash === undefined ? {} : { expectedHash: input.expectedHash }),
+        ...(runDirs ? { runDirs } : {}),
+        ...(lightweightRunIdentity(run.runPath) ? {} : { index: cliIndexSink(run.projectRoot) }),
+      })
+    } catch (error) {
+      if (error instanceof MutationError) exitWithWriteError(error)
+      throw error
+    }
+    if (lightweightRunIdentity(run.runPath))
+      result.indexWarnings = await publishLightweightWrite(
+        run.projectRoot,
+        run.runPath,
+        result.changes,
+      )
+    if (!result.changed) markJournalInvocationOutcome('noop')
+    for (const warning of result.warnings) process.stderr.write(`${JSON.stringify({ warning })}\n`)
+    const output = {
+      ok: true,
+      run: run.runPath,
+      file: result.file,
+      owner: result.owner,
+      experimentSchemaVersion: result.experimentSchemaVersion,
+      created: result.created,
+      changed: result.changed,
+      hash: result.hash,
+      replaced: result.replaced,
+      appended: result.appended,
+      removed: result.removed,
+      warnings: result.warnings,
+      ...indexWarningFields(result),
+    }
+    if (input.format === 'human')
+      process.stdout.write(
+        `${result.changed ? (result.created ? 'created' : 'updated') : 'unchanged'} ${result.file} (${result.appended} appended, ${result.replaced} replaced, ${result.removed} removed)\nhash ${result.hash}\n${result.warnings.map((warning) => `[WARNING] ${warning.code}: ${warning.message}\n`).join('')}`,
+      )
+    else emitJson(output)
+  })
 }
 
 // ---------- lint ----------
@@ -407,12 +425,20 @@ export async function runRunResultLint(input: RunResultBaseInput): Promise<void>
   const content = await readOrNull(join(run.runDir, RESULT_FILE_NAME))
   const diagnostics: ResultsDiagnostic[] = []
   if (content !== null) {
-    const parsed = parseResultFile(content, run.file)
-    diagnostics.push(...parsed.diagnostics)
     const context = await ownerContext(run.projectRoot, run.runDir, run.file, diagnostics)
+    const parsed = parseResultFile(content, run.file, {
+      lightweight: context?.description.format === 'lightweight',
+      metadataPaths: context?.description.format === 'lightweight',
+    })
+    diagnostics.push(...parsed.diagnostics)
     if (context) {
       const version = context.description.experimentSchemaVersion
-      if (parsed.ok && parsed.schemaVersion !== null && parsed.schemaVersion !== version)
+      if (
+        context.description.format !== 'lightweight' &&
+        parsed.ok &&
+        parsed.schemaVersion !== null &&
+        parsed.schemaVersion !== version
+      )
         diagnostics.push({
           code: 'RESULT_SCHEMA_MISMATCH',
           severity: 'error',

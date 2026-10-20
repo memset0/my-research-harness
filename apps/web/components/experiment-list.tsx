@@ -14,7 +14,17 @@ import { Badge } from './ui/badge'
 import { Input } from './ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 
-const STATUS_VALUES = ['PENDING', 'RUNNING', 'FINISHED', 'FAILED', 'UNKNOWN'] as const
+const STATUS_VALUES = [
+  'READY',
+  'QUEUED',
+  'RUNNING',
+  'FINISHED',
+  'INTERRUPTED',
+  'FAILED',
+  'RESUME_READY',
+  'UNKNOWN',
+  'PENDING',
+] as const
 
 export function ExperimentList({ project }: { project: string }) {
   const { data, isLoading, error } = useQuery({

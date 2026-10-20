@@ -24,9 +24,7 @@ import {
   fetchWiki,
   fetchWikiInventory,
   fetchWikiPage,
-  fetchWikiReview,
   logStreamUrl,
-  markWikiReview,
   patchExperimentStatusV4,
   projectHost,
   projectName,
@@ -35,7 +33,6 @@ import {
   projectWebPath,
   putWikiPage,
   setCommitMark,
-  unmarkWikiReview,
 } from './api'
 
 const target = ProjectRefSchema.parse({ host: 'host-a', project: 'project-x' })
@@ -88,9 +85,6 @@ describe('standalone ProjectTarget URL compatibility', () => {
 
     await fetchWikiPage('project-x', 'W0001')
     expect(String(lastCall()[0])).toBe('/api/wiki/W0001?project=project-x')
-
-    await fetchWikiReview('project-x')
-    expect(String(lastCall()[0])).toBe('/api/wiki/review?project=project-x')
 
     await fetchGitStatus('project-x')
     expect(String(lastCall()[0])).toBe('/api/projects/project-x/git-status')
@@ -154,9 +148,6 @@ describe('central ProjectTarget URL qualification', () => {
     await fetchWikiPage(target, 'W0001')
     expect(String(lastCall()[0])).toBe('/api/wiki/W0001?host=host-a&project=project-x')
 
-    await fetchWikiReview(target)
-    expect(String(lastCall()[0])).toBe('/api/wiki/review?host=host-a&project=project-x')
-
     await fetchRunReadme(target, 'run-a')
     expect(String(lastCall()[0])).toBe('/api/runs/run-a/readme?host=host-a&project=project-x')
 
@@ -200,14 +191,6 @@ describe('central ProjectTarget URL qualification', () => {
       expectedHash: 'a'.repeat(40),
     })
     expect(String(lastCall()[0])).toBe('/api/wiki/W0001?host=host-a&project=project-x')
-
-    await markWikiReview(target, 'next')
-    expect(String(lastCall()[0])).toBe('/api/wiki/review/next?host=host-a&project=project-x')
-    expect(lastCall()[1]?.method).toBe('POST')
-
-    await unmarkWikiReview(target, 'abcdef')
-    expect(String(lastCall()[0])).toBe('/api/wiki/review/abcdef?host=host-a&project=project-x')
-    expect(lastCall()[1]?.method).toBe('DELETE')
   })
 
   it('keeps local Project names in qualified mutation payloads', async () => {

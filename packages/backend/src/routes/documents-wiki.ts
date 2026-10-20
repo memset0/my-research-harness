@@ -1,4 +1,4 @@
-// Reports, code reviews, READMEs, Wiki pages and Wiki review marks.
+// Reports, code reviews, READMEs, Wiki pages.
 
 import {
   BackendCodeReviewResponseSchema,
@@ -16,8 +16,6 @@ import {
   BackendWikiDocumentSchema,
   BackendWikiInventoryResponseSchema,
   BackendWikiPagesResponseSchema,
-  BackendWikiReviewMarkRequestSchema,
-  BackendWikiReviewResponseSchema,
   BackendWikiWriteResponseSchema,
   ResourceIdSchema,
 } from '@memon/core'
@@ -33,10 +31,7 @@ import {
   BACKEND_RUN_README_ROUTE,
   BACKEND_WIKI_BACKLINKS_ROUTE,
   BACKEND_WIKI_PAGE_ROUTE,
-  BACKEND_WIKI_REVIEW_MARK_ROUTE,
-  BACKEND_WIKI_REVIEW_ROUTE,
   BACKEND_WIKI_ROUTE,
-  MAX_BACKEND_CONTROL_JSON_BYTES,
   MAX_BACKEND_DOCUMENT_BODY_BYTES,
 } from '../http/paths.js'
 import {
@@ -53,7 +48,6 @@ import {
 } from '../http/respond.js'
 import {
   codeReviewIdParam,
-  controlShell,
   inventoryField,
   mutating,
   op,
@@ -66,10 +60,8 @@ import {
   resourceParam,
   schemaCheck,
   selectedReadmeResource,
-  shell,
   wikiArtifactParam,
   wikiIdParam,
-  wikiShaParam,
   writeCodeReviewResult,
   writeDocumentResult,
 } from './shared.js'
@@ -146,39 +138,6 @@ const resourceReadme = (kind: 'run' | 'experiment', method: 'GET' | 'PUT') =>
     },
     { project: true, mutation: method === 'PUT' },
   )
-
-// --- Wiki review -------------------------------------------------------------------
-
-// Shell class: verification is an owner judgement, never a viewer's. Review
-// marks record human trust in `.memon/`, not Project content.
-const wikiReviewOperation = (
-  policy: typeof shell,
-  handle: RouteOperation['handle'],
-): RouteOperation =>
-  op(policy, {
-    project: 'query',
-    available: requireProject(({ options }) => options.documentService !== undefined),
-    failure: httpError(400, 'BAD_REQUEST', 'Backend wiki review request is invalid'),
-    handle,
-  })
-
-const wikiReviewMark =
-  (method: 'POST' | 'DELETE') =>
-  async ({ request, response, options, project, params }: RouteContext) => {
-    let note: string | undefined
-    if (method === 'POST' && request.headers['content-type'] !== undefined) {
-      note = BackendWikiReviewMarkRequestSchema.parse(
-        await readBoundedJsonRequest(request, MAX_BACKEND_CONTROL_JSON_BYTES),
-      ).note
-    }
-    const log =
-      method === 'POST'
-        ? await options.documentService!.markWikiReview(project, params.sha!, note)
-        : await options.documentService!.unmarkWikiReview(project, params.sha!)
-    writeJson(response, 200, BackendWikiReviewResponseSchema.parse(log))
-    options.eventStream.publish({ project, topic: 'wiki-review-change', data: {} })
-    options.eventStream.publish({ project, topic: 'wiki-change', data: { type: 'review' } })
-  }
 
 export const DOCUMENT_WIKI_ROUTES: readonly BackendRoute[] = [
   {
@@ -396,30 +355,6 @@ export const DOCUMENT_WIKI_ROUTES: readonly BackendRoute[] = [
           }),
         )
       }),
-    },
-  },
-  {
-    key: BACKEND_WIKI_REVIEW_ROUTE,
-    query: projectQuery(),
-    operations: {
-      GET: wikiReviewOperation(shell, async ({ response, options, project }) => {
-        writeJson(
-          response,
-          200,
-          BackendWikiReviewResponseSchema.parse(
-            await options.documentService!.wikiReviewLog(project),
-          ),
-        )
-      }),
-    },
-  },
-  {
-    key: BACKEND_WIKI_REVIEW_MARK_ROUTE,
-    params: { sha: wikiShaParam },
-    query: projectQuery(),
-    operations: {
-      POST: wikiReviewOperation(controlShell, wikiReviewMark('POST')),
-      DELETE: wikiReviewOperation(controlShell, wikiReviewMark('DELETE')),
     },
   },
 ]

@@ -32,6 +32,11 @@ import {
   parseExperimentDescription,
 } from './description.js'
 import { type ResultsDiagnostic, resultsDiagnostic } from './diagnostics.js'
+import {
+  EXPERIMENT_RESULTS_FILE,
+  generateLightweightResultsSummary,
+  lightweightPublicationErrorPath,
+} from './lightweight.js'
 import { RESULT_FILE_NAME } from './result-file.js'
 import {
   generateResultsSummary,
@@ -102,6 +107,24 @@ export async function readResultsSummaryInputSet(
   const readmeRuns = [...parseExperimentReadme(readme, experimentId).frontMatter.runs]
   const members = [...new Set(readmeRuns.filter((run) => isRunPath(run)))]
   const descriptionKey = `${experimentDir}/${EXPERIMENT_DESCRIPTION_FILE}`
+  const descriptionRaw = await readOrNull(fs, absolute(projectRoot, descriptionKey))
+  if (
+    descriptionRaw !== null &&
+    parseExperimentDescription(descriptionRaw).data?.format === 'lightweight'
+  )
+    return {
+      experimentId,
+      experimentDir,
+      readmeRuns: [],
+      members: [],
+      descriptionKey,
+      legacyResultsYaml: false,
+      keys: [
+        `${experimentDir}/README.md`,
+        descriptionKey,
+        `${experimentDir}/${EXPERIMENT_RESULTS_FILE}`,
+      ],
+    }
   const legacy = await statOrNull(
     fs,
     absolute(projectRoot, `${experimentDir}/${LEGACY_RESULTS_FILE}`),
@@ -238,6 +261,7 @@ export function summaryRunRecord(readme: string): SummaryRunRecord {
 }
 
 export interface GenerateStoredSummaryOptions {
+  runRecords?: Readonly<Record<string, SummaryRunRecord>>
   researchVersion?: number
   fs?: IndexFs
   now?: () => Date
@@ -258,6 +282,23 @@ export async function generateResultsSummaryFromDisk(
     descriptionRaw === null
       ? missingExperimentDescription(set.descriptionKey)
       : parseExperimentDescription(descriptionRaw, set.descriptionKey)
+  if (description.data?.format === 'lightweight')
+    return generateLightweightResultsSummary({
+      experimentId: set.experimentId,
+      experimentDir: set.experimentDir,
+      description,
+      publicationError: await readOrNull(
+        fs,
+        absolute(projectRoot, lightweightPublicationErrorPath(set.experimentId)),
+      ),
+      resultsCsv: await readOrNull(
+        fs,
+        absolute(projectRoot, `${set.experimentDir}/${EXPERIMENT_RESULTS_FILE}`),
+      ),
+      generatedAt: formatIsoLocal((options.now ?? (() => new Date()))()),
+      generator: { release: options.release ?? MEMON_RELEASE, role: options.role ?? 'cli' },
+      runRecords: options.runRecords,
+    })
   const members: SummaryMemberInput[] = await Promise.all(
     set.members.map(async (run) => {
       const [readme, result] = await Promise.all([
@@ -319,6 +360,41 @@ export async function loadResultsSummary(
   options: LoadResultsSummaryOptions = {},
 ): Promise<LoadedResultsSummary | null> {
   const fs = options.fs ?? defaultIndexFs
+  if (!EXPERIMENT_DIR_REGEX.test(experimentId)) return null
+  const experimentDir = `${EXPERIMENTS_RELDIR}/${experimentId}`
+  const descriptionRaw = await readOrNull(
+    fs,
+    absolute(projectRoot, `${experimentDir}/${EXPERIMENT_DESCRIPTION_FILE}`),
+  )
+  const description =
+    descriptionRaw === null
+      ? null
+      : parseExperimentDescription(
+          descriptionRaw,
+          `${experimentDir}/${EXPERIMENT_DESCRIPTION_FILE}`,
+        )
+  if (description?.data?.format === 'lightweight')
+    return {
+      summary: generateLightweightResultsSummary({
+        experimentId,
+        experimentDir,
+        description,
+        publicationError: await readOrNull(
+          fs,
+          absolute(projectRoot, lightweightPublicationErrorPath(experimentId)),
+        ),
+        resultsCsv: await readOrNull(
+          fs,
+          absolute(projectRoot, `${experimentDir}/${EXPERIMENT_RESULTS_FILE}`),
+        ),
+        generatedAt: formatIsoLocal((options.now ?? (() => new Date()))()),
+        generator: { release: options.release ?? MEMON_RELEASE, role: options.role ?? 'cli' },
+        runRecords: options.runRecords,
+      }),
+      cache: 'hit',
+      written: false,
+      warnings: [],
+    }
   const set = await readResultsSummaryInputSet(projectRoot, experimentId, { fs })
   if (!set) return null
   const inputs = await takeResultsInputFingerprints(projectRoot, set.keys, {

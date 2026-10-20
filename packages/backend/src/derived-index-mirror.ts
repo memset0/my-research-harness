@@ -82,6 +82,7 @@ import { indexedWikiPages, wikiPageKey } from './indexed-documents.js'
 import { experimentListing, experimentReadmeKey, type ParsedReadme } from './indexed-experiments.js'
 import { indexedRun, type RunSummary, runSummaryKey } from './indexed-runs.js'
 import { devlessFingerprint, type ProjectReadIndex, projectReadIndex } from './read-index.js'
+import { registeredProjectSnapshot } from './registered-index.js'
 import {
   indexedRunResultFingerprint,
   refreshStoredResultsSummary,
@@ -139,6 +140,8 @@ function statForm(kind: 'f' | 'd', fingerprint: PersistedFingerprint): string {
 
 /** The device-less form of the summary-index fingerprint of a Run entry. */
 export function runEntryFingerprint(entry: RunIndexEntry): string | null {
+  if (entry.row.record_format === 'json' && entry.metadata_fp)
+    return `metadata:${statForm('f', entry.metadata_fp)}`
   if (entry.has_readme && entry.readme_fp) return `readme:${statForm('f', entry.readme_fp)}`
   if (entry.dir_fp) return `dir:${statForm('d', entry.dir_fp)}`
   return null
@@ -175,6 +178,8 @@ export function runSummaryFromEntry(
     createdAt: entry.created_at ?? '',
     updatedAt: entry.updated_at ?? '',
     finishedAt: row.finished_at,
+    startedAt: row.started_at ?? null,
+    scheduler: row.scheduler ?? null,
     host: row.host,
     pid: row.pid,
     gpus: [...row.gpus],
@@ -183,11 +188,11 @@ export function runSummaryFromEntry(
     wandb: row.wandb,
     hypotheses: [...row.hypotheses],
     tags: [...row.tags],
-    experiment: null,
+    experiment: entry.owner,
     archived: frontMatterArchived,
     deprecated: entry.deprecated,
   }
-  const sidecarFallback = entry.archive_source !== 'frontmatter'
+  const sidecarFallback = row.record_format !== 'json' && entry.archive_source !== 'frontmatter'
   return {
     run: {
       id: row.id || basename(dir),
@@ -196,6 +201,23 @@ export function runSummaryFromEntry(
       mtime: row.mtime,
       readmeMtime: row.readme_mtime,
       hasReadme: entry.has_readme,
+      recordFormat: row.record_format,
+      ...(row.record_format === 'json' && entry.created_at && !row.parse_errors.length
+        ? {
+            metadata: {
+              id: row.id,
+              status: entry.status,
+              created_at: entry.created_at ?? '',
+              active: row.active ?? false,
+              params: row.params,
+              name: row.name,
+              description: row.description,
+              assessment: row.assessment,
+            },
+          }
+        : {}),
+      recordPath: join(dir, row.record_format === 'json' ? 'run.json' : 'README.md'),
+      recordMtime: row.record_mtime ?? row.readme_mtime,
       frontMatter,
       sections: parsed.sections,
       warnings: [],
@@ -889,6 +911,11 @@ export function derivedIndexMirror(root: string): ProjectIndexMirror | undefined
  */
 export async function prepareProjectIndex(project: ProjectConfig): Promise<void> {
   const mirror = mirrors.get(resolve(project.root))
+  if (await registeredProjectSnapshot(project)) {
+    mirror?.stop()
+    projectReadIndex(project.root).setStaleHandler(null)
+    return
+  }
   if (!mirror) return
   mirror.noteActivity()
   await mirror.ensureSeeded()

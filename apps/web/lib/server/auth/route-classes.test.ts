@@ -73,14 +73,11 @@ describe('classify (pure class only)', () => {
   it('keeps wiki reads scoped and wiki writes owner-only', () => {
     expect(classify('GET', '/api/wiki')).toBe('read')
     expect(classify('GET', '/api/wiki/W0001')).toBe('read')
-    expect(classify('GET', '/api/wiki/review')).toBe('read')
     expect(classify('GET', '/api/wiki/backlinks/E0001-fused')).toBe('read')
     expect(classify('GET', '/api/wiki/kinds')).toBe('read')
     expect(classify('GET', '/api/wiki-assets/project-a/W0006/views/map/index.html')).toBe('read')
     expect(classify('HEAD', '/api/wiki-assets/project-a/W0006/views/map/index.html')).toBe('read')
     expect(classify('PUT', '/api/wiki/W0001')).toBe('mutating')
-    expect(classify('POST', '/api/wiki/review/a'.padEnd(48, 'b'))).toBe('shell')
-    expect(classify('DELETE', '/api/wiki/review/a'.padEnd(48, 'b'))).toBe('shell')
   })
 
   it('classifies page routes as read', () => {

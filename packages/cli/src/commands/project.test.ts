@@ -3,7 +3,7 @@
 import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { loadProjectDeclaration } from '@memon/core'
+import { DEFAULT_RUN_DIRS, FS_CONVENTION_VERSION, loadProjectDeclaration } from '@memon/core'
 import { ExitCalled, spyExit } from '@memon/test-utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { setRunDirs } from '../lib/discovery-options.js'
@@ -53,14 +53,23 @@ async function tree(dir: string, prefix = ''): Promise<string[]> {
 }
 
 describe('memon project init', () => {
-  it('creates the default declaration and nothing else', async () => {
+  it('creates the declaration and registers a fresh supported project', async () => {
     await runProjectInit(base())
     const result = JSON.parse(stdout.join(''))
     expect(result).toMatchObject({ ok: true, created: true, committed: false })
-    expect(await tree(root)).toEqual(['.memon/project.yml'])
+    expect(await tree(root)).toEqual(
+      FS_CONVENTION_VERSION >= 11
+        ? [
+            '.memon/index/.gitignore',
+            '.memon/index/snapshot.json',
+            '.memon/project.yml',
+            '.memon/version.json',
+          ]
+        : ['.memon/project.yml'],
+    )
     expect(await loadProjectDeclaration(root)).toEqual({
       schema_version: 1,
-      run_dirs: ['logs/*', 'outputs/*', 'experiments/*'],
+      run_dirs: [...DEFAULT_RUN_DIRS],
     })
   })
 
@@ -92,7 +101,7 @@ describe('memon project lint', () => {
     expect(JSON.parse(stdout.join(''))).toMatchObject({
       ok: true,
       present: false,
-      effective: { patterns: ['logs/*', 'outputs/*', 'experiments/*'], source: 'default' },
+      effective: { patterns: [...DEFAULT_RUN_DIRS], source: 'default' },
     })
     expect(process.exitCode ?? 0).toBe(0)
   })
@@ -192,7 +201,7 @@ describe('memon project --from-central', () => {
     await runProjectInit(from('project-b'))
     expect(await loadProjectDeclaration(root)).toEqual({
       schema_version: 1,
-      run_dirs: ['logs/*', 'outputs/*', 'experiments/*'],
+      run_dirs: [...DEFAULT_RUN_DIRS],
     })
   })
 

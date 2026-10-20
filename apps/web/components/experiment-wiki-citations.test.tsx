@@ -33,7 +33,6 @@ const CITATION: WikiBacklink = {
   status: 'VERIFIED',
   stale: true,
   deprecated: false,
-  reviewState: 'CHANGED_SINCE_VERIFY',
   updatedAt: '2026-05-06T08:00:00+00:00',
 }
 
@@ -83,7 +82,7 @@ describe('ExperimentWikiCitations', () => {
     expect(within(link).getByText('finding')).toBeInTheDocument()
     expect(within(link).getByText('VERIFIED')).toBeInTheDocument()
     expect(within(link).getByText('stale')).toBeInTheDocument()
-    expect(within(link).getByText('CHANGED_SINCE_VERIFY')).toBeInTheDocument()
+    expect(link.querySelector('[data-slot="wiki-review-badge"]')).toBeNull()
 
     await userEvent.click(link)
     expect(openWiki).toHaveBeenCalledWith('W0004')

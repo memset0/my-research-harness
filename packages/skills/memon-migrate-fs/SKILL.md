@@ -1,313 +1,35 @@
 ---
 name: memon-migrate-fs
-description: Upgrade a memon project's on-disk FS convention by following each shipped migration guide and conversion script. Use only when the user explicitly asks to migrate; for review-required semantic upgrades such as v5 to v6, stage every Experiment, iterate with the user, record per-Experiment approval and hashes, and publish only after all candidates receive final approval.
+description: Migrate explicitly selected memon project data using the shipped filesystem-version guides and scoped conversion tools. Use when the user requests migration; preserve evidence, unrelated edits and recoverable preimages.
 disable-model-invocation: true
 ---
 
-# memon-migrate-fs
+# Filesystem migration
 
-The only skill allowed to update `.memon/version.json`, and the only one exempt
-from the FS-version preflight — resolving a mismatch is its purpose. Never run
-autonomously. The CLI issue handoff in `../PREFLIGHT.md` still applies.
+Follow the user's authorized scope. Read `memon --project-root . fs-version
+check`, then the full shipped guide for each required `vN-to-vN+1` step.
+Locate guides in the installed memon checkout under `packages/core/migrations/`.
+A missing guide or an ahead-of-tooling version blocks conversion. Do not
+migrate merely because a project is old, or while deploying the dashboard.
 
-## Determine the migration chain
+For V11, use `memon experiment migrate <experiment>` to produce a local plan.
+Inspect the declaration, Run moves, timestamps, exclusions and proposed README;
+resolve scientific ambiguities with the user. A migration request with an
+already agreed boundary authorizes that scoped implementation; do not add
+repeated approval steps for mechanical work. Use `--apply <plan.json>` only
+after completing the review. Follow the guide's layout, snapshot, marker and
+verification steps. Never imply that a V11 project marker means all legacy
+experiments were converted.
 
-### Explicit data-only preparation
+Keep backups and plans outside tracked research files. Check ownership and the
+working tree first. Preserve unrelated edits, and never stash/reset them.
+Where a guide requires a clean tree or explicit dirty-tree scope, follow that
+requirement. Do not move running/queued executions or flatten multiple
+research generations without resolving their evidence meaning. Keep native
+outputs; missing extracted metrics are not a migration failure.
 
-When the user explicitly requests the Run-path data conversion before the next
-FS release, use `scripts/migrate-v6-to-v7.mjs` with `--keep-version` for both
-planning and verification, following its operator guide. This is an exception
-to the `match` early exit below: matching v6 markers do not prove this optional
-data step has run. Apply the reviewed plan with external backups and report
-actual changed files and remaining blockers. Preserve `.memon/version.json`
-byte-for-byte, including its timestamps; do not release v7, mark the full
-version chain complete, or migrate other projects without a separate request.
-All dirty-tree and dropped-claim approvals below still apply.
-
-```sh
-memon --project-root . --format json fs-version check
-```
-
-- `match`: stop unless the user explicitly requested normalization of an older
-  FS10 Experiment lifecycle; the initial v10 format can still require that step.
-- `uninitialised`: ask the user to install memon first; stop.
-- `ahead`: never downgrade; ask the user to upgrade memon.
-- `behind`: enumerate every `vN-to-vN+1` guide through the target.
-
-Read every guide completely before writing. Each declares whether it is a
-mechanical step or a review-required semantic migration and names its
-deterministic conversion scripts; a missing guide or script is fatal.
-
-Present the full chain and wait for explicit confirmation. A request that
-triggered some other skill is not migration consent.
-
-## Git and local staging preflight
-
-For Git projects, require a clean tracked and untracked working tree. Never
-auto-stash or discard work: show dirty paths and stop. For FS v6→v7, v7→v8
-v8→v9 and v9→v10 (including explicit FS10 lifecycle normalization), an operator may explicitly authorize scoped dirty-tree migration. Record that
-approval, use the fingerprinted plan and external preimage backup, and preserve
-all unrelated edits. Never infer this authorization from a generic migration
-request. Explicitly obtain approval before dropping Run-only ownership claims;
-never backfill those claims into Experiment membership.
-
-Keep review candidates local:
-
-```text
-.memon/migrations/v<N>-to-v<N+1>/<migration-id>/
-├── state.yaml
-├── live-backup/
-└── experiments/
-```
-
-Add `.memon/migrations/` to `.git/info/exclude` if it is not already ignored;
-do not touch the tracked `.gitignore` for migration state, and never commit
-staging.
-
-`state.yaml` records at least:
-
-```yaml
-schema_version: 1
-migration: v5-to-v6
-migration_id: 20260810T120000Z
-published_at: null
-experiments:
-  E0001-example:
-    status: APPROVED
-    source_paths:
-      - docs/experiments/E0001-example/README.md
-      - logs/baseline-260810-120000/README.md
-    source_hash: <combined hash of Experiment and referenced Run records>
-    staged_hash: <hash of candidate bundle>
-    approved_at: <ISO8601 with offset>
-    stale_reason: null
-```
-
-Per-Experiment states are `DRAFT`, `APPROVED`, `STALE`, `PUBLISHED`. A missing
-or ambiguous referenced Run record is a blocking source error. The directory and
-state survive conversation boundaries: resume an existing matching migration
-instead of starting a second candidate set.
-
-## Mechanical step
-
-For a guide explicitly marked mechanical:
-
-1. Run its conversion script in `--check`/dry-run mode.
-2. Show the planned file changes and request the guide-required confirmation.
-3. Create a backup.
-4. Run the deterministic, idempotent conversion.
-5. Run every verification command from the guide.
-6. Update the FS marker only after verification succeeds.
-7. Submit the converted Experiment and wiki paths with `journal submit --files`
-   (scope rules as in the publication step).
-8. In Git mode, commit only explicit touched paths with the guide's fixed
-   migration commit message.
-
-Never improvise a semantic rewrite under this shorter path.
-
-FS v6→v7 (`packages/core/migrations/v6-to-v7.md`) is mechanical. Its executor is
-`scripts/migrate-v6-to-v7.mjs` from the reviewed memon checkout: `plan` is the
-read-only dry run (plan file outside the project), `apply` takes the reviewed
-plan plus a new external backup directory and writes the marker last, and the
-guide's `bash` Verification block is the check. Blockers stop the step until the
-user resolves them and a fresh plan is made; warnings such as
-`MEMBER_README_MISSING` are reported but do not block. Commit with exactly
-`chore(memon): migrate FS convention v6 -> v7`.
-
-FS v7→v8 (`packages/core/migrations/v7-to-v8.md`) is mechanical: it builds the
-derived index `.memon/index/` and advances the marker, changing no document.
-Its executor is `scripts/migrate-v7-to-v8.mjs` from the reviewed memon checkout.
-Before planning, confirm every CLI node writing to the project runs an 8.x
-release (`memon update`). `plan` is the read-only dry run (plan file outside the
-project); show its `counts`, `runDirs`, every `outsideRunDirs` and `nested` path
-and every warning, and get the user's explicit acknowledgement before passing
-`--acknowledge-warnings` to `apply`. `apply` takes the plan plus a new external
-backup directory, rebuilds and verifies the index, writes the marker last and,
-in Git mode, itself commits exactly `.memon/version.json` with
-`chore(memon): migrate FS convention v7 -> v8` — do not make a second commit,
-and skip the `journal submit` step because no managed document changes. Then
-run the guide's `bash` Verification block. Never create, edit or commit
-`.memon/project.yml` or anything under `.memon/index/` during this step; for
-Runs outside the default locations, tell the user to run `memon project init`,
-edit `run_dirs`, commit that file separately and run `memon index rebuild`
-after the migration. `rollback` with the backup directory reverts the migration
-commit and restores the index.
-
-FS v8→v9 (`packages/core/migrations/v8-to-v9.md`) is mechanical: it splits
-every `results.yaml` into the description file `experiment.json` and per-Run
-`result.csv` files, rewrites the Results pointer, rebuilds the index as
-`index_version: 2` with the Results summaries and advances the marker. Its
-executor is `scripts/migrate-v8-to-v9.mjs` from the reviewed memon checkout.
-Before planning, confirm central runs 9.x and every CLI node writing to the
-project runs a 9.x release (`memon update`). Take the per-Run sidecar file name
-only from the operator (recorded in `LOCAL.md`) and pass it as
-`--sidecar-name`; never guess or search for one. `plan` is the read-only dry
-run (plan file outside the project); show the user its `experiments`, file
-counts, conversion `counts`, every `notices` code with its locations, the
-`expectedLintErrors`, every blocker with its choices and — in Git mode — every
-`allowRules` entry: the target ignore file, the exact lines to append, the
-ignore rules they override and the Run directories they cover. Ignored result
-files never block the step; the appended allow rules are part of the reviewed
-plan, the only ignore-file edit memon makes. Record the user's choice for each
-blocker in a resolutions JSON file and plan again with `--resolutions`; apply
-only a plan with no `unresolved` blocker and the user's explicit approval of
-the whole plan, allow rules included:
-
-> 迁移计划会在 `.gitignore` 末尾追加两行：`# memon: track per-Run result files (FS v9)` 和
-> `!/logs/*/result.csv`，用来覆盖 `.gitignore:1:logs/*/*`，涵盖 `logs/*` 下的 Run 目录；
-> 它们会随迁移一起提交、回滚时一起撤销。还有 1 个阻塞项需要你选择（deprecate 或 adopt）。
-> 你确认整个计划后我再执行 apply。
-
-`apply` takes the plan plus a new external backup directory, writes, rebuilds,
-verifies, writes the marker last and, in Git mode, itself commits exactly the
-touched paths (ignore files included) with
-`chore(memon): migrate FS convention v8 -> v9` — do not make a second commit. Then run `verify` and the guide's `bash` Verification block.
-Submit the changed `docs/experiments/E<NNNN>-<slug>/experiment.json` and
-`README.md` paths once with `journal submit --files` after verification; Run
-READMEs, `result.csv` files, ignore files, the marker and the removed
-`results.yaml` are outside its scope. Converted sidecars stay in place; their
-deletion is a separate commit the user reviews. `rollback` with the backup
-directory reverts the migration commit, which restores every `results.yaml` and
-removes the appended allow rules, and restores the index.
-
-## FS10 research versions and lifecycle
-
-Read `packages/core/migrations/v9-to-v10.md` and use the shipped
-`scripts/migrate-v9-to-v10.mjs`. Its reviewed `--lifecycles <map.json>` maps
-Experiment IDs to ACTIVE, PAUSED, ARCHIVED or RETIRED for both FS9 conversion
-and normalization of initial FS10 documents. Never derive this decision from
-Run completion, legacy archived flags or a generic migration request. Reuse
-the user's explicit per-Experiment decisions; do not request identical approval
-again. Uncertain cases stay unresolved in the plan.
-
-Preview exact changes, preserve unrelated dirty work only with scoped approval,
-use external preimage backups and fingerprint checks, and verify before marker
-finalization. Bodies and Run files stay byte-identical; no research is executed.
-Format conversion initializes version 1 and does not reconstruct scientific
-protocol generations. Version partitioning, withdrawal of evidence and restoring
-historical associations require their separately reviewed mapping. Deployment
-alone authorizes neither data conversion nor lifecycle normalization.
-
-The four Experiment lifecycle values replace its archive boolean; RUNNING and
-COMPLETED are derived displays, not migration targets. Keep Variant and Run
-states independent. The guide controls command details, rollback and the fixed
-migration commit subject.
-
-## Review-required semantic step
-
-v5→v6 uses this workflow; any future guide may opt in.
-
-### 1. Stage one Experiment at a time
-
-Hash its complete source bundle as `source_hash`. Read every legacy section and
-related Run record — unsupported or unknown headings are evidence, not
-disposable errors, and rich legacy Run documents stay as they are unless the
-guide converts them. Generate a complete target candidate **only** under
-staging (canonical `README.md`, the three YAML files, any guide-required files)
-using the current `memon-write-experiment-doc` schema/routing contract in
-staging mode, never touching production. Run the guide's staging validator and
-YAML conversion checks, then render Implementation, Investigation and Results
-and show the README diff with diagnostics.
-
-The Agent performs the semantic reconstruction — legacy coding tasks into
-Implementation, experimental work into Investigation, retries grouped into
-Variants, Results columns chosen, facts separated from Findings and Conclusion.
-Do not pretend that classification is lossless.
-
-### 2. Iterate until the user approves
-
-Accept feedback on missing or misclassified work, wrong hierarchy or dependency,
-wrong Variant grouping or selected Run, a needed column or enum option,
-inaccurate Findings/Limitations/Conclusion, and legacy content that must stay
-visible. Modify only the staged candidate, rerun validation and rendering, show
-the new diff — no retry limit. On explicit approval record `staged_hash`,
-`source_hash`, `approved_at`, set `APPROVED`; approval covers only those bytes.
-
-### 3. Invalidate stale approvals
-
-Before moving to another Experiment and again before publication, recompute
-every approved source and staged hash. Differing candidate bytes → `STALE`,
-rerun checks, re-approve the new bytes. Differing source bytes → start a new
-staging migration from the new source and repeat review. Never carry approval
-across changed bytes.
-
-### 4. Require all approvals and final confirmation
-
-Never partially publish. Continue until every Experiment is `APPROVED`, all
-candidates validate, all cross-Experiment references validate, and all hashes
-still match. Show a final summary of every Experiment, changed file, unresolved
-diagnostic, and source/staged hash, then ask for one explicit publication
-confirmation. Until it arrives: production files untouched, FS marker unchanged,
-no commit.
-
-### 5. Publish as one guarded operation
-
-1. Recheck the Git tree and all hashes.
-2. Project every approved candidate into an isolated validation root and run
-   YAML validation, bundle lint, cross-reference checks, and all managed-section
-   renders before touching production.
-3. Copy current production files into the staging backup directory.
-4. Promote every approved candidate with the guide's atomic publication
-   script/rename strategy.
-5. Repeat per-file validation, bundle lint, cross-reference checks, CLI
-   rendering, and guide verification across the production tree.
-6. On failure, restore from backup, leave the FS marker at its old version, and
-   report.
-7. Only after all production checks and state writes pass, atomically update
-   `.memon/version.json` (`fs_convention_version`, `last_migrated_at`).
-8. Re-run the version check and final smoke tests.
-9. Submit the published paths with `journal submit --files` (`../PREFLIGHT.md`):
-   guide-listed production paths under `docs/experiments/E<NNNN>-<slug>/` and
-   `docs/wiki/`, nothing else — the FS marker, `.memon/migrations/`, Run records
-   and `docs/hypotheses.md` are outside its scope. Batch per Experiment. A
-   rejected submission never rolls back a verified migration: keep the files and
-   report the unrecorded paths with the command and error.
-10. In Git mode, stage only guide-listed production paths and the marker, then
-    create the fixed migration commit.
-
-The FS marker is the final write, never a promise to fix incomplete files later.
-
-## YAML schema upgrades
-
-Every YAML schema change is governed by an FS convention step whose guide ships
-a deterministic conversion script: idempotent, dry-run capable, explicit about
-source and target `schema_version`, comment/order/unknown-field preserving where
-possible, atomic per file, and validated across every Experiment before the
-global marker changes. Where semantic judgment is required the script builds the
-mechanical skeleton and the review workflow handles meaning. Never upgrade YAML
-silently while reading it.
-
-One Experiment's result schema (`experiment_schema_version` in
-`experiment.json` and every member `result.csv`) is not an FS convention step:
-it changes through a reviewed transform under that Experiment's
-`schema-upgrades/` and `memon experiment schema upgrade`, owned by
-`memon-write-experiment-doc`, never by this skill.
-
-## Final report
-
-Report the version chain, approved/published Experiment count, verification
-results, the `journal submit` invocation id(s) or the paths left unrecorded and
-why, migration commit(s) or non-Git backup paths, and the retained staging path.
-Do not delete staging automatically; it is the audit record until the user
-removes it.
-
-## Guardrails
-
-- Never skip explicit start confirmation or final publication confirmation.
-- Never edit production Experiment files during staged review.
-- Never publish a subset of a review-required migration.
-- Never accept changed source/candidate bytes under an old approval.
-- Never bump the marker before successful production verification.
-- Never use `git add .` or `git add -A`.
-- Never auto-stash, reset, discard, or delete user work.
-- Never commit `.memon/migrations/` or anything under `.memon/index/`.
-- Never edit an ignore file outside the reviewed plan's allow rules, and never
-  apply allow rules the user has not seen.
-- Never create `.memon/project.yml` as part of a migration.
-- Never infer that parser success means a semantic migration is correct.
-- Never rewrite, relocate, or delete a legacy `docs/journal.md`; leave it
-  byte-for-byte as history this migration does not own.
-- Never rewrite a legacy Run record into the minimal shape, or convert
-  execution status into deprecation, as a side effect of migration.
-- Never read a Journal file as migration input, and never let a failed Journal
-  submission trigger a rollback of a verified migration.
+Verify the selected files, preserved artifacts, historical links, new and old
+browser views, and the CLI workflow. Record actual results. Update the marker
+last with a timezone-bearing timestamp. Use the guide's exact migration commit
+message and rollback instructions; repository Git authorization still applies.
+A failed partial write needs inspection and repair, not blind repetition.

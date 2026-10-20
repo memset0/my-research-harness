@@ -35,6 +35,7 @@ import {
   runExperimentDocumentRender,
   runExperimentDocumentShow,
 } from './commands/experiment-document.js'
+import { registerExperimentMigration } from './commands/experiment-migrate.js'
 import { runExperimentRename } from './commands/experiment-rename.js'
 import { registerExperimentResearchCommands } from './commands/experiment-research.js'
 import { runFsVersionCheck } from './commands/fs-version-check.js'
@@ -52,6 +53,7 @@ import {
 } from './commands/results-commands.js'
 import { runRunDeprecate, runRunUndeprecate } from './commands/run-deprecate.js'
 import { runRunLint } from './commands/run-lint.js'
+import { type RunMetadataOptions, runRunCreate, runRunUpdate } from './commands/run-metadata.js'
 import { runRunRecord } from './commands/run-record.js'
 import { runRunRename } from './commands/run-rename.js'
 import { runResolveExp } from './commands/run-resolve-exp.js'
@@ -79,10 +81,6 @@ import {
   runWikiLs,
   runWikiMigrateReport,
   runWikiMove,
-  runWikiReviewDiff,
-  runWikiReviewLog,
-  runWikiReviewUnverify,
-  runWikiReviewVerify,
   runWikiSet,
   runWikiShow,
   runWikiUndeprecate,
@@ -428,7 +426,11 @@ program
 
 const experiment = program
   .command('experiment')
-  .description('experiment-doc commands (docs/experiments/E<NNNN>-<slug>/README.md)')
+  .description('create research questions, draft Variants and aggregate results')
+  .addHelpText(
+    'after',
+    '\nFS11: create → variant create → run create/update → results rebuild. Optional/legacy doc, implementation, investigation, section and version commands remain callable through their own --help.',
+  )
 
 experiment
   .command('ls')
@@ -454,7 +456,7 @@ experiment
 experiment
   .command('create <slug>')
   .description(
-    'allocate next E<NNNN> and write docs/experiments/E<NNNN>-<slug>/ (README.md, implementation.yaml, investigation.yaml, experiment.json)',
+    'create an Experiment (FS11: README.md + experiment.json; existing legacy projects retain their format)',
   )
   .option('--title <text>', 'human-readable title')
   .option('--hypotheses <list>', 'comma-separated H<NNNN> ids')
@@ -490,7 +492,7 @@ experiment
   })
 
 const experimentDoc = experiment
-  .command('doc')
+  .command('doc', { hidden: true })
   .description(
     'read, render and lint the Experiment document package (README, implementation.yaml, investigation.yaml, experiment.json, member result.csv files)',
   )
@@ -518,7 +520,9 @@ experimentDoc
 // Read-only convenience forms kept deliberately small: Agents edit the YAML
 // files directly; these commands are projections, never CRUD APIs.
 for (const section of ['implementation', 'investigation'] as const) {
-  const sectionCommand = experiment.command(section).description(`${section}.yaml read commands`)
+  const sectionCommand = experiment
+    .command(section, { hidden: true })
+    .description(`${section}.yaml read commands`)
   sectionCommand
     .command('show <id-or-slug>')
     .description(`render ${section}.yaml as human-readable Markdown or normalized JSON`)
@@ -528,9 +532,10 @@ for (const section of ['implementation', 'investigation'] as const) {
 }
 registerExperimentResultsCommands(experiment, readGlobals)
 registerExperimentResearchCommands(experiment, readGlobals)
+registerExperimentMigration(experiment, readGlobals)
 
 const experimentSection = experiment
-  .command('section')
+  .command('section', { hidden: true })
   .description('managed-section compatibility aliases')
 experimentSection
   .command('show <id-or-slug> <section>')
@@ -540,7 +545,7 @@ experimentSection
   })
 
 experiment
-  .command('link <id-or-slug> <run-dir-or-id>')
+  .command('link <id-or-slug> <run-dir-or-id>', { hidden: true })
   .description("add a run's project-relative path to the experiment's runs (run README untouched)")
   .action(async (experimentIdOrSlug: string, runIdOrDir: string) => {
     const g = readGlobals()
@@ -548,7 +553,7 @@ experiment
   })
 
 experiment
-  .command('unlink <id-or-slug> <run-dir-or-id>')
+  .command('unlink <id-or-slug> <run-dir-or-id>', { hidden: true })
   .description("remove a run from the experiment's runs (run README untouched)")
   .action(async (experimentIdOrSlug: string, runIdOrDir: string) => {
     const g = readGlobals()
@@ -642,7 +647,9 @@ readme
     })
   })
 
-const warning = experiment.command('warning').description('Warnings table operations on README.md')
+const warning = experiment
+  .command('warning', { hidden: true })
+  .description('Warnings table operations on README.md')
 warning
   .command('add <id>')
   .description(
@@ -801,14 +808,12 @@ function emitV2DeprecationBanner(legacy: string, replacement: string): void {
   )
 }
 
-const run = program
-  .command('run')
-  .description('run-dir commands (v3 logs/<slug>-<YYMMDD>-<HHMMSS>/)')
+const run = program.command('run').description('Run execution metadata and results')
 
 registerRunResultCommands(run, readGlobals)
 
 run
-  .command('rename <id-or-dir> <new-slug>')
+  .command('rename <id-or-dir> <new-slug>', { hidden: true })
   .description(
     "rename a run's slug (timestamp suffix preserved); updates the declaring exp's runs path",
   )
@@ -818,7 +823,7 @@ run
   })
 
 run
-  .command('resolve-exp <id-or-dir>')
+  .command('resolve-exp <id-or-dir>', { hidden: true })
   .description(
     'print the parent exp doc id for a run; exit 1 (BAD_STATE) on orphan, exit 4 (NOT_FOUND) on unknown',
   )
@@ -827,7 +832,9 @@ run
     await runResolveExp({ ...g, runIdOrDir })
   })
 
-const runWarning = run.command('warning').description('run-side warning operations')
+const runWarning = run
+  .command('warning', { hidden: true })
+  .description('run-side warning operations')
 runWarning
   .command('add <id-or-dir>')
   .description(
@@ -860,22 +867,81 @@ runWarning
     },
   )
 
+const createRunCommand = run
+  .command('create [id]')
+  .description('create a lightweight Run directory and tracked run.json; never launches a process')
+  .requiredOption('--experiment <id>', 'owning Experiment')
+  .requiredOption('--variant <id>', 'V followed by four digits, or smoke')
+  .option(
+    '--activate',
+    'replace the Variant selection with this Run; the first Run is selected automatically',
+  )
+const updateRunCommand = run
+  .command('update <id-or-path>')
+  .description('update execution facts in run.json without editing files')
+  .option('--activate', 'make this Run active and deactivate its peers')
+  .option('--expected-mtime <ms>', 'optional metadata mtime lock', Number)
+  .option('--expected-hash <hash>', 'optional metadata content hash lock')
+for (const command of [createRunCommand, updateRunCommand]) {
+  command
+    .option(
+      '--status <status>',
+      'READY|QUEUED|RUNNING|FINISHED|INTERRUPTED|FAILED|RESUME_READY|UNKNOWN (PENDING: legacy ambiguous)',
+    )
+    .option('--name <text>', 'optional display label')
+    .option('--active <boolean>', 'true or false, independent of execution status')
+    .option('--params <json>', 'partial or resolved parameters as a JSON object')
+    .option('--description <text>', 'optional explanation')
+    .option('--assessment <kind>', 'INVALID|LIMITED|SUPERSEDED|OTHER|clear')
+    .option('--reason <text>', 'reason for the assessment')
+    .option('--created-at <iso>', 'explicit historical creation time with numeric timezone offset')
+    .option('--started-at <iso>', 'observed start time with numeric timezone offset')
+    .option('--finished-at <iso>', 'observed finish time with numeric timezone offset')
+    .option('--host <name>', 'execution host')
+    .option('--pid <n>', 'process id', Number)
+    .option('--gpus <list>', 'comma-separated GPU indices')
+    .option('--entry <path>', 'entry script')
+    .option('--command <text>', 'command line as launched')
+    .option('--wandb <url>', 'tracking URL')
+    .option('--job-id <id>', 'scheduler job identity')
+    .option('--scheduler <name>', 'scheduler name, with --job-id')
+}
+createRunCommand.action(
+  async (
+    id: string | undefined,
+    opts: RunMetadataOptions & { experiment: string; variant: string },
+  ) => {
+    await runRunCreate({ ...readGlobals(), ...opts, ...(id ? { id } : {}) })
+  },
+)
+updateRunCommand.action(
+  async (
+    target: string,
+    opts: RunMetadataOptions & { expectedMtime?: number; expectedHash?: string },
+  ) => {
+    await runRunUpdate({ ...readGlobals(), ...opts, target })
+  },
+)
+
 run
-  .command('record <id-or-dir>')
+  .command('record <id-or-dir>', { hidden: true })
   .option(
     '--experiment <id-or-slug>',
     'register a new execution in this Experiment before publishing membership',
   )
   .description(
-    'write the minimal README for an existing execution directory. Never launches or overwrites. Use --experiment at launch to enroll in the current research version and publish membership; standalone existing executions require historical import before FS10 linking.',
+    'record an existing execution directory: run.json in the lightweight layout, legacy README elsewhere. Never launches or overwrites.',
   )
   .option('--status <status>', 'PENDING|RUNNING|FINISHED|INTERRUPTED|FAILED|UNKNOWN', 'PENDING')
   .option('--name <text>', 'short human label for this run')
   .option(
     '--created-at <iso>',
-    'ISO8601 with offset (default: the timestamp in the directory name)',
+    'ISO8601 with offset (lightweight default: now; legacy default: directory timestamp)',
   )
   .option('--finished-at <iso>', 'ISO8601 with offset')
+  .option('--started-at <iso>', 'observed start time with numeric timezone offset')
+  .option('--job-id <id>', 'scheduler job identity (lightweight Runs)')
+  .option('--scheduler <name>', 'scheduler name with --job-id (lightweight Runs)')
   .option('--host <name>', 'execution host')
   .option('--pid <n>', 'process id', (v) => Number(v))
   .option('--gpus <list>', 'comma-separated GPU indices')
@@ -892,6 +958,9 @@ run
         name?: string
         createdAt?: string
         finishedAt?: string
+        startedAt?: string
+        jobId?: string
+        scheduler?: string
         host?: string
         pid?: number
         gpus?: string
@@ -908,7 +977,7 @@ run
   )
 run
   .command('archive <id>')
-  .description('mark a run as archived (writes archived: true to README frontmatter)')
+  .description('mark a Run archived in its execution record')
   .action(async (id: string) => {
     const g = readGlobals()
     await runArchive({ ...g, runId: id })
@@ -922,9 +991,7 @@ run
   })
 run
   .command('lint <id-or-dir>')
-  .description(
-    'structural lint of one run: README frontmatter schema, id/directory agreement, timestamp and reference formats. Reads only; never journaled.',
-  )
+  .description('check run.json or legacy README identity, status and timezone-bearing timestamps')
   .action(async (id: string) => {
     const g = readGlobals()
     await runRunLint({ ...g, runId: id })
@@ -952,18 +1019,21 @@ run
     await runRunUndeprecate({ ...g, runId: id, expectedMtime: opts.expectedMtime })
   })
 
-const runStatus = run.command('status').description('run status field operations')
+const runStatus = run.command('status', { hidden: true }).description('run status field operations')
 runStatus
   .command('set <id>')
-  .description('atomically write README + append [STATUS] event')
+  .description('update Run execution status in its record')
   .requiredOption('--to <status>', 'PENDING|RUNNING|FINISHED|INTERRUPTED|FAILED|UNKNOWN')
-  .requiredOption('--expected-mtime <ms>', 'expected README mtime', (v) => Number(v))
-  .action(async (id: string, opts: { to: string; expectedMtime: number }) => {
-    const g = readGlobals()
-    await runStatusSet({ ...g, runId: id, to: opts.to, expectedMtime: opts.expectedMtime })
-  })
+  .option('--expected-mtime <ms>', 'expected record mtime', (v) => Number(v))
+  .option('--expected-hash <hash>', 'expected record hash')
+  .action(
+    async (id: string, opts: { to: string; expectedMtime?: number; expectedHash?: string }) => {
+      const g = readGlobals()
+      await runStatusSet({ ...g, runId: id, ...opts })
+    },
+  )
 
-const runReadme = run.command('readme').description('run README.md operations')
+const runReadme = run.command('readme', { hidden: true }).description('run README.md operations')
 runReadme
   .command('write <id>')
   .description('overwrite README.md (content from stdin) with mtime/hash lock')
@@ -1128,7 +1198,7 @@ withCentralOptions(
   projectCommand
     .command('init')
     .description(
-      'create .memon/project.yml with the default run_dirs (or the global --run-dir patterns, or the layout of a central Project with --from-central); never overwrites, never commits',
+      'initialize project layout, FS version and inventory; preserve existing markers; never commits',
     ),
 ).action(async (opts: ProjectCentralOptions) => {
   await runProjectInit({
@@ -1421,40 +1491,6 @@ wikiCommand(
       await runWikiCommit({ ...wikiGlobals(opts), ...opts, pages, noPush: opts.push === false })
     },
   )
-
-const wikiReview = wiki
-  .command('review')
-  .description('commit-ordered human verification of docs/wiki/ (.memon/wiki-review.csv)')
-
-wikiCommand(wikiReview, 'log', 'every wiki commit in order with its verification state').action(
-  async (opts: WikiLocalOptions) => {
-    await runWikiReviewLog(wikiGlobals(opts))
-  },
-)
-
-wikiCommand(
-  wikiReview,
-  'diff',
-  'one whole-wiki diff from the verified commit to HEAD (committed changes only)',
-).action(async (opts: WikiLocalOptions) => {
-  await runWikiReviewDiff(wikiGlobals(opts))
-})
-
-wikiCommand(
-  wikiReview,
-  'verify <sha>',
-  'mark a wiki commit verified (human only; `next` = oldest unmarked)',
-)
-  .option('--note <text>', 'note stored with the mark')
-  .action(async (sha: string, opts: WikiLocalOptions & { note?: string }) => {
-    await runWikiReviewVerify({ ...wikiGlobals(opts), sha, note: opts.note })
-  })
-
-wikiCommand(wikiReview, 'unverify <sha>', 'remove a mark and every newer one (human only)').action(
-  async (sha: string, opts: WikiLocalOptions) => {
-    await runWikiReviewUnverify({ ...wikiGlobals(opts), sha })
-  },
-)
 
 function interceptParserExits(command: Command): void {
   command.exitOverride()

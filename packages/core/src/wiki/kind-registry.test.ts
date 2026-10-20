@@ -157,13 +157,6 @@ describe('Wiki kind registry', () => {
       },
       'zh.headings',
     ],
-    [
-      'bad review policy',
-      (value: typeof configuration) => {
-        value.kinds[0]!.policy.reviewWarningStatus = 'VERIFIED'
-      },
-      'reviewWarningStatus',
-    ],
   ])('rejects %s with a field path', (_name, edit, field) => {
     const value = structuredClone(configuration)
     edit(value)

@@ -21,10 +21,15 @@ import {
   type CentralProjectLayout,
   ConfigError,
   DEFAULT_RUN_DIRS,
+  FS_CONVENTION_VERSION,
+  formatIsoLocal,
   lintProjectDeclaration,
   PROJECT_DECLARATION_RELPATH,
   readCentralProjectLayout,
+  readFsVersion,
+  rebuildIndex,
   resolveProjectDeclarationPath,
+  writeFsVersion,
 } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { cliRunDirs } from '../lib/discovery-options.js'
@@ -137,6 +142,21 @@ export async function runProjectInit(input: ProjectCommandInput): Promise<void> 
       )
     }
     throw error
+  }
+  // Project initialization registers existing files, but never converts their
+  // documents or advances an existing filesystem marker.
+  if (FS_CONVENTION_VERSION >= 11 && !(await readFsVersion(root))) {
+    const registration = await rebuildIndex(root, { role: 'cli' })
+    if (registration.status !== 'rebuilt')
+      emitErrorAndExit(
+        'CONFLICT',
+        'Project declaration saved; index initialization incomplete. Run memon index rebuild before initializing the FS marker.',
+      )
+    await writeFsVersion(root, {
+      fs_convention_version: FS_CONVENTION_VERSION,
+      installed_at: formatIsoLocal(new Date()),
+      last_migrated_at: null,
+    })
   }
   if (input.format === 'human') {
     emitHuman(

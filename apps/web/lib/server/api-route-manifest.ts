@@ -183,8 +183,6 @@ export const API_ROUTE_MANIFEST = {
   // never delays the Experiment detail response.
   'wiki/backlinks/[artifact]/route.ts': central(['GET'], 'read', 'none', 'project-query'),
   'wiki/kinds/route.ts': central(['GET'], 'read'),
-  'wiki/review/[sha]/route.ts': backend(['DELETE', 'POST'], 'project-query', 'shell'),
-  'wiki/review/route.ts': backend(['GET'], 'project-query', 'read'),
   'wiki/route.ts': backend(['GET'], 'project-query', 'read'),
 } as const satisfies Record<string, ApiRouteOwnership>
 

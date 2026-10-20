@@ -20,11 +20,14 @@ import { basename, join, resolve } from '@memon/file-protocol/paths'
 import { writeFileAtomic } from '../atomic-write.js'
 import type { IndexEventWarning, IndexSink } from '../derived-index/events.js'
 import { publishMutationEvent } from '../derived-index/mutation-events.js'
+import { MutationError, type MutationFs, readDocumentState } from '../experiments/mutations.js'
 import { projectRunPath, resolveRunReference } from '../experiments/run-path.js'
 import { splitFrontmatter } from '../frontmatter.js'
 import { projectFs as fs } from '../project-file-store.js'
 import { patchRunFrontMatter } from '../readme/frontmatter-patch.js'
 import { parseReadme } from '../readme/parse.js'
+import { parseRunMetadata } from '../runs/metadata.js'
+import { updateRunMetadata } from '../runs/metadata-mutations.js'
 import type { ParsedReadme, Run } from '../types.js'
 import { yamlEngine } from '../yaml-engine.js'
 import { discoverRuns } from './discover.js'
@@ -88,6 +91,39 @@ export async function setRunDeprecated(
   target: boolean,
   options: SetRunDeprecatedOptions,
 ): Promise<DeprecationResult> {
+  const metadataPath = join(runDir, 'run.json')
+  let metadataState: Awaited<ReturnType<typeof readDocumentState>> | null = null
+  try {
+    metadataState = await readDocumentState(fs as unknown as MutationFs, metadataPath)
+  } catch (error) {
+    if (!(error instanceof MutationError && error.code === 'NOT_FOUND')) throw error
+  }
+  if (metadataState) {
+    const metadata = parseRunMetadata(metadataState.content).data
+    if (!metadata) throw new MutationError('BAD_STATE', 'Invalid run.json')
+    const prev = metadata.active === undefined ? (metadata.deprecated ?? false) : !metadata.active
+    if (prev === target)
+      return { runDir, prev, next: target, noop: true, mtime: metadataState.mtime }
+    const result = await updateRunMetadata({
+      fs: fs as unknown as MutationFs,
+      path: metadataPath,
+      patch: { active: !target, deprecated: undefined },
+      index: options.index,
+      now: () => new Date(options.now),
+      lock: {
+        expectedMtime: options.expectedMtime ?? metadataState.mtime,
+        expectedHash: metadataState.hash,
+      },
+    })
+    return {
+      runDir,
+      prev,
+      next: target,
+      noop: false,
+      mtime: result.mtime,
+      ...(result.indexWarnings ? { indexWarnings: result.indexWarnings } : {}),
+    }
+  }
   const readmePath = join(runDir, 'README.md')
   const content = await fs.readFile(readmePath, 'utf8')
   const stat = await fs.stat(readmePath)

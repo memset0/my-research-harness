@@ -19,19 +19,23 @@
 // second hand-written trail would be exactly the redundant research ledger
 // this reform removes.
 
+import { relative } from 'node:path'
 import {
   type DeprecationResult,
   deprecateRun,
   formatIsoLocal,
   RunTargetIndex,
   RunWriteConflictError,
+  readRunDir,
   undeprecateRun,
 } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { runWalkOptions } from '../lib/discovery-options.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { cliIndexSink, indexWarningFields } from '../lib/index-sink.js'
+import { cliMutation } from '../lib/mutation-error.js'
 import { emitJson, type OutputFormat } from '../lib/output.js'
+import { runRunUpdate } from './run-metadata.js'
 
 export interface RunDeprecationInput {
   projectRoot?: string
@@ -59,6 +63,14 @@ async function apply(input: RunDeprecationInput, target: boolean): Promise<void>
     emitErrorAndExit('NOT_FOUND', `run "${input.runId}" not found in ${projectRoot}`)
   }
 
+  if ((await readRunDir(runDir, '')).recordFormat === 'json') {
+    await runRunUpdate({
+      ...input,
+      target: relative(projectRoot, runDir),
+      active: target ? 'false' : 'true',
+    })
+    return
+  }
   const options = {
     now: formatIsoLocal(new Date()),
     id: input.runId,
@@ -67,7 +79,9 @@ async function apply(input: RunDeprecationInput, target: boolean): Promise<void>
   }
   let result: DeprecationResult
   try {
-    result = target ? await deprecateRun(runDir, options) : await undeprecateRun(runDir, options)
+    result = await cliMutation(() =>
+      target ? deprecateRun(runDir, options) : undeprecateRun(runDir, options),
+    )
   } catch (err) {
     if (err instanceof RunWriteConflictError) {
       // Safe failure: the README on disk is untouched, so the caller can

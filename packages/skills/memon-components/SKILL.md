@@ -237,8 +237,6 @@ cascade between parent and child.
   explicitly authorizes that operation for those specific items. "Looks fine,
   mark it" for one item authorizes that one item and that one flag.
 - Update only the selected item's selected flag, including when clearing it.
-- These flags are separate from wiki commit review and never create or remove a
-  wiki review mark.
 
 Filesystem access cannot authenticate a human behind a direct YAML edit, so this
 is a documented agent boundary, not an enforced one. Respect it anyway.

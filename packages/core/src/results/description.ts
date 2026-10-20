@@ -151,6 +151,11 @@ export interface ResearchLedger {
   imports?: Array<{ run: string; version: number; reason: string; imported_at: string }>
 }
 export interface DescriptionVariant {
+  /** Lightweight read projection derived from Run records; never persisted as Variant state. */
+  draft?: string | Record<string, unknown>
+  activeRuns?: string[]
+  runNotes?: Record<string, string>
+  aggregate?: 'aggregate_variant.py'
   deprecated?: boolean
   deprecation?: VariantDeprecation
   deprecation_history?: Array<
@@ -172,6 +177,7 @@ export interface DescriptionVariant {
 }
 
 export interface ExperimentDescription {
+  format?: 'lightweight'
   research?: ResearchLedger
   experimentSchemaVersion: number
   groups: Record<string, DescriptionGroup>
@@ -195,7 +201,7 @@ export interface ParsedExperimentDescription {
 const NonEmpty = z.string().min(1)
 
 const ValuePath = z.string().superRefine((path, context) => {
-  const error = resultPathError(path)
+  const error = resultPathError(path.startsWith('run.') ? `env.${path.slice(4)}` : path)
   if (error !== null) context.addIssue({ code: z.ZodIssueCode.custom, message: error })
 })
 
@@ -564,6 +570,93 @@ const VARIANT_KEYS = [
 ] as const
 const TOP_KEYS = ['experiment_schema_version', 'research', 'groups', 'columns', 'variants'] as const
 
+const LightweightVariantSchema = z
+  .object({
+    aggregate: z.literal('aggregate_variant.py').optional(),
+    deprecated: z.boolean().optional(),
+    deprecation: z
+      .object({
+        reason: NonEmpty,
+        deprecated_at: ResearchTimestamp,
+        successor: z.string().optional(),
+      })
+      .optional(),
+  })
+  .strict()
+const LightweightSchema = z
+  .object({
+    format: z.literal('lightweight'),
+    groups: z.record(GroupSchema).default({}),
+    columns: z.array(ColumnSchema).default([]),
+    variants: z
+      .record(z.string().regex(/^(?:V\d{4}|smoke)$/), LightweightVariantSchema)
+      .default({}),
+  })
+  .passthrough()
+  .superRefine((description, context) => {
+    for (const key of ['research', 'experiment_schema_version'])
+      if (key in description)
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [key],
+          message: 'lightweight Experiments do not use research or result schema versions',
+        })
+    for (const path of Object.keys(description.groups)) {
+      const error = resultGroupPathError(
+        path === 'run' ? 'env' : path.startsWith('run.') ? `env.${path.slice(4)}` : path,
+      )
+      if (error)
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['groups', path], message: error })
+    }
+  })
+
+function parseLightweightDescription(
+  source: Record<string, unknown>,
+  parsed: ParsedExperimentDescription,
+): ParsedExperimentDescription {
+  const validated = LightweightSchema.safeParse(source)
+  if (!validated.success) {
+    parsed.parseErrors = validated.error.issues.map((issue) => ({
+      severity: 'error',
+      field: issue.path.join('.'),
+      message: `INVALID_RESULTS_SCHEMA: ${issue.message}`,
+    }))
+    return parsed
+  }
+  const raw = validated.data
+  const normalized = normalizeDescription(
+    { experiment_schema_version: 1, groups: raw.groups, columns: raw.columns, variants: [] },
+    parsed.parseWarnings,
+  )
+  normalized.format = 'lightweight'
+  normalized.variants = Object.entries(raw.variants).map(([id, variant]) =>
+    withExtra(
+      {
+        id,
+        name: id,
+        values: {},
+        runs: [],
+        ...(variant.aggregate === undefined ? {} : { aggregate: variant.aggregate }),
+        ...(variant.deprecated === undefined ? {} : { deprecated: variant.deprecated }),
+        ...(variant.deprecation === undefined ? {} : { deprecation: variant.deprecation }),
+      },
+      omitKeys(variant, [
+        'name',
+        'draft',
+        'active_runs',
+        'run_notes',
+        'aggregate',
+        'deprecated',
+        'deprecation',
+      ]),
+    ),
+  )
+  const extra = omitKeys(raw, ['format', 'groups', 'columns', 'variants'])
+  if (Object.keys(extra).length) normalized.extra = extra
+  parsed.data = normalized
+  return parsed
+}
+
 function normalizeColumn(raw: RawColumn): DescriptionColumn {
   const column: DescriptionColumn = { path: raw.path, label: raw.label, type: raw.type }
   if (raw.unit !== undefined) column.unit = raw.unit
@@ -708,6 +801,7 @@ export function parseExperimentDescription(
     return parsed
   }
   const source = loaded as Record<string, unknown>
+  if (source.format === 'lightweight') return parseLightweightDescription(source, parsed)
   const isRegistry =
     source.variants !== null &&
     typeof source.variants === 'object' &&
@@ -875,6 +969,24 @@ export function experimentDescriptionToJson(
       column.extra,
     ),
   )
+  if (description.format === 'lightweight')
+    return {
+      format: 'lightweight',
+      groups,
+      columns,
+      variants: Object.fromEntries(
+        description.variants.map((variant) => [
+          variant.id,
+          {
+            ...(variant.aggregate === undefined ? {} : { aggregate: variant.aggregate }),
+            ...(variant.deprecated === undefined ? {} : { deprecated: variant.deprecated }),
+            ...(variant.deprecation === undefined ? {} : { deprecation: variant.deprecation }),
+            ...variant.extra,
+          },
+        ]),
+      ),
+      ...description.extra,
+    }
   const variants = description.variants.map((variant) => {
     const values: Record<string, unknown> = {}
     for (const [path, value] of Object.entries(variant.values))

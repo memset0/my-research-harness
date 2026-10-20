@@ -8,6 +8,7 @@
 
 import { projectFs as fs, isRunPath, type ProjectConfig, projectRunPath } from '@memon/core'
 import { basename, join, relative, resolve, sep } from '@memon/file-protocol/paths'
+import { resolveContained } from './containment.js'
 import { realProjectRoot } from './request-scope.js'
 
 function escapes(relativePath: string): boolean {
@@ -28,6 +29,7 @@ export async function resolveRunPath(root: string, path: string): Promise<string
     throw new Error('Run path escapes project root')
   }
   if (!(await fs.stat(realTarget)).isDirectory()) throw new Error('Run path is not a directory')
+  await resolveContained(root, join(target, 'run.json'), { allowMissing: true })
   try {
     if (escapes(relative(realRoot, await fs.realpath(join(target, 'README.md'))))) {
       throw new Error('Run README escapes project root')

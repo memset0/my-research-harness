@@ -1,6 +1,6 @@
 // In-memory RunIndex used by both CLI commands and the web backend.
 //
-// Keyed by experiment id (= directory base name). Multiple projects share one
+// Keyed by directory path. Multiple projects share one
 // index; the top-level `project` field on each Run (set by discovery
 // from the matching `config.yml` project's `name`) partitions queries.
 // `frontMatter.project` is a separate sub-project label and is NOT used for
@@ -45,19 +45,24 @@ export class RunIndex {
   private byId = new Map<string, Run>()
 
   set(experiment: Run): void {
-    this.byId.set(experiment.id, experiment)
+    this.byId.set(experiment.path, experiment)
   }
 
   delete(id: string): boolean {
-    return this.byId.delete(id)
+    const run = this.get(id)
+    return run ? this.byId.delete(run.path) : false
   }
 
   get(id: string): Run | undefined {
-    return this.byId.get(id)
+    const exact = this.byId.get(id)
+    if (exact) return exact
+    const matches = [...this.byId.values()].filter((run) => run.id === id)
+    if (matches.length > 1) throw new Error(`Ambiguous Run ID; use its directory path: ${id}`)
+    return matches[0]
   }
 
   has(id: string): boolean {
-    return this.byId.has(id)
+    return this.byId.has(id) || [...this.byId.values()].some((run) => run.id === id)
   }
 
   /**

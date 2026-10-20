@@ -17,7 +17,8 @@ repository-specific requirements at the end of this file supplement it.
   (`toISOString()`). Use `formatIsoLocal` / `formatRunStamp` from
   `packages/core/src/time.ts`.
 - **Status enums are uppercase** and defined in `packages/core/src/types.ts`:
-  Run `PENDING`/`RUNNING`/`FINISHED`/`INTERRUPTED`/`FAILED`/`UNKNOWN`;
+  Run `READY`/`QUEUED`/`RUNNING`/`FINISHED`/`INTERRUPTED`/`FAILED`/
+  `RESUME_READY`/`UNKNOWN` (legacy `PENDING` remains readable);
   Experiment FS10 `ACTIVE`/`PAUSED`/`ARCHIVED`/`RETIRED` (human-only write;
   `RUNNING`/`COMPLETED` are display-only; legacy FS9 retains
   `OPEN`/`RESOLVED`/`ABANDONED`); Hypothesis
@@ -94,46 +95,41 @@ Other sources of truth — consult these instead of copying lists here:
 - Wiki body components: descriptor directories `apps/web/lib/components/<type>/v<N>/`.
 - Behavior of every domain: `openspec/specs/<name>/spec.md`.
 
-### 2.1 File model skeleton
+## 2.1 File model skeleton
 
 - `FS_CONVENTION_VERSION` lives in `packages/core/src/version.ts`.
-- **Experiment bundle**: `<projectRoot>/docs/experiments/E<NNNN>-<slug>/` with
-  `README.md` plus schema-v1 `implementation.yaml`, `investigation.yaml` and
-  the Results description file `experiment.json` (FS10:
-  `experiment_schema_version`, `groups`, typed `columns` by result path,
-  `variants` keyed by stable ID with declared plan state, planned values and
-  `runs`, plus a `research` version ledger and closed definition snapshots;
-  legacy FS9 arrays remain supported until explicit conversion); optional
-  `schema-upgrades/<N>-to-<N+1>.{json,py}` transforms for
-  `memon experiment schema upgrade`; other folder content is opaque
-  experiment-local scratch. `results.yaml` is retired (FS v8 → v9 guide
-  `packages/core/migrations/v8-to-v9.md`). Canonical README H2 order:
-  `CANONICAL_EXPERIMENT_SECTION_HEADINGS` in
-  `packages/core/src/experiments/documents.ts`. The Experiment README `runs`
-  list is the sole Run-membership authority; Variant `runs` in
-  `experiment.json` (a subset) are the Run-to-Variant association. Research
-  attribution remains after unlinking; use dedicated version/deprecation
-  commands, never generic ledger edits. FS9-to-FS10 conversion is explicit
-  (`packages/core/migrations/v9-to-v10.md`), never a deployment side effect.
-- **Run**: a directory `<slug>-<YYMMDD>-<HHMMSS>/` containing `README.md`. No
-  H2 section is required (`packages/core/src/readme/parse.ts`,
-  `readme/lint.ts`); a Run README records execution facts only. Never write an
-  `experiment:` field into a Run README — the parser still reads and lints a
-  legacy value, but binding is done with `memon experiment link`. Run
-  directories live at the effective `run_dirs` (`--run-dir` > deprecated
-  central `run_dirs` > `.memon/project.yml` > default `logs/*`, `outputs/*`,
-  `experiments/*`) and never nest inside another Run. A Run may hold one
-  tracked `result.csv` (`path,stat,value`; `$experiment_schema_version` row
-  first; `params.*`/`metrics.*`/`env.*` paths; statistics one row per
-  vocabulary statistic), written through `memon run result set`
-  (`packages/core/src/results/`).
-- **Derived index** `.memon/index/` (`index_version: 2` in FS v9): a
-  self-ignored (`.gitignore` `*`), rebuildable cache of Run/Experiment/wiki
-  summaries maintained by writers' event files, plus the generated Results
-  summary of every Experiment in `results/<experiment-id>.json` (the Variant
-  table, regenerated when its input fingerprints change); never edited by
-  hand, always safe to delete (`memon index rebuild|compact|status`,
-  `memon experiment results rebuild`).
+- **FS11 Experiment**: `docs/experiments/E<NNNN>-<slug>/README.md` and
+  `experiment.json` with `format: "lightweight"`, optional groups/columns and
+  optional per-Variant `aggregate: "aggregate_variant.py"` settings. Directory
+  ownership and Run records supply Variants; no binding, name or draft registry. The README is free-form research prose;
+  no fixed H2s, phase YAML files, membership list or research epoch is required.
+  Independent technical explanations may use `details/`. Optional legacy phase
+  documents still render when explicitly referenced. A full redo uses a new E ID.
+- **FS11 Run**: `logs/E<NNNN>/V<NNNN>/<runid>/run.json`; smoke uses the literal
+  directory `smoke`, not `V0000`. The CLI creates/updates status, explicit times,
+  scheduler identity, W&B and other execution facts. No Run README is required.
+  Resume keeps identity. Directory ownership preserves historical association;
+  each Run’s boolean `active` selects inputs independently of execution state.
+  READY Runs hold optional planned `params`; optional names/assessments also
+  live on the Run. Imported prose uses optional deprecated-format `legacy_sections`. The
+  first Run is selected automatically; replacement needs `--activate`.
+- **Results**: one optional tracked Run `result.csv` (`path,stat,value`), no
+  schema row required in FS11. CLI lifecycle/result writes export metadata and
+  parameters through Run CSVs, then persist the pure
+  Experiment `results.csv` (`variant,path,stat,value`) for read-only browsing.
+  No selected Run gives no measured row; one uses the built-in aggregator;
+  multiple require explicit per-Variant `aggregate_variant.py`, otherwise error.
+  Explicit `run.*` columns may select metadata. Web never executes aggregation.
+- **Compatibility**: FS9/FS10 README Runs, membership lists, arrays and research
+  ledgers remain readable until an explicit scoped conversion. Never migrate
+  data during deployment or silently flatten historical research generations.
+  See `packages/core/migrations/v10-to-v11.md`. Retirement does not invalidate
+  measurement; preserve invalidity, precision and superseding-method reasons.
+- **Derived index** `.memon/index/`: ignored, disposable inventory. FS11 writers
+  merge events and publish `snapshot.json`; normal website inventories read it
+  without recursive walks. Direct edits need explicit `memon index rebuild`.
+  Missing/invalid registration is a repair error, never a silent partial list.
+  Legacy projects retain their compatible discovery/index path.
 - **Project declaration** `.memon/project.yml`: optional, git-tracked,
   `schema_version: 1` plus the optional project layout keys `run_dirs`,
   `include`, `exclude`, `github`; created only by `memon project init`

@@ -270,4 +270,4 @@ describe('declarative Backend route table', () => {
  * tables"). A table change that alters any decision changes this digest.
  * Re-pinned when `/runs` gained its `limit` / `cursor` page parameters.
  */
-const ROUTE_DECISION_DIGEST = '4ae39ff78061c7d2be2423f267a08453bfba8af0163709f4fc89cc524082d380'
+const ROUTE_DECISION_DIGEST = '05f68ed0e6284dcff43267817bba852b945cf391883b6a324d88c111b2408caf'

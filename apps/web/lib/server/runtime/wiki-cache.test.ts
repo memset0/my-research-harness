@@ -2,13 +2,12 @@
 import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Poller, type WikiProjectContext, type WikiReview } from '@memon/core'
+import { Poller, type WikiProjectContext } from '@memon/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { gitWatchPaths, WikiCache, type WikiCacheGit } from './wiki-cache'
+import { WikiCache } from './wiki-cache'
 
 let root: string
 let changes: string[]
-let reviewChanges: string[]
 
 const EMPTY_CONTEXT: WikiProjectContext = {
   experiments: [],
@@ -36,30 +35,17 @@ function page(id: string, kind: string, title: string, extra = ''): string {
     .join('\n')
 }
 
-function noGit(overrides: Partial<WikiCacheGit> = {}): WikiCacheGit {
-  return {
-    isGitWorktree: vi.fn(async () => false),
-    listWikiCommits: vi.fn(async () => null),
-    readWikiReviewMarks: vi.fn(async () => []),
-    deriveWikiReview: vi.fn(async () => null),
-    ...overrides,
-  }
-}
-
-function makeCache(git: WikiCacheGit = noGit()): WikiCache {
+function makeCache(): WikiCache {
   return new WikiCache({
     projects: [{ name: 'project-a', root }],
     context: () => EMPTY_CONTEXT,
     onChange: (project) => changes.push(project),
-    onReviewChange: (project) => reviewChanges.push(project),
-    git,
   })
 }
 
 beforeEach(async () => {
   root = await fs.mkdtemp(join(tmpdir(), 'wiki-cache-'))
   changes = []
-  reviewChanges = []
   await fs.mkdir(join(root, 'docs', 'wiki', 'finding'), { recursive: true })
   await fs.writeFile(
     join(root, 'docs', 'wiki', 'finding', 'W0001-zero-snr.md'),
@@ -72,6 +58,14 @@ afterEach(async () => {
 })
 
 describe('WikiCache', () => {
+  it('does not claim review-ledger or Git changes as Wiki polling work', async () => {
+    const cache = makeCache()
+    await cache.warmup()
+    expect(cache.handlePollChange(join(root, '.memon', 'wiki-review.csv'))).toBe(false)
+    expect(cache.handlePollChange(join(root, '.git', 'HEAD'))).toBe(false)
+    expect(cache.getWikiSummary('project-a', 'W0001')).not.toHaveProperty('review')
+  })
+
   it('lists both page forms two levels deep and serves them without touching disk', async () => {
     const bundle = join(root, 'docs', 'wiki', 'showcase', 'W0006-explorer')
     await fs.mkdir(join(bundle, 'views'), { recursive: true })
@@ -164,8 +158,6 @@ describe('WikiCache', () => {
       projects: [{ name: 'project-a', root }],
       context: () => ({ ...EMPTY_CONTEXT, experiments }),
       onChange: (project) => changes.push(project),
-      onReviewChange: (project) => reviewChanges.push(project),
-      git: noGit(),
     })
     await cache.warmup()
     expect(cache.getWikiSummary('project-a', 'W0001')?.stale).toBe(false)
@@ -176,93 +168,6 @@ describe('WikiCache', () => {
     const stale = cache.getWikiSummary('project-a', 'W0001')
     expect(stale?.stale).toBe(true)
     expect(stale?.staleSources).toEqual(['E0017'])
-  })
-
-  it('derives review off the request path and exposes the commit log', async () => {
-    const review: WikiReview = {
-      state: 'CHANGED_SINCE_VERIFY',
-      verifiedThrough: 'a'.repeat(40),
-      verifiedAt: '2026-05-02T10:00:00+08:00',
-      unverifiedCommits: ['b'.repeat(40)],
-      unverifiedRanges: [[3, 5]],
-      dirty: false,
-    }
-    const commits = [
-      {
-        sha: 'a'.repeat(40),
-        authoredAt: '2026-05-01T10:00:00+08:00',
-        subject: 'add W0001',
-        pages: ['W0001'],
-        files: ['docs/wiki/finding/W0001-zero-snr.md'],
-      },
-      {
-        sha: 'b'.repeat(40),
-        authoredAt: '2026-05-03T10:00:00+08:00',
-        subject: 'edit W0001',
-        pages: ['W0001'],
-        files: ['docs/wiki/finding/W0001-zero-snr.md'],
-      },
-    ]
-    const marks = [
-      { sha: 'a'.repeat(40), verifiedAt: '2026-05-02T10:00:00+08:00', note: 'looks right' },
-    ]
-    const derive = vi.fn(async () => new Map([['docs/wiki/finding/W0001-zero-snr.md', review]]))
-    const git = noGit({
-      isGitWorktree: vi.fn(async () => true),
-      listWikiCommits: vi.fn(async () => commits),
-      readWikiReviewMarks: vi.fn(async () => marks),
-      deriveWikiReview: derive,
-    })
-    const cache = makeCache(git)
-    await cache.warmup()
-
-    expect(cache.getWikiSummary('project-a', 'W0001')?.review).toEqual(review)
-    expect(reviewChanges).toEqual(['project-a'])
-    const log = cache.getReviewLog('project-a')
-    expect(log?.verifiedThrough).toBe('a'.repeat(40))
-    expect(log?.commits.map((commit) => commit.verified)).toEqual([true, false])
-    expect(log?.commits[0]?.note).toBe('looks right')
-
-    // No further git once warmed: serving the list and the log is snapshot-only.
-    const derivations = derive.mock.calls.length
-    for (let i = 0; i < 50; i += 1) {
-      cache.getWikiList('project-a')
-      cache.getReviewLog('project-a')
-    }
-    expect(derive.mock.calls.length).toBe(derivations)
-    expect(cache.getStats().reviewRefreshes).toBe(1)
-  })
-
-  it('re-derives review when the review store or HEAD changes, and reports non-git as null', async () => {
-    const gitDir = join(root, '.git')
-    await fs.mkdir(join(gitDir, 'refs', 'heads'), { recursive: true })
-    await fs.writeFile(join(gitDir, 'HEAD'), 'ref: refs/heads/main\n')
-    await fs.writeFile(join(gitDir, 'refs', 'heads', 'main'), `${'c'.repeat(40)}\n`)
-
-    const git = noGit({
-      isGitWorktree: vi.fn(async () => true),
-      listWikiCommits: vi.fn(async () => []),
-      deriveWikiReview: vi.fn(async () => new Map<string, WikiReview>()),
-    })
-    const cache = makeCache(git)
-    await cache.warmup()
-    const poller = new Poller({ minIntervalMs: 10, maxIntervalMs: 20, backoffFactor: 2 }, () => {})
-    try {
-      await cache.watchGitPaths(poller)
-      expect(cache.handlePollChange(join(root, '.memon', 'wiki-review.csv'), poller)).toBe(true)
-      expect(cache.handlePollChange(join(gitDir, 'refs', 'heads', 'main'), poller)).toBe(true)
-      await vi.waitFor(() => {
-        expect(cache.getStats().reviewRefreshes).toBeGreaterThanOrEqual(3)
-      })
-    } finally {
-      poller.stop()
-    }
-
-    const plain = makeCache()
-    await plain.warmup()
-    expect(plain.getWikiSummary('project-a', 'W0001')?.review).toBeNull()
-    expect(plain.getReviewLog('project-a')).toBeNull()
-    expect(plain.isGitProject('project-a')).toBe(false)
   })
 
   it('writes a page under the mtime+hash lock and rejects a stale write', async () => {
@@ -284,21 +189,5 @@ describe('WikiCache', () => {
     expect(ok.ok).toBe(true)
     const reread = await cache.getWikiPage('project-a', 'W0001')
     expect(reread?.content).toBe(next)
-  })
-})
-
-describe('gitWatchPaths', () => {
-  it('finds HEAD and its branch ref when the Project root is nested in a worktree', async () => {
-    const repository = join(root, 'repository')
-    const project = join(repository, 'projects', 'project-a')
-    await fs.mkdir(join(repository, '.git', 'refs', 'heads'), { recursive: true })
-    await fs.mkdir(project, { recursive: true })
-    await fs.writeFile(join(repository, '.git', 'HEAD'), 'ref: refs/heads/main\n')
-    const paths = await gitWatchPaths(project)
-    expect(paths).toEqual([
-      join(project, '.memon', 'wiki-review.csv'),
-      join(repository, '.git', 'HEAD'),
-      join(repository, '.git', 'refs', 'heads', 'main'),
-    ])
   })
 })

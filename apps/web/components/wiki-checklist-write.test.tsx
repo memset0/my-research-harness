@@ -67,7 +67,6 @@ function page(): WikiPageDetail {
     deprecatedSections: [],
     stale: false,
     staleSources: [],
-    review: null,
     format: 'markdown',
     path: 'docs/wiki/note/W0010-plan.md',
     project: 'project-a',
