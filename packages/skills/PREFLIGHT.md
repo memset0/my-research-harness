@@ -1,8 +1,10 @@
 # Shared conventions
 
-Use `memon --project-root <project>` explicitly. Initialize new projects with
-`project init`; consult `--help` or `fs-version check` when needed. Upgrade an
-incompatible CLI; migrate older data only within the requested scope.
+Use `memon --project-root <project>` explicitly; consult `--help` when needed.
+The first `experiment create` initializes a fresh research project. Existing
+research is never initialized or migrated implicitly. Read `.memon/version.json`
+when compatibility matters; upgrade an incompatible CLI or use `memon-migrate-fs`
+for an authorized conversion. Creation, reads and refresh report format errors.
 
 Edit Markdown, JSON and CSV directly when convenient. After editing experiment
 files, `refresh E0001 [E0002…]` publishes results and records. Plain `refresh`

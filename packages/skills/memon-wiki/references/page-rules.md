@@ -1,6 +1,7 @@
 # Wiki maintenance details
 
-Use `memon wiki show`, `set`, `lint` and their help for supported metadata.
+Use `memon --project-root . show <W-id>` for content and diagnostics; edit
+Markdown/frontmatter directly, then `memon --project-root . refresh` to publish.
 Keep `sources` references to the actual Experiment/Variant/Run evidence so
 backlinks stay useful. Use the existing page kind and language unless the task
 changes them. A page title and short description help navigation; a fixed
@@ -16,4 +17,4 @@ Retain useful historical context with `[!DEPRECATED]-` callouts. Invalidation
 requires a specific reason; retirement alone does not invalidate a result.
 `wiki-review.csv`, verification SHAs, Git blame ranges and review tinting are
 obsolete and must not be recreated. Normal history and source citations remain
-available. Run relevant lint once per edit batch; it checks syntax, not truth.
+available. Resolve structural diagnostics; they check syntax, not truth.

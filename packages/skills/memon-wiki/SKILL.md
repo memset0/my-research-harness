@@ -10,8 +10,9 @@ explanation when understanding changes; routine Run completion does not require
 a Wiki edit. Keep a contextual summary, evidence links and meaningful limits.
 Do not duplicate full result tables or turn execution history into prose.
 
-Use `memon --project-root . wiki --help` for creation and editing, and
-`wiki kinds show <kind>` for the selected kind's fields. Preserve existing
+Use `memon --project-root . wiki create --help` for allocation; read the selected
+kind in [page-kinds.md](references/page-kinds.md). Edit Markdown/frontmatter
+directly, inspect with `show <W-id>`, and publish with `refresh`. Preserve existing
 language and scope; new pages follow the user's preference, otherwise English.
 Standing maintenance rules belong in their existing compact section.
 

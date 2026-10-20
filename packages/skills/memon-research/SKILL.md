@@ -18,9 +18,14 @@ Commands below use `memon --project-root .`:
   of that Variant, or `--variant smoke` for program/environment checks.
 - `run update <path> --status RUNNING` maintains execution state and timestamps.
 - Edit documents, metadata and result files directly; `refresh <E-id>` publishes
-  the changes. `run result set <path> metrics.loss=0.2` is an optional CSV helper.
-- Read with `experiment ls/show`, `list`, `show <run-path>` or
-  `experiment results table <E-id>`; JSON is the default output.
+  the changes. Metrics use `path,stat,value` rows in the Run's `result.csv`.
+- `show` reads inventory; `show <E-id|run-path>` reads a record and `--results`
+  reads its results. JSON is the default; `--include-history` includes old records.
+
+Run creation records a plan; it does not launch a process. Before reusing a
+launcher, check that it uses the allocated directory and current Run metadata.
+Do not bypass an obsolete-convention guard: discuss upgrading with the user,
+then verify the authorized upgrade before launching.
 
 Ownership comes from `logs/E0001/V0001/<runid>/` or `logs/E0001/smoke/<runid>/`.
 `run.json` holds execution facts; no Run README or binding list is needed.
@@ -41,9 +46,11 @@ presentation columns/groups and optional aggregation settings, not a second plan
 
 ## Research explanation
 
-Keep questions, cross-Run evidence, current conclusions and limitations together
-in the Experiment README. Revise it when understanding changes; avoid per-Run
-bullet logs. Independent technical explanations may go in `details/`.
+Keep the question, comparison, selected evidence, current interpretation and
+meaningful limits understandable from the Experiment README without reading the
+chat. Link native evidence or visual reports; no fixed headings or copied result
+tables are required. Revise when understanding changes, not after every Run.
+Independent technical explanations may go in `details/`; no manual project roster.
 Create implementation/investigation documents only on explicit request, using
 `memon-structured-work`. Update Wiki when understanding or direction changes.
 
