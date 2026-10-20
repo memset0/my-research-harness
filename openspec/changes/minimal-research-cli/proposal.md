@@ -2,6 +2,8 @@
 
 The pre-refactor CLI registered 90 commands, including 51 hidden compatibility commands. Hiding commands has not removed the cost of learning and maintaining overlapping file-editing workflows. Research agents need allocation, coordinated Run transitions, publication and useful reads; ordinary file editing needs no dedicated command per field.
 
+The current simplification program stays within major version 11. Memon should provide a lightweight viewing and access layer for agent-managed research; agents remain free to organize analysis and build their own reports and websites.
+
 ## What Changes
 
 - **BREAKING**: remove 71 redundant or retired spellings. The six routine operations are `experiment create`, `run create`, `run update`, `refresh`, `show` and `install-skills`; retained operational and historical commands remain available under `memon`.

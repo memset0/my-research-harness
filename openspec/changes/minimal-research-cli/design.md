@@ -8,6 +8,15 @@ Goals: genuinely remove redundant registrations, preserve explicit optional/hist
 
 Non-goals: changing FS11, migrating research data, redesigning Wiki rendering, replacing shared domain services, or merging the seven Skills.
 
+## Direction for the 11.x simplification
+
+- Keep filesystem convention and release major at 11 throughout this program. CLI/Skill releases advance the minor version; central-only releases advance the patch. The scale of simplification alone does not justify a new filesystem generation.
+- Keep mandatory contracts limited to identity, execution state, evidence selection, timestamps and publication. Agents can write code, analyze native outputs and edit ordinary files without following a prescribed research workflow.
+- Prioritize browsing results, accessing artifacts, forwarding monitor ports and retaining usable historical references. Extra structure should earn its maintenance cost.
+- Let agents build Markdown reports, HTML artifacts or complete static sites using their preferred tools. Future artifact hosting should accept a conventional project location and entry point without requiring a particular report layout or component vocabulary. Live monitors additionally need a service endpoint; existing local, SSH and File Agent access modes remain the integration targets.
+
+These principles guide subsequent changes. Artifact hosting and monitor forwarding are separate implementation work; this CLI change does not claim to deliver them.
+
 ## Decisions
 
 - Keep modular research, operational and legacy registrations, composed into one `memon` command tree. Reuse the same root options and existing Experiment/Run groups so restored commands see the caller's project root and output format. Independent binaries are deferred; no second command tree or installer requirement remains. Help distinguishes routine work from retained operational/historical commands.
