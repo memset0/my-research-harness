@@ -1,7 +1,6 @@
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import { mergedIndexView, readDerivedIndex } from '@memon/core'
-import { Command } from 'commander'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import {
@@ -13,13 +12,10 @@ import {
 } from '../test-support/results-project.js'
 import {
   runExperimentResults,
-  runExperimentResultsAnnotationGet,
-  runExperimentResultsAnnotationSet,
   runExperimentResultsRebuild,
   runExperimentResultsSummary,
 } from './experiment-results.js'
 import { runRefresh } from './refresh.js'
-import { registerExperimentResultsCommands } from './results-commands.js'
 
 const A = 'logs/a-260901-090000'
 const B = 'logs/b-260901-100000'
@@ -182,7 +178,7 @@ describe('memon experiment results (FS v9)', () => {
       values: { 'params.precision': 'bf16' },
     })
     expect(out.json.meta).toMatchObject({ totalVariants: 5, filteredVariants: 5 })
-    expect(await project.exists(`.memon/index/results/${EXP}.json`)).toBe(true)
+    expect(await project.exists(`.memon/index/results/${EXP}.json`)).toBe(false)
   })
 
   it('filters by --variant, --status (case-insensitive), --group and --column prefix', async () => {
@@ -272,13 +268,12 @@ describe('memon experiment results (FS v9)', () => {
     expect(yaml.json.rows[0].variantId).toBe('V0004')
   })
 
-  it('regenerates a deleted summary with the same answer', async () => {
+  it('computes an uncached legacy summary without persisting on read', async () => {
     await seed(project)
     const first = await table()
-    await fs.rm(join(project.root, '.memon/index/results', `${EXP}.json`))
     const second = await table()
     expect(second.json).toEqual(first.json)
-    expect(await project.exists(`.memon/index/results/${EXP}.json`)).toBe(true)
+    expect(await project.exists(`.memon/index/results/${EXP}.json`)).toBe(false)
   })
 
   it('fails with NOT_FOUND naming experiment.json and the migration for an FS v8 bundle', async () => {
@@ -303,7 +298,9 @@ describe('memon experiment results (FS v9)', () => {
     expect(out.stdout).toBe('')
     expect(out.error?.code).toBe('RESULT_SCHEMA_MISMATCH')
     expect(out.error?.details.files).toEqual([{ path: `${B}/result.csv`, version: 1 }])
-    expect(out.error?.details.upgradeCommand).toBe(`memon experiment schema upgrade ${EXP} --to 2`)
+    expect(out.error?.details.upgradeCommand).toBe(
+      `memon-legacy experiment schema upgrade ${EXP} --to 2`,
+    )
   })
 
   it('fails with RESULT_DUPLICATE_ROW naming the file and both lines', async () => {
@@ -342,7 +339,7 @@ describe('memon experiment results (FS v9)', () => {
   })
 
   it.skipIf(process.getuid?.() === 0)(
-    'prints the table and exits 0 with RESULTS_CACHE_FAILED when the cache is read-only',
+    'reads successfully without trying to write a read-only cache',
     async () => {
       await seed(project)
       await project.write('.memon/index/.gitignore', '*\n')
@@ -352,9 +349,7 @@ describe('memon experiment results (FS v9)', () => {
         const out = await table()
         expect(out.exitCode).toBe(0)
         expect(out.json.rows).toHaveLength(5)
-        expect(out.json.warnings.map((warning: { code: string }) => warning.code)).toEqual([
-          'RESULTS_CACHE_FAILED',
-        ])
+        expect(out.json.warnings.map((warning: { code: string }) => warning.code)).toEqual([])
       } finally {
         await fs.chmod(join(project.root, '.memon/index/results'), 0o700)
       }
@@ -401,77 +396,9 @@ describe('memon experiment results (FS v9)', () => {
     expect(out.json.rows.every((row: { status: unknown }) => row.status === null)).toBe(true)
     expect(out.json.error).toMatchObject({
       code: 'RESULT_SCHEMA_MISMATCH',
-      upgradeCommand: `memon experiment schema upgrade ${EXP} --to 2`,
+      upgradeCommand: `memon-legacy experiment schema upgrade ${EXP} --to 2`,
     })
     expect(out.error?.code).toBe('RESULT_SCHEMA_MISMATCH')
-  })
-
-  it('adds and replaces annotations in experiment.json, keeping every other key', async () => {
-    await seed(project)
-    const path = `docs/experiments/${EXP}/experiment.json`
-    const document = JSON.parse(await project.read(path))
-    document.custom_top = { keep: true }
-    document.columns[0].custom_column_key = 'keep'
-    await project.write(path, `${JSON.stringify(document, null, 2)}\n`)
-
-    const replaced = await captureCli(() =>
-      runExperimentResultsAnnotationSet({
-        ...base(),
-        idOrSlug: EXP,
-        column: 'params.precision',
-        value: 'bf16',
-        description: 'Replaced **bf16** text.',
-      }),
-    )
-    expect(replaced.json).toMatchObject({ ok: true, replaced: true, changed: true })
-    const future = await captureCli(() =>
-      runExperimentResultsAnnotationSet({
-        ...base(),
-        idOrSlug: EXP,
-        column: 'params.precision',
-        value: 'fp4',
-        description: 'A future value not yet in `options`.',
-      }),
-    )
-    expect(future.json).toMatchObject({ ok: true, replaced: false, value: 'fp4' })
-    const written = JSON.parse(await project.read(path))
-    expect(written.custom_top).toEqual({ keep: true })
-    expect(written.columns[0]).toMatchObject({
-      custom_column_key: 'keep',
-      value_descriptions: {
-        bf16: 'Replaced **bf16** text.',
-        fp4: 'A future value not yet in `options`.',
-      },
-    })
-
-    const undeclared = await captureCli(() =>
-      runExperimentResultsAnnotationSet({
-        ...base(),
-        idOrSlug: EXP,
-        column: 'params.unknown',
-        description: 'x',
-      }),
-    )
-    expect(undeclared.exitCode).toBe(2)
-
-    const got = await captureCli(() =>
-      runExperimentResultsAnnotationGet({
-        ...base(),
-        idOrSlug: EXP,
-        column: 'params.precision',
-        value: 'fp4',
-      }),
-    )
-    expect(got.json).toEqual({
-      experimentId: EXP,
-      column: 'params.precision',
-      value: 'fp4',
-      description: 'A future value not yet in `options`.',
-    })
-    const all = await captureCli(() =>
-      runExperimentResultsAnnotationGet({ ...base(), idOrSlug: EXP }),
-    )
-    expect(Object.keys(all.json.columnAnnotations)).toEqual(['params.precision'])
   })
 
   it('rebuilds every summary and reports each failure separately', async () => {
@@ -499,7 +426,7 @@ describe('memon experiment results (FS v9)', () => {
       error: {
         code: 'RESULT_SCHEMA_MISMATCH',
         files: [{ path: 'logs/z-260901-090000/result.csv', version: 1 }],
-        upgradeCommand: 'memon experiment schema upgrade E0003-baz --to 2',
+        upgradeCommand: 'memon-legacy experiment schema upgrade E0003-baz --to 2',
       },
     })
     expect(await project.exists('.memon/index/results/E0001-foo.json')).toBe(true)
@@ -524,32 +451,5 @@ describe('memon experiment results (FS v9)', () => {
     const view = mergedIndexView(index, { runDirs: ['logs/*'], runDirsSource: 'default' })
     expect(view?.runs[A]).toMatchObject({ status: 'FINISHED', owner: EXP })
     expect(await project.read(`docs/experiments/${EXP}/experiment.json`)).toBe(before)
-  })
-
-  it('offers focused result reads while keeping explicit compatibility commands callable', () => {
-    const program = new Command('memon')
-    const experiment = program.command('experiment')
-    registerExperimentResultsCommands(experiment, () => ({ format: 'json', cwd: process.cwd() }))
-    const help = experiment.helpInformation()
-    expect(help).toMatch(/results\s+read saved Variant results/)
-    expect(help).not.toMatch(/schema\s+Experiment result-schema commands/)
-    const results = experiment.commands.find((command) => command.name() === 'results')!
-    expect(results.commands.map((command) => command.name())).toEqual([
-      'show',
-      'table',
-      'summary',
-      'rebuild',
-      'annotation',
-    ])
-    const visible = results
-      .createHelp()
-      .visibleCommands(results)
-      .map((command) => command.name())
-    expect(visible).toContain('table')
-    expect(visible).toContain('summary')
-    expect(visible).not.toContain('annotation')
-    expect(visible).not.toContain('rebuild')
-    const schema = experiment.commands.find((command) => command.name() === 'schema')!
-    expect(schema.commands.map((command) => command.name())).toEqual(['upgrade'])
   })
 })

@@ -14,7 +14,7 @@ export async function runRefresh(
     return
   }
   const root = singleProjectRoot(await resolveContext(input))
-  await withCliWriterLock(root, () => runIndexRebuild(input))
+  await withCliWriterLock(root, () => runIndexRebuild({ ...input, validate: true }))
 }
 
 export function registerRefreshCommand(

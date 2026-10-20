@@ -40,7 +40,7 @@ export function registerExperimentMigration(
         if (index.status !== 'rebuilt')
           emitErrorAndExit(
             'CONFLICT',
-            'Migration applied; inventory incomplete. Run memon index rebuild.',
+            'Migration applied; inventory incomplete. Run memon refresh.',
           )
         emitJson({ ok: true, ...result, index: index.status, markerChanged: false })
       })

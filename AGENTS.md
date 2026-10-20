@@ -41,7 +41,7 @@ repository-specific requirements at the end of this file supplement it.
 - **Skills** (`packages/skills/memon-*/SKILL.md`) are written in **English**;
   conversation with the user is in **Chinese**. Bundled skills live only in
   `packages/skills/` and reach research projects through `memon install-skills`
-  / `memon update`; never copy them into this repository's `.claude/`,
+  / `memon-tools update`; never copy them into this repository's `.claude/`,
   `.codex/` or `.opencode/` skill directories.
 - **Client components never import `@memon/core` at runtime** (it pulls
   `fast-glob` → `fs`). Use `import type { … }` only.
@@ -98,6 +98,9 @@ Other sources of truth — consult these instead of copying lists here:
 ## 2.1 File model skeleton
 
 - `FS_CONVENTION_VERSION` lives in `packages/core/src/version.ts`.
+- **CLI**: normal leaves are `experiment create`, `run create`, `run update`,
+  `refresh`, `show` and `install-skills`. Optional operations use `memon-tools`;
+  transitional historical mutations use `memon-legacy`. No hidden retired aliases.
 - **FS11 Experiment**: `docs/experiments/E<NNNN>-<slug>/README.md` and
   `experiment.json` with `format: "lightweight"`, optional groups/columns and
   optional per-Variant `aggregate: "aggregate_variant.py"` settings. Directory
@@ -114,7 +117,7 @@ Other sources of truth — consult these instead of copying lists here:
   live on the Run. Imported prose uses optional deprecated-format `legacy_sections`. The
   first Run is selected automatically; replacement needs `--activate`.
 - **Results**: one optional tracked Run `result.csv` (`path,stat,value`), no
-  schema row required in FS11. CLI lifecycle/result writes export metadata and
+  schema row required in FS11. CLI lifecycle writes and refresh export metadata and
   parameters through Run CSVs, then persist the pure
   Experiment `results.csv` (`variant,path,stat,value`) for read-only browsing.
   No selected Run gives no measured row; one uses the built-in aggregator;
@@ -127,14 +130,14 @@ Other sources of truth — consult these instead of copying lists here:
   measurement; preserve invalidity, precision and superseding-method reasons.
 - **Derived index** `.memon/index/`: ignored, disposable inventory. FS11 writers
   merge events and publish `snapshot.json`; normal website inventories read it
-  without recursive walks. Direct edits need explicit `memon index rebuild`.
+  without recursive walks. Direct edits need explicit `memon refresh`.
   Missing/invalid registration is a repair error, never a silent partial list.
   Legacy projects retain their compatible discovery/index path.
 - **Project declaration** `.memon/project.yml`: optional, git-tracked,
   `schema_version: 1` plus the optional project layout keys `run_dirs`,
-  `include`, `exclude`, `github`; created only by `memon project init`
-  (`--from-central <config> --project <name>` copies a central entry's
-  layout) or by hand, checked by `memon project lint`.
+  `include`, `exclude`, `github`; first Experiment creation initializes a fresh
+  research project, or the declaration may be authored directly. Reads and refresh
+  validate it; existing unmarked research requires explicit migration.
 - **Configuration split**: central `config.yml` Project entries hold only
   the project path and deployment facts (`name`, `root`, `host`, `storage`,
   `storage_group`, `persistent_cache`, `read_only`, `access`, `execution`). Protected `file_agents`
@@ -143,8 +146,7 @@ Other sources of truth — consult these instead of copying lists here:
   SSHFS and agent select memory-disk. Layout
   belongs in the project's `.memon/project.yml`; a layout key still in a
   central entry keeps working and wins over the project file, but logs
-  `CENTRAL_LAYOUT_DEPRECATED` (`memon project lint --from-central` lists them
-  and flags conflicts).
+  `CENTRAL_LAYOUT_DEPRECATED`. Move layout keys into the project deliberately.
 - **Wiki**: `<projectRoot>/docs/wiki/<kind>/W<NNNN>-<slug>.md` or
   `…/W<NNNN>-<slug>/README.md` (bundle).
 - Hypotheses: `docs/hypotheses.md`.
@@ -199,7 +201,7 @@ curl -sS -u "$MEMON_USER:$MEMON_PASS" http://localhost:3737/api/projects
 
 - If `auth.password` is absent, the server has never run: start it once; the
   first request writes a random password and `session_secret` to `config.yml`.
-- Viewer mode via curl: `SHARE_URL=$(memon share create project-a --label dev --format human)`,
+- Viewer mode via curl: `SHARE_URL=$(memon-tools share create project-a --label dev --format human)`,
   then `curl -sS -c viewer.txt -L "$SHARE_URL" -o /dev/null` and reuse `-b viewer.txt`.
 - HTML pages rewrite 401 to `302 → /login?next=…`; `/api/*` returns a raw 401
   without `WWW-Authenticate`, so send `-u` preemptively. A 401 means missing
@@ -309,11 +311,11 @@ the applicable active change artifacts; keep artifacts aligned with the code.
   explicitly asks to archive directly, the full suite may be skipped — say so;
   never claim an unexecuted suite passed.
 - Never run unit tests on remote clusters. A remote node is a CLI/skills
-  installation only, maintained by `memon update` (fast-forward pull from its
-  trusted remote, CLI build, managed-skill refresh; see `memon update --help`).
+  installation only, maintained by `memon-tools update` (fast-forward pull from its
+  trusted remote, CLI build, managed-skill refresh; see `memon-tools update --help`).
   CLI updates deploy or health-gate no remote service, and central releases never
   wait on nodes. The optional independently installed file agent is outside
-  `memon update`; central releases do not install or restart it.
+  `memon-tools update`; central releases do not install or restart it.
 
 ### 6.2 Local deployment
 
@@ -352,7 +354,7 @@ Version rules (`MAJOR.MINOR.PATCH`, canonical value `MEMON_RELEASE` in
 - `MAJOR` equals `FS_CONVENTION_VERSION`; changing it needs the matching
   reviewed filesystem migration and starts at `.0.0`.
 - Any distributed-artifact change (`memon` CLI or bundled skills): `MINOR + 1`,
-  `PATCH = 0`. Nodes pick it up via `memon update`; releasing doesn't install it.
+  `PATCH = 0`. Nodes pick it up via `memon-tools update`; releasing doesn't install it.
 - Central Web/gateway-only change: `PATCH + 1`; no reinstall anywhere.
 - The initial v6-aligned release was `6.0.0`; later boundaries follow the rules
   above.

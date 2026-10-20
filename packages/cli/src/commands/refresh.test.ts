@@ -9,7 +9,6 @@ import {
   resetCliInvocationForTest,
 } from '../lib/invocation.js'
 import { captureCli } from '../test-support/results-project.js'
-import { runProjectInit } from './project.js'
 import { registerRefreshCommand, runRefresh } from './refresh.js'
 
 afterEach(async () => {
@@ -23,6 +22,13 @@ const run = 'logs/E0001/V0001/trial'
 
 async function fixture() {
   const project = await createTempProject({
+    files: {
+      '.memon/version.json': JSON.stringify({
+        fs_convention_version: 11,
+        installed_at: timestamp,
+        last_migrated_at: null,
+      }),
+    },
     experiments: {
       [id]: buildLightweightExperimentBundle({ id, slug: 'example', timestamp }),
       'E0002-other': buildLightweightExperimentBundle({
@@ -45,7 +51,7 @@ async function fixture() {
     },
   })
   const base = { projectRoot: project.root, cwd: project.root, format: 'json' as const }
-  expect((await captureCli(() => runProjectInit(base))).exitCode).toBe(0)
+  expect((await captureCli(() => runRefresh({ ...base, experiments: [] }))).exitCode).toBe(0)
   return { project, base }
 }
 
@@ -146,4 +152,22 @@ it('removes stale inventory entries only within the refreshed Experiment', async
   const snapshot = JSON.parse(await fs.readFile(project.path('.memon/index/snapshot.json'), 'utf8'))
   expect(snapshot.runs[run]).toBeUndefined()
   expect(Object.keys(snapshot.experiments)).toHaveLength(2)
+})
+
+it('reports invalid direct metadata and Wiki edits during publication', async () => {
+  const { project, base } = await fixture()
+  await fs.writeFile(project.path(run, 'run.json'), '{"id":"trial","status":"not-a-state"}')
+  const scoped = await captureCli(() => runRefresh({ ...base, experiments: [id] }))
+  expect(scoped.exitCode).toBe(1)
+  expect(scoped.json.ok).toBe(false)
+  await fs.mkdir(project.path('docs/wiki/note'), { recursive: true })
+  await fs.writeFile(
+    project.path('docs/wiki/note/W0001-broken.md'),
+    '---\nid: W0001\nkind: note\n---\n',
+  )
+  const inventory = await captureCli(() => runRefresh({ ...base, experiments: [] }))
+  expect(inventory.exitCode).toBe(1)
+  expect(inventory.json.diagnostics).toEqual(
+    expect.arrayContaining([expect.objectContaining({ severity: 'error' })]),
+  )
 })

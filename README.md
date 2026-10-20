@@ -1,633 +1,177 @@
 # memon
 
-Single-user, file-system-driven experiment monitor for ML/systems research.
+A file-based frontend for agent-managed research. Agents write code, run experiments
+and analyze native outputs; memon provides stable identities, execution records,
+published results and convenient browsing.
 
-## Why
+## Quickstart
 
-Agent-driven experimentation produces dozens of experiment directories per
-project. `squeue + grep + ls` doesn't scale; you need a single place to see
-**what's running, what's done, what verified what hypothesis**, with edits
-that flow back into the same files an agent can read.
-
-`memon` is that single place. Everything lives as plain Markdown, YAML, and
-optional Report assets on disk — delete the tool and your data is still there,
-fully readable.
-
-## 60-second quickstart
-
-```bash
+```sh
 pnpm install
-cp config.example.yml config.yml      # gitignored — point at your real logs
-pnpm dev                               # http://localhost:3737
+pnpm --filter '@memon/cli...' build
+# Optional: expose memon, memon-tools and memon-legacy on PATH.
+pnpm --dir packages/cli link --global
 ```
 
-The `config.example.yml` ships pointing at `mock/project-a` and
-`mock/project-b` so a fresh clone shows real data immediately after copying it.
-It is a source-controlled template maintained through intentional Agent or
-human edits; memon runtime code never selects or writes it. Runtime-generated
-values belong only in `config.yml` or another explicitly selected instance.
+In a research project:
 
-## Stack
+```sh
+memon experiment create study --title "A research question"
+memon run create --experiment E0001 --params '{"rate":0.1}'
+# Use the returned directory for native configuration, scripts and outputs.
+memon run update logs/E0001/V0001/<run-id> --status RUNNING
+# Write useful measurements to that Run's result.csv.
+memon run update logs/E0001/V0001/<run-id> --status FINISHED
+memon show E0001 --results
+```
 
-- **Monorepo** with pnpm workspaces — `packages/core`, `packages/cli`, `apps/web`
-- **`@memon/core`** — schemas, parsers, polling, indexing, LineIndex
-- **`@memon/cli`** — `memon` CLI with JSON-by-default output for agents
-- **`apps/web`** — Next.js 15 App Router + Tailwind v4 + TanStack Query
-- **No DB**, **no fs watcher** (cluster inotify-friendly polling instead)
+First Experiment creation initializes a new research project. Existing unmarked
+research requires an explicit filesystem migration; creation never silently
+converts old data. CLI operations default to cwd; use `--project-root <path>` to
+select another project. The CLI does not need a running website.
 
-## File formats memon expects
+For the dashboard, copy `config.example.yml` to a private instance configuration,
+build the Web app, then use `memon-tools serve --config <path>`. See deployment below.
 
-memon distinguishes two units on disk:
-
-- **Experiment** (canonical):
-  `<projectRoot>/docs/experiments/E<NNNN>-<slug>/` — a long-lived README plus
-  structured Implementation and Investigation YAML and the Results description
-  `experiment.json`. One per investigation; can have many member Runs and
-  Variants.
-- **Run**: a directory matching base-name regex `^.+-\d{6}-\d{6}$` (e.g.
-  `foo-260503-082800`). Records execution identity, state and execution-specific facts.
-  It lives at the project's effective Run locations: by default directly under
-  `logs/`, `outputs/` or `experiments/` (`logs/*`, `outputs/*`,
-  `experiments/*`); other locations are declared in the project's
-  `.memon/project.yml` (or, one-off, with the CLI `--run-dir`). Run directories
-  do not nest. A Run may hold one tracked `result.csv` with its measured
-  parameters, metrics and environment values.
-
-The two are bidirectionally bound: each run's frontmatter has
-`experiment: E<NNNN>-<slug>` (or `null` when unbound), and each experiment
-doc has a `runs: []` list. Membership-join surfaces six anomaly classes
-through the web `/api/anomalies` endpoint when the two sides disagree:
-
-| code | meaning |
-|---|---|
-| `ORPHAN_RUN` | run exists with no `experiment:` and no exp claims it |
-| `PHANTOM_RUN_REF` | exp's `runs[]` lists a run dir that doesn't exist |
-| `MISMATCH_EXPERIMENT_REF` | run says exp X but X.runs[] disagrees |
-| `DUPLICATE_EXPERIMENT_SLUG` | two exp docs share the same slug |
-| `EXPERIMENT_SLUG_PREFIX_COLLISION` | one exp slug is a prefix of another |
-| `RUN_SLUG_PREFIX_VIOLATION` | bound run slug doesn't start with its exp's slug |
-
-Run slugs MAY repeat across timestamps within a project — only experiment
-slugs are constrained to be unique.
-
-### Per-experiment bundle `docs/experiments/E<NNNN>-<slug>/`
+## Research files
 
 ```text
-E0001-fsdp-collective/
-├── README.md
-├── implementation.yaml
-├── investigation.yaml
-├── experiment.json        # Results description: columns, groups, Variants
-└── schema-upgrades/       # optional result-schema transforms (1-to-2.json, …)
+docs/experiments/E0001-study/
+  README.md             # research question, useful evidence and current interpretation
+  experiment.json       # lightweight format and desired result columns
+  results.csv           # published Variant table; tracked in Git
+  aggregate_variant.py  # optional custom multi-Run aggregation
+  details/              # optional independent supporting analyses
+logs/E0001/
+  V0001/<run-id>/
+    run.json            # identity, status, active flag, times and optional metadata
+    result.csv          # useful parameters, measurements and requested Run fields
+    ...                 # native configs, logs, checkpoints and scripts
+  smoke/<run-id>/        # program/environment checks; excluded from formal evidence
+docs/wiki/<kind>/
+  W0001-summary.md       # readable findings and links; bundles can include HTML/assets
 ```
 
-`README.md` keeps the narrative and the three exact managed-section pointers:
+No Run README is needed. Directory placement determines Experiment and Variant
+membership; no duplicate binding list or Variant draft registry is required.
+`run create` allocates the next ordinary V ID when `--variant` is omitted.
+Use `--variant V0001` for another execution of the same condition, or
+`--variant smoke` for a smoke Run. READY Runs can hold partial planned parameters
+before execution. Display names are optional Run metadata.
 
-```markdown
----
-id: E0001-fsdp-collective
-slug: fsdp-collective
-title: FSDP collective overlap study
-status: ACTIVE
-runs: [fsdp-collective-260503-082800, fsdp-collective-260504-141200]
-hypotheses: [H0007, H0012]
-tags: [moe, fsdp2]
-created_at: 2026-05-03T08:28:00+08:00
-updated_at: 2026-05-04T14:12:00+08:00
----
+Run execution state and evidence selection are independent. States include
+`READY`, `QUEUED`, `RUNNING`, `FINISHED`, `INTERRUPTED`, `FAILED`, `RESUME_READY`
+and `UNKNOWN`; `PENDING` remains readable for ambiguous historical records.
+The first Run is active by default; another Run preserves that selection unless
+`--activate` explicitly replaces it. `--active false` withdraws a Run from current
+aggregation without deleting it or claiming that its measurements are wrong.
+Optional assessments distinguish `INVALID`, `LIMITED`, `SUPERSEDED` and `OTHER`,
+with a reason. Preserve those qualifications when referring to old evidence.
 
-## Motivation
-## Design
-## Implementation
-> Managed in [implementation.yaml](./implementation.yaml); read and update that file directly.
-## Investigation
-> Managed in [investigation.yaml](./investigation.yaml); read and update that file directly.
-## Results
-> Columns and Variants are managed in [experiment.json](./experiment.json); the Results table is generated from each member Run's result.csv.
-## Findings
-## Limitations
-## Conclusion
-## Warnings      # GFM table; see "Warnings" below
-```
+Experiment lifecycle is `ACTIVE`, `PAUSED`, `ARCHIVED` or `RETIRED`. Lifecycle
+changes remain human-directed; agents can edit the authorized metadata directly.
+`RUNNING` and `COMPLETED` are display projections, not stored lifecycle states.
+Retirement removes work from the current research view while preserving its files
+and references. Explicit `show` targets remain readable; use `--include-history`
+for historical inventory. A fundamentally redone experiment gets a new E ID;
+new lightweight experiments do not maintain research epochs.
 
-`implementation.yaml` is the hierarchical engineering plan;
-`investigation.yaml` tracks empirical questions and criteria; `experiment.json`
-describes the Experiment's results (see below). Agents edit these files
-directly. `memon experiment doc render` provides their shared human-readable
-Markdown projection for the CLI and Web.
+### Publication
 
-### Results: `experiment.json`, per-Run `result.csv` and the generated table
+The export chain is `run.json → result.csv → results.csv → inventory`. Creation
+and Run updates publish automatically. After direct edits, use `memon refresh E0001`;
+plain `memon refresh` rebuilds inventory, including Wiki edits, without aggregating
+all experiments. Failed publication returns failure and identifies the repair
+needed instead of treating a stale table as current evidence.
 
-Results are split by owner. `experiment.json` is the human-authored
-description: `experiment_schema_version`, display metadata for path `groups`,
-typed `columns` addressed by result path (`params.optim.lr`,
-`metrics.eval.fid`, `env.CUDA_VERSION`; types `string`, `number`, `boolean`,
-`enum`, `list`, `stats`, with unit, direction, display and annotations) and
-`variants` declared before launch (declared plan state `PLANNED`, `BLOCKED`,
-`DROPPED` or `INCONCLUSIVE`, planned parameter/env values, provenance and the
-Variant's `runs`, a subset of the README `runs`). It never repeats README
-frontmatter. FS10 stores Variants in an ID-keyed object; legacy FS9 arrays
-remain readable and writable until an explicit migration.
+Each Run CSV uses `path,stat,value`; the experiment CSV adds only `variant`.
+Requested `run.*` fields and `params.*` are exported from metadata, so READY Runs
+already have a CSV. Empty useful metrics are allowed; extract additional native
+outputs only when needed. Default aggregation accepts at most one active Run per
+ordinary Variant. Multiple active Runs require `aggregate_variant.py`; the
+[FS11 migration guide](packages/core/migrations/v10-to-v11.md) documents its contract.
+The website reads the saved table instead of executing analysis scripts on view.
 
-Each Run records the values of the whole Run in its own tracked `result.csv`:
+Generated timestamps use ISO8601 with the writer's local offset. Git checkout
+mtimes are not research timestamps. CLI mutations use shared writer locks;
+README/document writers retain mtime-plus-hash conflict detection. Agents should
+reread conflicts and preserve unrelated edits.
 
-```csv
-path,stat,value
-$experiment_schema_version,,1
-params.optim.lr,,0.0001
-metrics.eval.fid,,12.3
-metrics.eval.clip,mean,0.312
-metrics.eval.clip,std,0.021
-metrics.eval.clip,n,500
-```
-
-Statistics are one row per statistic from a fixed vocabulary (`mean`, `std`,
-`var`, `sem`, `min`, `max`, `sum`, `n`, percentiles `p1`…`p999`, `ci95_lo`,
-`ci95_hi`; two levels as `<inner>.<outer>`, e.g. `max.p99`). Results are
-written first and described later: an undeclared path is shown with an
-inferred type. Write values with `memon run result set <run>
-metrics.eval.fid=12.3 metrics.eval.clip:mean=0.312 …` (atomic upsert, types
-checked against `experiment.json`); a file the project's ignore rules would
-exclude is still written with a `RESULT_FILE_IGNORED` warning and a fix
-command — memon never edits ignore files outside the reviewed migration.
-
-The Variant table is generated, never authored: `RUNNING`, `COMPLETED` and
-`FAILED` derive from the Run records (an `INTERRUPTED` Run keeps its Variant
-`RUNNING`), evidence is every listed Run that is `FINISHED` and not
-deprecated. In FS10 it must also belong to the current research version and
-a nondeprecated Variant. Several evidence Runs aggregate into statistics shown as
-`mean ± std (n)`. The table is cached in `.memon/index/results/<id>.json`
-(never tracked, never edited, regenerated when any input fingerprint changes)
-and read with `memon experiment results table|summary` or the Web Results card.
-`experiment_schema_version` versions one Experiment's recorded values: a member
-`result.csv` in the current research version recording another schema version
-fails the current table with
-`RESULT_SCHEMA_MISMATCH` (the error lists the files and the
-`memon experiment schema upgrade <id> --to <N>` command, which applies the
-transforms in `schema-upgrades/` with a dry run, backup, atomic rewrite,
-verification and rollback). Projects on FS v8 migrate their `results.yaml`
-files with the reviewed guide `packages/core/migrations/v8-to-v9.md`
-(`scripts/migrate-v8-to-v9.mjs`).
-
-### Experiment lifecycle and progress
-
-FS10 Experiment documents store `ACTIVE`, `PAUSED`, `ARCHIVED` or `RETIRED`.
-`PAUSED` holds work that is still intended; `ARCHIVED` closes a relevant phase
-that currently needs no further work; `RETIRED` leaves an obsolete research
-direction behind. Run execution and evidence validity are separate decisions.
-The Experiment no longer stores a separate `archived` boolean.
-
-The dashboard shows these states directly, except that `ACTIVE` displays
-`RUNNING` when a required current-generation Variant actually has a running Run,
-or `COMPLETED` when every required Variant in a nonempty plan is complete.
-Otherwise it stays `ACTIVE`. Adding another planned Variant reopens progress
-without changing the stored lifecycle. Deprecated and dropped Variants do not
-block completion. Result validation errors remain independently visible.
-An inactive Experiment can still show a warning about running executions;
-changing lifecycle never stops a process.
-
-Choose one of the four stored values in the status picker or with
-`memon experiment status set <id> --to <state> --expected-mtime <mtime> --expected-hash <hash>`.
-Legacy FS9 files retain their old three-state format until explicit migration.
-
-### Research versions and deprecated Variants
-
-A research version marks which executions may support the current conclusion.
-It is independent of `experiment_schema_version`, which describes result formats.
-Advancing saves the closing version's definitions and excludes all its Runs from
-current evidence. Original files, Variant identities and Run associations remain;
-a late completion or relink cannot make an old execution current.
-
-Use `memon experiment version show <id>` to read the ledger and lock tokens.
-`version advance` requires a reason, expected version, mtime and hash. Record a
-new execution at launch with `memon run record <directory> --experiment <id>`
-while it is PENDING or RUNNING. Existing unregistered executions require
-`experiment version import <id> <run> --version <old-version> --reason …`; import cannot
-promote evidence into the current version.
-
-`memon experiment variant deprecate <id> <variant>` withdraws a condition while
-retaining its history; an optional successor points to its replacement. Restore
-also requires a reason and does not revive older generations. The Web Results
-card provides these controls, history selection and deprecated-Variant visibility.
-Historical results use saved definitions; incompatible files remain inspectable
-with diagnostics instead of being interpreted using current plans.
-
-Software updates do not convert projects. Enable these features through the
-reviewed [FS9-to-FS10 migration guide](packages/core/migrations/v9-to-v10.md).
-Conversion initializes version 1 and preserves Run bytes; it does not infer
-scientific validity or recover earlier research boundaries automatically.
-
-### Per-run `README.md`
-
-```yaml
----
-id: foo-260503-082800
-status: FINISHED
-created_at: 2026-05-03T08:28:00+08:00
----
-
-```
-
-New Runs need no narrative chapters. Keep shared design, parameters, metrics and
-interpretation in the Experiment/Variant; record only execution-specific facts
-or actual deviations here. Optional frontmatter includes `name`, `updated_at`,
-`finished_at`, `host`, `pid`, `gpus`, `entry`, `command` and `wandb`.
-The body is optional free-form Markdown. Existing rich READMEs remain readable
-without migration or prompts to fill empty sections.
-
-`status` enum is uppercase. Each value renders with an emoji in the UI:
-📝 `PENDING` / 🟢 `RUNNING` / ✅ `FINISHED` / ❌ `FAILED` / ❓ `UNKNOWN`.
-
-### Warnings
-
-The exp doc's optional `## Warnings` section is a structured,
-human-clearable surface where the agent can flag anomalies that need a
-human to look at — loss spikes, config drift from a paper, baseline
-mismatch, hardware blips. It's a single GFM table:
-
-```
-| Status | Created                    | Run                       | Category | Message            | Resolved | Note |
-| OPEN   | 2026-05-03T11:30:00+08:00  | fsdp-collective-260503-…  | result   | spike at step 1500 | —        | —    |
-```
-
-Each row is addressed by a stable `rowId` embedded as an HTML comment.
-Current skills maintain this section through `memon-write-experiment-doc`.
-The legacy `memon experiment warning ...` and `memon run warning add` CLI
-surfaces remain functional indefinitely, but print a permanent deprecation
-notice on every invocation. State changes
-(resolve / reopen) and deletion are **human-only acts** exposed through
-the same CLI or the web UI's per-row controls. Lint checks document structure;
-it does not interpret an unresolved research warning as an execution defect.
-
-### Per-project `docs/hypotheses.md`
-
-Lives at `<projectRoot>/docs/hypotheses.md`. Each hypothesis is an
-`## H<N>. <slug>` heading with labeled bullet items: `Statement`,
-`Origin`, `Status`, `Experiments`, `Runs`, `Evidence`, `Caveats`,
-`Last verified`. Status emojis: ✅ CONFIRMED / ❌ REFUTED / 🟡 PARTIAL /
-🔵 OPEN / ⚪ DEFERRED.
-
-`Experiments:` references parent exp docs by id (e.g.
-`E0001-fsdp-collective`); `Runs:` references run dir names (e.g.
-`fsdp-collective-260503-082800`) when a specific run is the relevant
-evidence. The parser tolerates either ref shape under either field
-and surfaces a `MIGRATE_HYPOTHESIS_REFS` warning when shapes are
-swapped, so the disambiguation is gradual. See
-[`mock/project-a/docs/hypotheses.md`](mock/project-a/docs/hypotheses.md)
-for a full example.
-
-### Diagnostic Journal and legacy `docs/journal.md`
-
-Journal is a project-scoped tool invocation ledger, not research knowledge.
-New records live in `.memon/activity/<invocation-id>.json`; project-scoped
-non-readonly CLI/service calls record automatically, including failures,
-conflicts, no-ops and incomplete calls. Reads, lint, validation, polling and
-dry runs do not record. Machine-level hosting/update commands have no project
-Journal. Rejected CLI syntax records the identified mutating command without
-unparsed arguments when its project can be resolved.
-
-Existing `docs/journal.md` bytes remain untouched. Historical digest documents
-are converted only by the reviewed v7 migration. A legacy Journal can still look like this:
-
-```markdown
----
-last_digest_at: 2026-05-03T10:00:00+08:00
----
-
-- 2026-05-03T08:28:00+08:00 [CREATE]      `foo-260503-082800` PENDING
-- 2026-05-03T08:30:15+08:00 [STATUS]      `foo-260503-082800` PENDING → RUNNING
-- 2026-05-03T09:00:00+08:00 [EXPERIMENT]  `E0001-fsdp-collective` op=create slug=fsdp-collective
-- 2026-05-03T09:00:01+08:00 [BIND]        `E0001-fsdp-collective` op=link run=foo-260503-082800
-- 2026-05-03T10:15:00+08:00 [NOTE]        `foo-260503-082800` converged faster than expected
-- 2026-05-03T11:00:00+08:00 [REQUEST]     please summarize experiments related to H7
-```
-
-`memon journal read` explicitly queries preserved legacy lines and new
-receipts, with origin/outcome, Experiment/Run and timezone-aware filters.
-It is not part of normal `scan` or research handoff context. New receipt
-diagnostics are owner-only; legacy read permissions remain unchanged.
-The historical `last_digest_at` field is opaque metadata: no supported
-command advances it, and the digest workflow has been retired.
-
-After directly maintaining Experiment/Wiki documents, the owning skill runs
-one `memon journal submit --files <project-relative-paths...>` for that batch.
-The CLI validates managed paths and computes current fingerprints; the Agent
-does not read or write Journal files or supply Journal prose. Native CLI
-writes already record themselves and need no extra submission. New findings,
-questions and decisions belong in Wiki, backed by Experiment/Run sources.
-
-### Reports
-
-Existing Markdown Reports stay in their single-file form. HTML/interactive
-Reports are opt-in directory bundles:
-
-```text
-docs/reports/R0001-summary.md
-
-docs/reports/R0002-interactive-summary/
-├── README.md
-├── data/metrics.json
-└── views/
-    └── training-curves/
-        ├── index.html
-        └── assets/*
-```
-
-An HTML bundle is a framework-independent static visualization container, so
-the Report writer may coordinate with an installed visualization/frontend
-skill to produce an individual `views/<slug>/` tree. Bundle HTML may fetch
-Report-local JSON and load local or CDN JavaScript/CSS, but it must not depend
-on a development server. In the bundle README,
-`![Training curves](./views/training-curves/index.html)` embeds the local HTML as
-a same-origin iframe, while `[Open curves](./views/training-curves/index.html)`
-remains an ordinary link. Generated views should be responsive and usable on a
-phone as well as a desktop. The first version intentionally does not sandbox
-Agent-authored iframe content; local asset requests are nevertheless confined
-to that Report bundle.
-
-### Wiki
-
-The wiki is the project's living knowledge base. Reports stay as they are;
-new narrative content goes to `docs/wiki/`, one directory per kind:
-
-```text
-docs/wiki/finding/W0001-zero-snr-brightness.md        # single-file page
-docs/wiki/showcase/W0006-edm2-precond-explorer/       # bundle page
-├── README.md
-├── data/fid.csv
-└── views/explorer/index.html
-```
-
-| Kind | What it holds | `status` vocabulary |
-|---|---|---|
-| `meeting` | who met, what was decided, action items (`date:` required) | none |
-| `roadmap` | a content-first research tree connecting goals, questions, directions, and inline evidence | none |
-| `finding` | a claim with its evidence and limits (`sources:` required) | `TENTATIVE` / `VERIFIED` / `RETRACTED` |
-| `bottleneck` | the current blocker, impact, candidates | `OPEN` / `MITIGATED` / `RESOLVED` |
-| `showcase` | something presentable, how to reproduce it | `DRAFT` / `READY` / `OUTDATED` |
-| `question` | an open question with context and eventual answer | `OPEN` / `ANSWERED` / `DROPPED` |
-| `decision` | a decision, its rationale and consequences | `PROPOSED` / `ACCEPTED` / `SUPERSEDED` |
-| `note` | anything else (migrated Reports land here with `legacy_id`) | none |
-| `harness-feedback` | a proposal to improve this harness, filed by the agent | `PROPOSED` / `ACCEPTED` / `SHIPPED` / `REJECTED` |
-
-Every page has YAML frontmatter (`id: W<NNNN>`, `kind`, `title`,
-`description`, `created_at`, `updated_at`, plus kind-specific keys) and three
-independent trust axes:
-
-- **evidence** — `sources:` lists the Experiments / Variants (`E0017/V0068`) /
-  Hypotheses / runs the page rests on; when one changes after `updated_at`
-  the page is `stale`.
-- **author judgement** — the kind's `status`, when that kind carries one.
-- **human review** — humans verify *wiki commits* oldest to newest
-  (`memon wiki review verify next`); the Web dashboard derives each page's
-  `VERIFIED`, `CHANGED_SINCE_VERIFY` (with the exact unverified line ranges)
-  or `UNVERIFIED` state. The CLI reports no per-page review state; it offers
-  one whole-wiki diff (`memon wiki review diff`) from the last verified commit
-  to `HEAD`. Agents never write review marks; they commit each wiki change
-  separately with `memon wiki commit`.
-
-Inside a body, `@W0001`, `@E0017`, `@E0017/V0068`, `@H0003` and
-`@<run-dir>` are links. A fenced block declared `` ```<lang> <type>@<N> #<id> ``
-renders as a component on every dashboard Markdown surface: `datatable@1`
-(a table plus line/bar views), `figure@1` (a captioned image beside the
-document), `embed@1` (HTML in an iframe) and `checklist@1` (a recursive list
-with independent Agent and human flags). The payload language parses the body
-into the one object the component receives — `yaml`/`json` to a mapping, any
-other language to `{ data: "<body>" }`. A `yaml` payload carrying `script:` or
-`code:` is executed on request by `memon components run` and its result is
-cached in `<stem>__assets/<id>.json` beside the document. Unknown fences
-degrade to plain code blocks.
-
-```
-memon wiki ls [--kind K] [--status S] [--source ARTIFACT]
-memon wiki show|create|move|set|delete <page>
-memon wiki lint [--strict]
-memon wiki backlinks <artifact>
-memon wiki review log|diff|verify <sha|next>|unverify <sha>   # diff: whole docs/wiki/ since last verified commit
-memon wiki commit [-m SUMMARY]                  # stages only docs/wiki/
-memon wiki migrate-report <R-id> <kind> [<slug>]
-memon wiki kinds ls --format human
-memon wiki kinds show initiative --format json
-
-memon components run <document> [--id ID]...    # recompute executable component blocks
-```
-
-The CLI validates source syntax and filters declared source tokens; only Web
-resolves Markdown source targets, computes staleness, and derives per-page
-review state. `wiki backlinks` matches pages' declared `sources`, not
-references scanned from Markdown bodies.
-
-Migration is editorial and one Report at a time (`migrate-report`); a
-migrated page keeps `legacy_id: R<NNNN>` so old `R` links keep resolving.
-
-Wiki kinds, policies and bilingual guidance are configured in
-`packages/core/src/wiki/kinds.json`. The Wiki help button displays “Wiki 类型指南”.
-See [Wiki kind registry](docs/wiki-kind-registry.md) for schema fields,
-deterministic skill generation, drift checks, explicit package/skill refresh,
-and safe migration boundaries. Editing the registry does not update deployed
-instances or move existing pages automatically.
+Implementation/investigation ledgers, Reports and Code Reviews are optional.
+Create them only when explicitly requested. Update research prose when understanding
+changes, rather than appending a bullet for every execution. Wiki pages have no
+Git-backed human-review workflow; use normal project Git conventions.
 
 ## CLI
 
-```
-memon serve                            # start the web dashboard on port 3737
-memon list [--project NAME]            # JSON runs; excludes archived/deprecated by default
-memon show <id>                        # full README content
-memon search <query>                   # full-text search
-memon hypo list                        # list hypotheses
-memon hypo show <H#>                   # show one hypothesis
-memon mock seed                        # copy mock/ to mock-runtime/ (dev)
+The normal binary has **six command leaves**, with no hidden retired aliases:
 
-# Experiment-bundle commands (docs/experiments/E<NNNN>-<slug>/)
-memon experiment ls                    # list exp docs
-memon experiment show <id-or-slug>     # show one exp doc
-memon experiment create <slug> [--title TXT] [--from-run <run-dir>]
-memon experiment doc show <id> <implementation|investigation|results>
-memon --format human experiment doc render <id> <implementation|investigation|results>
-memon experiment doc lint <id>         # syntax, schema and document structure only
-memon experiment link <exp> <run>      # bind a run to an exp (writes both sides)
-memon experiment unlink <exp> <run>    # release a run
-memon experiment delete <exp> [--force]  # cascade-unlink + delete
-memon experiment warning add <exp> --run <run-dir> --category C --message M
-memon experiment warning {list,resolve,reopen,delete} <exp> [<rowId>]
-
-# Run-side commands
-memon run rename <run> <new-slug>      # preserves timestamp suffix
-memon run record <run> --status RUNNING # minimal README for an existing execution directory
-memon run status set <run> --to FINISHED --expected-mtime <ms>
-cat new.md | memon run readme write <run> --expected-mtime <ms>
-memon run archive <run>                # archive visibility; independent of research eligibility
-memon run unarchive <run>
-memon run lint <run>                   # schema/structure; no required body chapters
-memon run deprecate <run>              # exclude from research without changing execution status
-memon run undeprecate <run>            # restore research eligibility
-memon run resolve-exp <run>            # print parent exp id (one line) for shell substitution
-memon run warning add <run> --category C --message M    # convenience: resolves parent + dispatches
-
-# Agent-shaped read commands (config-free)
-memon scan [<project-root>]            # research snapshot; no Journal reads
-memon journal read [filters...]        # explicit diagnostic history query
-memon hypotheses read                  # parsed docs/hypotheses.md
-
-# Finalize direct Experiment/Wiki document maintenance (no Journal prose)
-memon journal submit --files docs/experiments/E0001-example/README.md
-
-memon install-skills [--project-root <p>] [--target <path>] [--agent <list>] [--dry-run]
-memon fs-version check                 # report the project's .memon/version.json status
-
-# Derived index (.memon/index/, a rebuildable cache) and Run locations
-memon index status [--verify [--strict]]   # snapshot, run_dirs, events, lease; drift with --verify
-memon index compact                    # merge pending index events (exit 9 while leased)
-memon index rebuild [--audit-run-dirs] [--dry-run]  # rebuild from the project files
-memon project init                     # create .memon/project.yml (never overwrites, never commits)
-memon project init --from-central config.yml --project project-a   # copy a central entry's layout keys
-memon project lint [--from-central config.yml --project project-a]  # validate; effective layout + sources
-memon --run-dir 'outputs/*/*' scan     # one-off override of the declared Run locations
-
-# Installation maintenance
-memon update [--source <checkout>] [--remote <name>] [--branch <name>]
-             [--skills-root <p>]... [--no-skills] [--dry-run]
-```
-
-Default output is JSON (agent-friendly). `--format human` switches to
-tabular display for direct terminal use.
-
-Legacy run-shaped aliases in the `memon experiment {status set, readme write,
-archive, unarchive}` family print a one-line `[deprecation]` banner; new scripts
-should use `memon run …` directly. `MEMON_QUIET_DEPRECATIONS=1` may silence
-those v2-alias banners. It never silences the permanent warning-CLI banner:
-every `memon experiment warning ...` or `memon run warning add ...` invocation
-continues to work and reports that Warnings should now be maintained through
-`memon-write-experiment-doc`.
-
-### Skill mode: `--project-root`
-
-Skills (and any agent invocation) pass `--project-root <path>` on every
-command. The path is treated as a single anonymous project root.
-Mutually exclusive with `--project NAME`. When `--project-root` is
-omitted, the CLI defaults to `process.cwd()` as the single project.
-
-Non-`serve` CLI subcommands do **not** read `config.yml` at all. The
-flag `--config <path>` exists only on `memon serve`, where it points
-the spawned web stack at a multi-project config file.
-
-### Exit codes (stable contract for skill branch logic)
-
-| code | meaning |
+| Command | Purpose |
 |---|---|
-| `0` | success |
-| `1` | generic / unclassified failure (incl. `BAD_STATE`, e.g. orphan run) |
-| `2` | usage / flag error (incl. `BAD_REQUEST`) |
-| `4` | `NOT_FOUND` (experiment / run / project root missing) |
-| `9` | `CONFLICT` — mtime / hash lock failed; skill SHOULD refresh and retry |
-| `11` | `MEMON_TOO_OLD` — project was installed by a newer memon; upgrade memon |
-| `13` | `FORBIDDEN` (path safety violation) |
-
-### Archive and research eligibility
-
-Archiving and deprecation are independent. `memon run deprecate <run>` sets the
-reversible frontmatter boolean `deprecated: true`; absence means false.
-`undeprecate` removes it. Neither command changes execution status, stops a
-process, deletes artifacts, or rewrites stored measurements. Both accept
-`--expected-mtime` for optimistic concurrency.
-
-Run collections (`list`, `search`, `scan`) exclude deprecated Runs by default,
-but deprecation does not remove their Variant association. Use
-`--include-deprecated`, `--deprecated-only`, or an explicit Run id to inspect
-history, including scripts, commands, environment and recovery logs useful for
-a rerun. Correct the known problem before reusing that setup; the old Run's
-metrics remain excluded from current analysis. Archive flags remain separate.
-
-The generated Results table counts only a Variant's listed Runs that are
-`FINISHED` and not deprecated as evidence; a deprecated Run stays listed among
-the Variant's other Runs and its values stop contributing. Its `result.csv` is
-never rewritten, and values recorded before FS v9 without a Run directory stay
-in the Variant's frozen block, marked as such. Lint does not report research
-eligibility as a defect.
-
-For a user-requested redo of an Experiment's Variants, retain the Variant
-definitions and historical associations, deprecate the old Runs in the agreed
-scope, and create fresh Runs for the same conditions after checking the old
-execution setup. Changing the comparison conditions still requires declaring
-them before launch. Write back verified new metrics and their actual source
-Runs in a coherent batch, without erasing the old evidence.
-
-Historical membership and current evidence are distinct: replacement Runs of
-the same Variant become evidence on their own while the deprecated Runs stay
-listed. Do not delete history or undeprecate rejected evidence to change a
-table.
-
-Archive and deprecation mutations are recorded by the invocation ledger, not
-by authored Journal prose. `memon doctor` and `experiment doc validate` are
-retired; use `run lint` or `experiment doc lint` for structural checks.
-
-## Skills (`@memon/skills`)
-
-memon ships agent skills as bundled `SKILL.md` files at
-`packages/skills/memon-*/`. The same skill content works under Claude Code,
-Codex, and opencode — each agent just reads from a different directory.
-From a project root, run:
+| `experiment create <slug>` | Allocate the Experiment and initialize fresh research as needed. |
+| `run create [id] --experiment E0001` | Allocate a Run directory and, by default, a new Variant. |
+| `run update <path>` | Record execution state/activity and publish derived data. |
+| `refresh [E0001 …]` | Publish file edits; without targets rebuild inventory only. |
+| `show [target]` | Read published inventory or one Experiment, Run or Wiki page. |
+| `install-skills` | Install/update the existing bundled Skills. |
 
 ```sh
-memon install-skills                              # syncs into all of:
-                                                  #   ./.claude/skills/
-                                                  #   ./.codex/skills/
-                                                  #   ./.opencode/skills/
-memon install-skills --agent claude               # only ./.claude/skills/
-memon install-skills --agent claude,opencode      # subset
-memon install-skills --project-root /repo         # same defaults under /repo
-memon install-skills --target /custom/path        # one specific dir (no --agent)
+memon show                             # published summaries, no recursive Run hydration
+memon show --kind experiment --include-history
+memon show E0001                       # Experiment document and diagnostics
+memon show E0001 --results --column metrics --output csv
+memon show E0001 --shape               # declared columns and Variant identities
+memon show E0001 --section investigation
+memon show logs/E0001/V0001/<run-id> --results
+memon show W0001                       # declared Wiki content; no source-target scanning
+memon show study --kind experiment     # disambiguate a slug
 ```
 
-Currently shipped `memon-*` skills are replaced from the bundled source.
-Retired skills are removed only when their entire file tree matches a known
-shipped version. Customized, extended, symlinked and unknown directories are
-preserved and reported; unrelated custom skills remain untouched. Use
-`--dry-run` to inspect the planned synchronization.
+JSON is the default; `--format human` provides readable output. Result tables also
+support `--variant`, `--status`, `--column`, `--group` and `--output`. An absent or
+invalid inventory reports `memon refresh` instead of silently walking every Run.
+Direct edits are not automatically observed until publication.
 
-After a successful (non-dry-run) install, if `<projectRoot>/CLAUDE.md`
-exists but `<projectRoot>/AGENTS.md` does not, the command prompts you
-(interactive TTY only) to symlink `AGENTS.md → CLAUDE.md` so non-Claude
-agents pick up the same project guidance.
+### Optional and historical entrypoints
 
-Run after each `memon` upgrade. Then invoke skills in your agent CLI of
-choice via `/memon-<name>`:
+`memon-tools --help` exposes 12 optional leaves: `serve`, `update`,
+`share create/list/revoke`, `experiment migrate`, `wiki create/move/migrate-report`,
+`components run`, `mock seed` and `journal read`.
 
-| Skill | What it does |
+`memon-legacy --help` exposes 14 transitional leaves for existing data:
+`experiment schema upgrade`, `experiment version show/advance/import`,
+`experiment link/unlink`, `experiment variant deprecate/restore`,
+`experiment archive/unarchive`, and `run record/rename/archive/unarchive`.
+These operations preserve their historical validations. They do not introduce
+old version ledgers or binding lists into new lightweight experiments.
+
+| Removed commands | Replacement |
 |---|---|
-| `memon-drive` | Coordinate an Experiment and batch meaningful Experiment/Variant updates; user approval still controls research resolution. |
-| `memon-write-experiment-doc` | Apply the shared writing workflow to README/YAML sources, preserve unsupported content, and lint the changed bundle. No mandatory subagent handoff. |
-| `memon-write-script` | Author a portable launcher and return entry/recipe/env provenance without creating an Implementation item just because a script exists. |
-| `memon-run-experiment` | Launch/resume a predeclared Variant, maintain a minimal execution record, and monitor to the requested completion boundary. |
-| `memon-write-report` | Write a single Markdown Report by default, or an HTML-capable directory bundle only when the user explicitly requests HTML/interactive presentation. |
-| `memon-write-code-review` | Write a project- or Experiment-scoped human review guide and optionally link it to an Implementation item through the writer. |
-| `memon-propose` | Rank next Experiments/Variants using Experiment documents and Variant-level results only; report gaps rather than reading Run bodies, Attempts or logs. |
-| `memon-migrate-fs` | User-invoked staged FS-convention migration with review before production publish. |
+| `list`, `scan`, entity `ls/show`, result table/summary/get | `show`, optionally `--results`, `--shape`, `--section` or `--kind` |
+| `experiment variant create` | `run create --experiment …` |
+| Run status/deprecation setters | `run update` with execution state or independent activity |
+| Result setters, annotations, warning/metadata/README setters | Edit the source file, then `refresh` |
+| Index maintenance, result rebuild, manual journal submission | `refresh`; no manual receipt |
+| Project initialization and lint commands | First creation; diagnostics during supported reads/publication |
+| Wiki commit, search, hypothesis read, delete/rename wrappers | Ordinary Git/file tools; preserve references when moving files |
 
-`memon-append-journal` and `memon-digest-journal` are retired. Skills do not
-author Journal history or use it as research input.
+Exit codes remain 0 success, 1 failed/invalid state, 2 usage, 4 missing target,
+9 conflict, 11 unsupported older CLI and 13 forbidden path. Removed commands fail
+before touching files. This CLI change does not migrate project data.
 
-The former `memon-append-warning` skill is intentionally absent. Reinstalling
-skills removes its unmodified shipped directory. Its CLI commands remain as the
-permanently deprecated compatibility surface described above.
+## Skills
 
-Each `SKILL.md` is plain markdown — `cat ~/.claude/skills/memon-*/SKILL.md`
-or read the source under `packages/skills/` to see the exact agent
-playbooks.
+`memon install-skills` synchronizes bundled skills into the research project's
+Claude/Codex/opencode directories. `--agent`, `--target` and `--dry-run` remain
+available; the memon harness itself is refused. Customized retired directories
+and unrelated skills are preserved. `AGENTS.md` is canonical; `CLAUDE.md` is its
+relative symlink.
 
-### Shell-script header convention
-
-Every shell script in a run directory starts with a single-line functional
-description right after the shebang (no multi-paragraph block):
-
-```bash
-#!/usr/bin/env bash
-# Sweep batch size 4/8/16 with bf16, log per-step loss to log/.
-set -euo pipefail
-```
-
-The script's purpose lives here; the experiment's motivation /
-hypothesis-binding lives in the exp doc. Two layers, no duplication.
+The existing seven entrypoints remain separate: `memon-research`, `memon-wiki`,
+`memon-components`, `memon-structured-work`, `memon-write-report`,
+`memon-write-code-review` and `memon-migrate-fs`. Their consolidation is deferred.
+For older command examples, use the replacement table above; the registered CLI
+surface and `--help` define supported invocations.
 
 ## Web dashboard
 
@@ -662,13 +206,8 @@ The exp detail page's action bar exposes:
   the canonical `finalContent` so the editor re-baselines its buffer.
   Same handshake for run READMEs via `PUT /api/runs/:id/readme`.
 
-Live updates flow over a single SSE connection at `/api/events`,
-fanning out three topics: `run-change`, `experiment-change`, `anomaly`.
-The frontend invalidates only the matching TanStack Query keys
-(`['runs']` / `['run', id]` / `['experiments']` / `['experiment', id]` /
-`['anomalies', project]`) so a remote edit propagates within ~1 second
-without blanket refetching.
-
+Browser lists use TanStack Query freshness and explicit invalidation after writes.
+Log viewing has a dedicated stream. Source refresh uses polling without watchers.
 
 Owner-only, opt-in Chinese body translation for Experiments, Wiki pages, and reports
 is documented in [Body translation](docs/body-translation.md). It uses the serving
@@ -690,7 +229,7 @@ participate in auth.
 ### First run
 
 Copy `config.example.yml` to an instance `config.yml` (no `auth:` block needed),
-then run `memon serve`. The example remains an Agent/human-maintained template:
+then run `memon-tools serve`. The example remains an Agent/human-maintained template:
 memon never selects it as the live configuration and never writes generated
 state into it. The first boot generates a random 144-bit password and persists
 it **plaintext** only in the selected instance under `auth.password`, then
@@ -708,7 +247,7 @@ Persisted in /path/to/config.yml as plaintext (auth.password).
 ```
 
 To rotate later: edit `auth.password` in `config.yml` to any new value
-and restart `memon serve`. To regenerate: delete the `auth` block
+and restart `memon-tools serve`. To regenerate: delete the `auth` block
 entirely. **No Caddy reload is needed for password changes** — memon
 owns the only copy of the credential.
 
@@ -766,7 +305,7 @@ without giving them owner credentials, issue a per-project share link:
 
 ```bash
 # In the project directory (or pass --project-root):
-memon share create project-a --label "Reviewer Alice" --expires 30d \
+memon-tools share create project-a --label "Reviewer Alice" --expires 30d \
   --url-base https://memon.example.com
 # → prints: https://memon.example.com/share/project-a/<token>
 ```
@@ -792,7 +331,7 @@ entry per project; the cookie is a signed list). Viewers can also click
 "Log in as owner" on the banner to elevate to owner mode for the rest of
 the session.
 
-To revoke a share, run `memon share revoke <id-prefix>` (or use the "Share"
+To revoke a share, run `memon-tools share revoke <id-prefix>` (or use the "Share"
 button on the project page header). The cookie holder silently loses
 access on their next request; no error message reveals the revocation.
 
@@ -802,14 +341,14 @@ browser session AND every outstanding share-cookie in one shot.
 ### Updating an installation
 
 A workstation or cluster login node runs the CLI and the bundled skills —
-nothing else. `memon update` maintains that installation from its own
+nothing else. `memon-tools update` maintains that installation from its own
 checkout:
 
 ```sh
-memon update                       # update this installation, refresh skills under cwd
-memon update --dry-run             # report the selected revision and planned actions
-memon update --skills-root /repo   # refresh managed skills under another project root
-memon update --no-skills           # CLI only
+memon-tools update                       # update this installation, refresh skills under cwd
+memon-tools update --dry-run             # report the selected revision and planned actions
+memon-tools update --skills-root /repo   # refresh managed skills under another project root
+memon-tools update --no-skills           # CLI only
 ```
 
 What it does, in order: refuse unless the checkout is clean and on a branch
@@ -844,7 +383,7 @@ previous build (`backup`) so the installation can be repaired by hand.
 
 ```json
 {
-  "fs_convention_version": 7,
+  "fs_convention_version": 11,
   "installed_at": "2026-05-04T10:00:00+08:00",
   "last_migrated_at": null
 }
@@ -855,11 +394,8 @@ with memon's release Major (`MAJOR === FS_CONVENTION_VERSION`). Minor releases
 identify CLI/skills reinstall boundaries; Patch releases are central-only.
 One active OpenSpec change may span several such releases. A central
 deployment installs the exact pushed release commit; CLI nodes update
-independently with `memon update` and are never pinned to central's revision.
-Use
-`memon fs-version check --project-root .` to inspect the state without
-modifying anything; this is also what every skill calls in its
-preflight to refuse running on a project the binary doesn't support.
+independently with `memon-tools update` and are never pinned to central's revision.
+Inspect `.memon/version.json` directly; creation and publication validate their inputs.
 
 The marker is **machine-managed** — don't edit it by hand.
 
@@ -868,8 +404,8 @@ The marker is **machine-managed** — don't edit it by hand.
 `.memon/index/` (FS v8) is a derived, rebuildable cache of Run, Experiment and
 wiki summaries. It ignores itself (`.gitignore` containing `*`), every memon
 write adds one event file under `events/`, and central or
-`memon index compact` merges events into `snapshot.json`. Never edit it;
-deleting it is always safe, and `memon index rebuild` recreates it from the
+`memon refresh` merges events into `snapshot.json`. Never edit it;
+deleting it is always safe, and `memon refresh` recreates it from the
 project files.
 
 `.memon/project.yml` is an optional, git-tracked declaration of the project
@@ -904,7 +440,7 @@ enforced.
 
 The domain backend stays in the central Web process. The agent provides only
 versioned file primitives, uses mTLS project grants, and has an independent build
-and upgrade lifecycle. `memon update` builds only the JavaScript protocol dependency
+and upgrade lifecycle. `memon-tools update` builds only the JavaScript protocol dependency
 and CLI; it never installs or restarts the native agent, and CLI nodes do not need
 Go. Source writes require an explicit operator acknowledgement that their memon
 writers use the shared lock protocol. Writers that bypass that lock remain outside
@@ -922,13 +458,9 @@ Central `config.yml` keeps only the project path and deployment facts
 `read_only`, `access`, `execution`), plus protected `file_agents` connection settings. Each layout key resolves on its own: `--run-dir`
 (CLI, `run_dirs` only) > a layout key still in the central entry (deprecated:
 it keeps winning and logs `CENTRAL_LAYOUT_DEPRECATED`) > `.memon/project.yml` >
-the default (`logs/*`, `outputs/*`, `experiments/*`; no extra excludes). Move
-an existing central layout with
-`memon project init --project-root <root> --from-central config.yml --project <name>`,
-commit the file in the project, then delete the keys from `config.yml`;
-`memon project lint --from-central config.yml --project <name>` shows what is
-still central and flags conflicts. Edit and commit the file yourself; an
-invalid file fails closed (exit 2) instead of falling back to the default.
+the default (`logs/*`, `outputs/*`, `experiments/*`; no extra excludes). Move existing layout keys into `.memon/project.yml` deliberately, commit that
+file in the project, then remove those keys from `config.yml`. Refresh validates
+the declaration; an invalid file fails closed instead of falling back to defaults.
 
 ## Architecture
 

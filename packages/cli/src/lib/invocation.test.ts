@@ -59,7 +59,7 @@ function buildProgram(action: () => Promise<void>): Command {
   experiment.command('link <exp> <run>').action(async () => {
     await action()
   })
-  experiment.command('ls').action(async () => {
+  program.command('show').action(async () => {
     await action()
   })
   program
@@ -109,11 +109,9 @@ describe('command classification', () => {
 
   it.each([
     ['experiment link', 'project'],
-    ['experiment ls', 'readonly'],
+    ['show', 'readonly'],
     ['journal read', 'readonly'],
-    ['wiki kinds ls', 'readonly'],
-    ['wiki kinds show', 'readonly'],
-    ['journal submit', 'project'],
+    ['run update', 'project'],
     ['serve', 'host'],
     ['update', 'host'],
     ['components run', 'project'],
@@ -193,7 +191,7 @@ describe('automatic interception', () => {
   })
 
   it.each([
-    ['read command', ['experiment', 'ls']],
+    ['read command', ['show']],
     ['host command', ['serve']],
     ['dry run', ['wiki-migrate', '--dry-run']],
   ])('records nothing for a %s', async (_label, argv) => {

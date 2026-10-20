@@ -1,7 +1,6 @@
 import { join } from 'node:path'
 import {
   advanceExperimentResearchVersion,
-  createLightweightVariant,
   importExperimentResearchRun,
   linkExperimentRun,
   nodeMutationFs,
@@ -17,9 +16,8 @@ import {
 import type { Command } from 'commander'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
-import { cliIndexSink, indexWarningFields } from '../lib/index-sink.js'
+import { cliIndexSink } from '../lib/index-sink.js'
 import { withCliWriterLock } from '../lib/invocation.js'
-import { publishLightweightWrite } from '../lib/lightweight-publication.js'
 import { cliMutation } from '../lib/mutation-error.js'
 import { emitJson } from '../lib/output.js'
 import type { ResultsCommandGlobals } from './results-commands.js'
@@ -145,7 +143,7 @@ export function registerExperimentResearchCommands(
   globals: () => ResultsCommandGlobals,
 ): void {
   const version = experiment
-    .command('version', { hidden: true })
+    .command('version')
     .description('research versions, independent of result schema versions')
   version
     .command('show <id-or-slug>')
@@ -165,56 +163,14 @@ export function registerExperimentResearchCommands(
       runResearchMutation({ ...globals(), idOrSlug }, 'import', { ...opts, run }),
     )
   const variant = experiment
-    .command('variant', { hidden: true })
+    .command('variant')
     .description('compatibility helpers; run create now allocates a new Variant by default')
-  variant
-    .command('create <id-or-slug>')
-    .description('prepare the first READY Run in a new Variant directory')
-    .option('--id <id>', 'explicit V number (default: next available)')
-    .option('--name <name>', 'short research name')
-    .option('--draft <text>', 'optional explanation on the prepared Run')
-    .option('--params <json>', 'partial planned parameters for the READY Run')
-    .action(
-      async (
-        idOrSlug: string,
-        opts: { id?: string; name?: string; draft?: string; params?: string },
-      ) => {
-        const t = await target({ ...globals(), idOrSlug })
-        return withCliWriterLock(t.projectRoot, async () => {
-          try {
-            const result = await createLightweightVariant({
-              projectRoot: t.projectRoot,
-              experimentId: t.experimentId,
-              ...opts,
-              params: opts.params === undefined ? undefined : JSON.parse(opts.params),
-            })
-            const event = await publishLightweightWrite(
-              t.projectRoot,
-              `logs/${t.experimentId.slice(0, 5)}/${result.id}/${result.runId}`,
-              result.changes,
-            )
-            emitJson({
-              ok: true,
-              id: result.id,
-              runId: result.runId,
-              path: `logs/${t.experimentId.slice(0, 5)}/${result.id}/${result.runId}`,
-              ...indexWarningFields({ indexWarnings: event }),
-            })
-          } catch (error) {
-            emitErrorAndExit(
-              (error as { code?: string }).code === 'CONFLICT' ? 'CONFLICT' : 'BAD_REQUEST',
-              (error as Error).message,
-            )
-          }
-        })
-      },
-    )
-  locked(variant.command('deprecate <id-or-slug> <variant>', { hidden: true }))
+  locked(variant.command('deprecate <id-or-slug> <variant>'))
     .option('--successor <id>', 'replacement Variant in the same Experiment')
     .action(async (idOrSlug: string, variant: string, opts) =>
       runResearchMutation({ ...globals(), idOrSlug }, 'deprecate', { ...opts, variant }),
     )
-  locked(variant.command('restore <id-or-slug> <variant>', { hidden: true })).action(
+  locked(variant.command('restore <id-or-slug> <variant>')).action(
     async (idOrSlug: string, variant: string, opts) =>
       runResearchMutation({ ...globals(), idOrSlug }, 'restore', { ...opts, variant }),
   )

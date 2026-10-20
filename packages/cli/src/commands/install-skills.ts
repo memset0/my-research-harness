@@ -534,10 +534,7 @@ async function preflightAndMaybeWriteMarker(
     if (available >= 11) {
       const registration = await rebuildIndex(projectRoot, { role: 'cli' })
       if (registration.status !== 'rebuilt')
-        emitErrorAndExit(
-          'CONFLICT',
-          'Index initialization incomplete; run memon index rebuild and retry',
-        )
+        emitErrorAndExit('CONFLICT', 'Index initialization incomplete; run memon refresh and retry')
     }
     await writeFsVersion(projectRoot, {
       fs_convention_version: available,
@@ -670,7 +667,6 @@ function formatAgentsLinkLine(report: AgentsLinkReport, projectRoot: string): st
       return 'AGENTS.md: skipped (no input received)'
     case 'failed':
       return `AGENTS.md: symlink failed: ${report.error ?? 'unknown error'}`
-    case 'none':
     default:
       if (report.agentsMdExists) return 'AGENTS.md: already present; nothing to do'
       if (!report.claudeMdExists) return 'AGENTS.md: skipped (no CLAUDE.md found)'

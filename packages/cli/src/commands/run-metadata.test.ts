@@ -1,8 +1,8 @@
 import { promises as fs } from 'node:fs'
 import { createTempProject, ExitCalled, removeTempDirs, spyExit } from '@memon/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { runStatusSet } from './experiment.js'
-import { runRunCreate, runRunUpdate } from './run-metadata.js'
+
+import { runRunCreate } from './run-metadata.js'
 import { runRunRecord } from './run-record.js'
 
 beforeEach(() => {
@@ -51,43 +51,6 @@ describe('lightweight Run CLI', () => {
       expect(metadata.created_at).toMatch(/[+-]\d{2}:\d{2}$/)
       expect(await fs.readdir(project.path(response.directory))).not.toContain('README.md')
     }
-  })
-
-  it('creates queued metadata, updates links and status, and resumes without writing README', async () => {
-    const project = await projectFixture()
-    const base = { projectRoot: project.root, cwd: project.root, format: 'json' as const }
-    await runRunCreate({
-      ...base,
-      experiment: 'E0001',
-      variant: 'V0001',
-      id: 'trial',
-      status: 'QUEUED',
-      jobId: '42',
-      scheduler: 'slurm',
-    })
-    const path = project.path('logs/E0001/V0001/trial/run.json')
-    const initial = JSON.parse(await fs.readFile(path, 'utf8'))
-    expect(initial.status).toBe('QUEUED')
-    expect(initial.scheduler).toEqual({ system: 'slurm', job_id: '42' })
-    expect(initial.created_at).toMatch(/[+-]\d{2}:\d{2}$/)
-    expect(initial.started_at).toBeUndefined()
-    await runRunUpdate({
-      ...base,
-      target: 'logs/E0001/V0001/trial',
-      wandb: 'https://wandb.ai/example/project/runs/trial',
-      status: 'RUNNING',
-    })
-    await runStatusSet({ ...base, runId: 'logs/E0001/V0001/trial', to: 'FAILED' })
-    expect(JSON.parse(await fs.readFile(path, 'utf8')).finished_at).toBeTruthy()
-    await runRunUpdate({ ...base, target: 'logs/E0001/V0001/trial', status: 'RUNNING' })
-    const resumed = JSON.parse(await fs.readFile(path, 'utf8'))
-    expect(resumed.created_at).toBe(initial.created_at)
-    expect(resumed.finished_at).toBeNull()
-    expect(resumed.wandb).toContain('/trial')
-    expect(await fs.readdir(project.path('logs/E0001/V0001/trial'))).toEqual([
-      'result.csv',
-      'run.json',
-    ])
   })
 
   it('records an existing smoke directory without inferring times from its name or mtime', async () => {
@@ -163,28 +126,6 @@ it('selects the first Run, preserves an existing selection, and activates only e
     await fs.readFile(project.path('docs/experiments/E0001-example/experiment.json'), 'utf8'),
   )
   expect(declaration.variants).toEqual({})
-})
-
-it('automatically publishes measurements and finish state without a rebuild command', async () => {
-  const { runRunResultSet } = await import('./run-result.js')
-  const project = await projectFixture()
-  const base = { projectRoot: project.root, cwd: project.root, format: 'json' as const }
-  const run = 'logs/E0001/V0001/a'
-  await runRunCreate({ ...base, experiment: 'E0001', variant: 'V0001', id: 'a' })
-  await runRunUpdate({ ...base, target: run, status: 'RUNNING' })
-  await runRunResultSet({ ...base, run, assignments: ['metrics.loss=0.3'], unset: [] })
-  await runRunUpdate({ ...base, target: run, status: 'FINISHED' })
-  expect(
-    await fs.readFile(project.path('docs/experiments/E0001-example/results.csv'), 'utf8'),
-  ).toContain('V0001,metrics.loss,,0.3')
-  await runRunUpdate({ ...base, target: run, status: 'RESUME_READY' })
-  expect(JSON.parse(await fs.readFile(project.path(run, 'run.json'), 'utf8'))).toMatchObject({
-    active: true,
-    status: 'RESUME_READY',
-  })
-  expect(
-    await fs.readFile(project.path('docs/experiments/E0001-example/results.csv'), 'utf8'),
-  ).toContain('V0001,metrics.loss,,0.3')
 })
 
 it('reports a saved record but incomplete publication when custom aggregation fails', async () => {

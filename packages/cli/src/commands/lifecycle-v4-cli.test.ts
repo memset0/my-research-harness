@@ -20,12 +20,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { runArchive, runReadmeWrite, runStatusSet } from './experiment.js'
-import {
-  runExperimentArchiveDoc,
-  runExperimentStatusSet,
-  runExperimentUnarchiveDoc,
-} from './experiment-doc.js'
+import { runArchive } from './experiment.js'
+import { runExperimentArchiveDoc, runExperimentUnarchiveDoc } from './experiment-doc.js'
 
 const RUN_RUNNING = `---
 id: foo-260513-100000
@@ -183,11 +179,11 @@ afterEach(async () => {
   await fs.rm(root, { recursive: true, force: true })
 })
 
-async function expDocMtime(id: string): Promise<number> {
+async function _expDocMtime(id: string): Promise<number> {
   return (await fs.stat(join(root, 'docs', 'experiments', `${id}.md`))).mtimeMs
 }
 
-async function runReadmeMtime(runId: string): Promise<number> {
+async function _runReadmeMtime(runId: string): Promise<number> {
   return (await fs.stat(join(root, 'logs', runId, 'README.md'))).mtimeMs
 }
 
@@ -197,98 +193,6 @@ function lastJsonOnStdout(): Record<string, unknown> {
   const blob = stdoutChunks.join('').trim()
   return JSON.parse(blob) as Record<string, unknown>
 }
-
-// ---------- 4.x — memon experiment status set (exp-doc form) ----------
-
-describe('memon experiment status set (exp-doc form)', () => {
-  it('writes status + bumps updated_at + appends [EXP_STATUS] event', async () => {
-    const m0 = await expDocMtime('E0001-foo')
-    await runExperimentStatusSet({
-      cwd: root,
-      projectRoot: root,
-      experimentId: 'E0001-foo',
-      to: 'RESOLVED',
-      expectedMtime: m0,
-    })
-
-    const out = lastJsonOnStdout()
-    expect(out).toMatchObject({
-      ok: true,
-      prevStatus: 'OPEN',
-      nextStatus: 'RESOLVED',
-      journalAppended: true,
-    })
-
-    const expContent = await fs.readFile(join(root, 'docs', 'experiments', 'E0001-foo.md'), 'utf8')
-    expect(expContent).toContain('status: RESOLVED')
-
-    const journal = await fs.readFile(join(root, 'docs', 'journal.md'), 'utf8')
-    expect(journal).toContain('[EXP_STATUS]')
-    expect(journal).toContain('`E0001-foo` OPEN → RESOLVED')
-  })
-
-  it('noop when status unchanged — no [EXP_STATUS] event', async () => {
-    const m0 = await expDocMtime('E0001-foo')
-    await runExperimentStatusSet({
-      cwd: root,
-      projectRoot: root,
-      experimentId: 'E0001-foo',
-      to: 'OPEN', // already OPEN
-      expectedMtime: m0,
-    })
-
-    const out = lastJsonOnStdout()
-    expect(out).toMatchObject({ ok: true, journalAppended: false })
-
-    // No journal file (or no [EXP_STATUS] line)
-    const journalPath = join(root, 'docs', 'journal.md')
-    const exists = await fs
-      .stat(journalPath)
-      .then(() => true)
-      .catch(() => false)
-    if (exists) {
-      const journal = await fs.readFile(journalPath, 'utf8')
-      expect(journal).not.toContain('[EXP_STATUS]')
-    }
-  })
-
-  it('rejects out-of-enum value with BAD_REQUEST (exit 2)', async () => {
-    let caught: ExitCalled | null = null
-    try {
-      await runExperimentStatusSet({
-        cwd: root,
-        projectRoot: root,
-        experimentId: 'E0001-foo',
-        to: 'CONCLUDED', // not in OPEN|RESOLVED|ABANDONED
-        expectedMtime: await expDocMtime('E0001-foo'),
-      })
-    } catch (err) {
-      caught = err as ExitCalled
-    }
-    expect(caught?.exitCode).toBe(2)
-    const errBlob = stderrChunks.join('')
-    expect(errBlob).toContain('BAD_REQUEST')
-    expect(errBlob).toContain('OPEN')
-    expect(errBlob).toContain('RESOLVED')
-    expect(errBlob).toContain('ABANDONED')
-  })
-
-  it('soft warning when target is archived', async () => {
-    const m0 = await expDocMtime('E0002-bar') // archived
-    await runExperimentStatusSet({
-      cwd: root,
-      projectRoot: root,
-      experimentId: 'E0002-bar',
-      to: 'ABANDONED',
-      expectedMtime: m0,
-    })
-
-    const out = lastJsonOnStdout()
-    expect(out).toMatchObject({ ok: true, warning: 'archived' })
-    const errBlob = stderrChunks.join('')
-    expect(errBlob).toContain('warning: E0002-bar is archived; modifying anyway')
-  })
-})
 
 // ---------- 5.x — archive subcommands ----------
 
@@ -311,23 +215,6 @@ describe('memon run archive — hard rule on RUNNING', () => {
     // README untouched
     const readme = await fs.readFile(join(root, 'logs', 'foo-260513-100000', 'README.md'), 'utf8')
     expect(readme).toContain('archived: false')
-  })
-})
-
-describe('memon experiment status set on archived run via run-id form (status set is the workaround)', () => {
-  it('soft warning fires when changing status of an archived run', async () => {
-    const m0 = await runReadmeMtime('bar-260513-110000') // archived: true
-    await runStatusSet({
-      cwd: root,
-      projectRoot: root,
-      runId: 'bar-260513-110000',
-      to: 'INTERRUPTED',
-      expectedMtime: m0,
-    })
-    const out = lastJsonOnStdout()
-    expect(out).toMatchObject({ ok: true, warning: 'archived' })
-    const errBlob = stderrChunks.join('')
-    expect(errBlob).toContain('warning: bar-260513-110000 is archived; modifying anyway')
   })
 })
 
@@ -386,71 +273,5 @@ describe('memon experiment archive (exp-doc form)', () => {
 
     const journal = await fs.readFile(join(root, 'docs', 'journal.md'), 'utf8')
     expect(journal).toContain('`E0002-bar` op=unarchive')
-  })
-})
-
-// ---------- lock conflicts use the structured error envelope ----------
-
-describe('mtime/hash lock conflicts', () => {
-  async function conflictOf(run: () => Promise<void>) {
-    let caught: ExitCalled | null = null
-    try {
-      await run()
-    } catch (err) {
-      if (!(err instanceof ExitCalled)) throw err
-      caught = err
-    }
-    expect(caught?.exitCode).toBe(9)
-    const lines = stderrChunks.join('').trim().split('\n')
-    const envelope = JSON.parse(lines[lines.length - 1]!)
-    expect(envelope.error.code).toBe('CONFLICT')
-    return envelope.error as { message: string; details: Record<string, unknown> }
-  }
-
-  it('run status set', async () => {
-    const error = await conflictOf(() =>
-      runStatusSet({
-        cwd: root,
-        projectRoot: root,
-        runId: 'foo-260513-100000',
-        to: 'FINISHED',
-        expectedMtime: 1,
-      }),
-    )
-    expect(error.details).toEqual({
-      currentMtime: await runReadmeMtime('foo-260513-100000'),
-      expectedMtime: 1,
-    })
-    expect(stdoutChunks.join('')).toContain('status: RUNNING')
-  })
-
-  it('run readme write reports the actual hash when only the hash is stale', async () => {
-    const error = await conflictOf(async () =>
-      runReadmeWrite({
-        cwd: root,
-        projectRoot: root,
-        runId: 'foo-260513-100000',
-        expectedMtime: await runReadmeMtime('foo-260513-100000'),
-        expectedHash: '0'.repeat(40),
-        stdinContent: RUN_RUNNING.replace('## Setup', '## Setup\n\nchanged'),
-      }),
-    )
-    expect(error.message).toContain('hash')
-    expect(error.details.actualHash).toMatch(/^[0-9a-f]{40}$/)
-  })
-
-  it('experiment status set', async () => {
-    const error = await conflictOf(() =>
-      runExperimentStatusSet({
-        cwd: root,
-        projectRoot: root,
-        experimentId: 'E0001-foo',
-        to: 'RESOLVED',
-        expectedMtime: 1,
-      }),
-    )
-    expect(error.details).toMatchObject({ expectedMtime: 1 })
-    const expContent = await fs.readFile(join(root, 'docs', 'experiments', 'E0001-foo.md'), 'utf8')
-    expect(expContent).toContain('status: OPEN')
   })
 })

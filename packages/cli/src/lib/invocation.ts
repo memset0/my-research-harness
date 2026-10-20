@@ -68,116 +68,38 @@ export async function withCliWriterLock<T>(root: string, work: () => Promise<T>)
  * therefore report the missing classification explicitly.
  */
 export const CLI_LEDGER_CLASSES: Readonly<Record<string, CliLedgerClass>> = {
-  // ---------- top-level reads ----------
-  list: 'readonly',
   show: 'readonly',
-  search: 'readonly',
-  scan: 'readonly',
-  'hypotheses read': 'readonly',
-  'hypo list': 'readonly',
-  'hypo show': 'readonly',
-  'fs-version check': 'readonly',
-  // Derived-index cache maintenance and the project declaration: they write
-  // only `.memon/index/` or create `.memon/project.yml` for the user to
-  // review, and are deliberately never journaled.
-  'index status': 'readonly',
-  'index compact': 'readonly',
-  'index rebuild': 'readonly',
   refresh: 'readonly',
-  'project init': 'readonly',
-  'project lint': 'readonly',
-
-  // ---------- host / installation management ----------
-  serve: 'host',
-  'mock seed': 'host',
-  update: 'host',
-
-  // ---------- journal ----------
-  'journal read': 'readonly',
-  'journal submit': 'project',
-
-  // ---------- experiments ----------
-  'experiment ls': 'readonly',
-  'experiment show': 'readonly',
+  'install-skills': 'project',
   'experiment create': 'project',
-  'experiment migrate': 'project',
-  'experiment variant create': 'project',
-  'experiment version show': 'readonly',
-  'experiment version advance': 'project',
-  'experiment version import': 'project',
-  'experiment variant deprecate': 'project',
-  'experiment variant restore': 'project',
-  'experiment rename': 'project',
-  'experiment doc show': 'readonly',
-  'experiment doc render': 'readonly',
-  'experiment doc lint': 'readonly',
-  'experiment implementation show': 'readonly',
-  'experiment investigation show': 'readonly',
-  'experiment results show': 'readonly',
-  'experiment results table': 'readonly',
-  'experiment results summary': 'readonly',
-  // Derived CSV/index publication takes its own writer lock; no narrative receipt.
-  'experiment results rebuild': 'readonly',
-  'experiment results annotation get': 'readonly',
-  'experiment results annotation set': 'project',
-  // A dry run without `--apply` (see `classifyCliCommand`).
-  'experiment schema upgrade': 'project',
-  'experiment section show': 'readonly',
-  'experiment link': 'project',
-  'experiment unlink': 'project',
-  'experiment delete': 'project',
-  'experiment status set': 'project',
-  'experiment readme write': 'project',
-  'experiment archive': 'project',
-  'experiment unarchive': 'project',
-  'experiment warning add': 'project',
-  'experiment warning list': 'readonly',
-  'experiment warning resolve': 'project',
-  'experiment warning reopen': 'project',
-  'experiment warning delete': 'project',
-
-  // ---------- runs ----------
-  'run rename': 'project',
-  'run result get': 'readonly',
-  'run result set': 'project',
-  'run result lint': 'readonly',
-  'run resolve-exp': 'readonly',
-  'run lint': 'readonly',
-  'run record': 'project',
   'run create': 'project',
   'run update': 'project',
-  'run archive': 'project',
-  'run unarchive': 'project',
-  'run deprecate': 'project',
-  'run undeprecate': 'project',
-  'run status set': 'project',
-  'run readme write': 'project',
-  'run warning add': 'project',
-
-  // ---------- skills / shares ----------
-  'install-skills': 'project',
+  serve: 'host',
+  update: 'host',
+  'mock seed': 'host',
+  'journal read': 'readonly',
   'share create': 'project',
   'share list': 'readonly',
   'share revoke': 'project',
-
-  // ---------- wiki ----------
-  'wiki ls': 'readonly',
-  'wiki show': 'readonly',
+  'experiment migrate': 'project',
   'wiki create': 'project',
   'wiki move': 'project',
-  'wiki set': 'project',
-  'wiki lint': 'readonly',
-  'wiki backlinks': 'readonly',
   'wiki migrate-report': 'project',
-  'wiki deprecate': 'project',
-  'wiki undeprecate': 'project',
-  'wiki delete': 'project',
-  'wiki commit': 'project',
-  'wiki kinds ls': 'readonly',
-  'wiki kinds show': 'readonly',
-
-  // ---------- components ----------
   'components run': 'project',
+  'experiment schema upgrade': 'project',
+  'experiment version show': 'readonly',
+  'experiment version advance': 'project',
+  'experiment version import': 'project',
+  'experiment link': 'project',
+  'experiment unlink': 'project',
+  'experiment variant deprecate': 'project',
+  'experiment variant restore': 'project',
+  'experiment archive': 'project',
+  'experiment unarchive': 'project',
+  'run record': 'project',
+  'run rename': 'project',
+  'run archive': 'project',
+  'run unarchive': 'project',
 }
 
 /** `memon experiment warning add` -> `experiment warning add`. */
@@ -247,15 +169,7 @@ export async function beginCliInvocation(input: BeginCliInvocationInput): Promis
     )
     return
   }
-  const cacheWriter = [
-    'index compact',
-    'index rebuild',
-    'project init',
-    'experiment results rebuild',
-    'experiment results table',
-    'experiment results summary',
-  ].includes(path)
-  if (ledgerClass !== 'project' && !cacheWriter) return
+  if (ledgerClass !== 'project') return
 
   const root = await resolveLedgerRoot(input, options)
   if (root === null) return

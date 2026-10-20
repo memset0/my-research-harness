@@ -1,12 +1,4 @@
-// memon experiment {ls, show, create, link, unlink, delete} — exp-doc commands.
-//
-// These operate on `<projectRoot>/docs/experiments/E<NNNN>-<slug>/README.md`
-// (v5 folder layout). Run-level operations (status set / readme write /
-// archive / unarchive) live in experiment.ts (legacy file name from a
-// pre-v3 rename pass); run rename lives in run-rename.ts and experiment
-// rename in experiment-rename.ts. Every write goes through the shared core
-// mutation primitives; this module only resolves targets, appends the legacy
-// journal events (absorbed by the invocation ledger) and shapes CLI output.
+// Experiment creation, targeted reading and explicit historical membership helpers.
 
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
@@ -14,12 +6,8 @@ import { join } from 'node:path'
 import {
   appendJournalEvent,
   createExperiment,
-  deleteExperiment,
-  discoverExperiments,
   EXPERIMENT_DIR_REGEX,
-  EXPERIMENT_STATUS_VALUES,
   type Experiment,
-  type ExperimentStatus,
   type ExperimentTarget,
   formatIsoLocal,
   isExperimentLifecycle,
@@ -34,83 +22,16 @@ import {
   resolveRunTarget,
   SLUG_STRICT_REGEX,
   setExperimentArchived,
-  setExperimentStatus,
   unlinkExperimentRun,
 } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { runWalkOptions } from '../lib/discovery-options.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { cliIndexSink, indexWarningFields } from '../lib/index-sink.js'
+import { withCliWriterLock } from '../lib/invocation.js'
 import { cliMutation } from '../lib/mutation-error.js'
 import { emitJson } from '../lib/output.js'
-
-// ---------- experiment ls ----------
-
-export interface ExperimentLsInput {
-  projectRoot?: string
-  cwd: string
-  format: 'json' | 'human'
-  status?: string
-  lifecycle?: string
-}
-
-export async function runExperimentLs(input: ExperimentLsInput): Promise<void> {
-  if (input.status && ![...EXPERIMENT_STATUS_VALUES, 'RUNNING', 'COMPLETED'].includes(input.status))
-    emitErrorAndExit('BAD_REQUEST', 'Unknown Experiment display status')
-  if (input.lifecycle && !(EXPERIMENT_STATUS_VALUES as readonly string[]).includes(input.lifecycle))
-    emitErrorAndExit('BAD_REQUEST', 'Unknown stored Experiment lifecycle')
-  const r = await resolveContext(input)
-  const projectRoot = singleProjectRoot(r)
-  const projectName = r.config.projects[0]!.name
-  const { experiments } = await discoverExperiments(projectRoot, projectName)
-  const runIndex = await RunTargetIndex.open(projectRoot, { projectName, ...runWalkOptions() })
-  await runIndex.runs(experiments.flatMap((exp) => exp.frontMatter.runs))
-  const progress = new Map(
-    await Promise.all(
-      experiments.map(
-        async (exp) => [exp.id, await experimentProgress(projectRoot, exp, runIndex)] as const,
-      ),
-    ),
-  )
-  const selected = experiments.filter(
-    (exp) =>
-      (!input.status || progress.get(exp.id)!.displayStatus === input.status) &&
-      (!input.lifecycle || exp.frontMatter.status === input.lifecycle),
-  )
-  if (input.format === 'human') {
-    if (selected.length === 0) {
-      process.stdout.write('(no experiments)\n')
-      return
-    }
-    for (const exp of selected) {
-      const status = exp.parseErrors.length > 0 ? '✗' : '·'
-      const memberCount = exp.frontMatter.runs.length
-      const running = progress.get(exp.id)!.runningRunCount
-      process.stdout.write(
-        `${status} ${exp.id.padEnd(40)}  ${progress.get(exp.id)!.displayStatus}  ${memberCount.toString().padStart(3)} runs${running ? ` (${running} running)` : ''}  ${exp.frontMatter.title}\n`,
-      )
-    }
-    return
-  }
-  emitJson({
-    experiments: selected.map((e) => ({
-      id: e.id,
-      ...progress.get(e.id),
-      slug: e.frontMatter.slug,
-      title: e.frontMatter.title,
-      runs: e.frontMatter.runs,
-      hypotheses: e.frontMatter.hypotheses,
-      tags: e.frontMatter.tags,
-      createdAt: e.frontMatter.createdAt,
-      updatedAt: e.frontMatter.updatedAt,
-      path: e.path,
-      mtime: e.mtime,
-      readmeMtime: e.readmeMtime,
-      parseErrors: e.parseErrors,
-      parseWarnings: e.parseWarnings,
-    })),
-  })
-}
+import { initializeFreshResearch } from './project.js'
 
 // ---------- experiment show ----------
 
@@ -175,48 +96,51 @@ export async function runExperimentCreate(input: ExperimentCreateInput): Promise
   const r = await resolveContext(input)
   const projectRoot = singleProjectRoot(r)
   const projectName = r.config.projects[0]!.name
+  return withCliWriterLock(projectRoot, async () => {
+    await initializeFreshResearch(projectRoot)
 
-  // Resolve `--from-run` ONCE, up front; no run other than this one is read.
-  const importedRun = input.fromRun
-    ? await resolveRunTarget(projectRoot, input.fromRun, { projectName, ...runWalkOptions() })
-    : null
-  if (input.fromRun && !importedRun) {
-    emitErrorAndExit('NOT_FOUND', `run "${input.fromRun}" not found`)
-  }
+    // Resolve `--from-run` ONCE, up front; no run other than this one is read.
+    const importedRun = input.fromRun
+      ? await resolveRunTarget(projectRoot, input.fromRun, { projectName, ...runWalkOptions() })
+      : null
+    if (input.fromRun && !importedRun) {
+      emitErrorAndExit('NOT_FOUND', `run "${input.fromRun}" not found`)
+    }
 
-  const created = await cliMutation(() =>
-    createExperiment({
-      fs: nodeMutationFs,
-      index: cliIndexSink(projectRoot),
-      projectRoot,
-      projectName,
-      slug: input.slug,
-      ...(input.title === undefined ? {} : { title: input.title }),
-      hypotheses: input.hypotheses ?? [],
-      importedRun,
-      ...(input.fromRun ? { importedRunLabel: input.fromRun } : {}),
-    }),
-  )
-  // [EXPERIMENT] op=create journal event
-  await appendJournalEvent({
-    path: journalPath(projectRoot),
-    event: {
-      timestamp: created.timestamp,
-      tag: 'EXPERIMENT',
-      body: `\`${created.id}\` op=create slug=${input.slug}${input.fromRun ? ` from-run=${input.fromRun}` : ''}`,
-    },
-  })
-  if (input.fromRun) {
+    const created = await cliMutation(() =>
+      createExperiment({
+        fs: nodeMutationFs,
+        index: cliIndexSink(projectRoot),
+        projectRoot,
+        projectName,
+        slug: input.slug,
+        ...(input.title === undefined ? {} : { title: input.title }),
+        hypotheses: input.hypotheses ?? [],
+        importedRun,
+        ...(input.fromRun ? { importedRunLabel: input.fromRun } : {}),
+      }),
+    )
+    // [EXPERIMENT] op=create journal event
     await appendJournalEvent({
       path: journalPath(projectRoot),
       event: {
         timestamp: created.timestamp,
-        tag: 'BIND',
-        body: `\`${created.id}\` op=link run=${created.runs[0]}`,
+        tag: 'EXPERIMENT',
+        body: `\`${created.id}\` op=create slug=${input.slug}${input.fromRun ? ` from-run=${input.fromRun}` : ''}`,
       },
     })
-  }
-  emitJson({ ok: true, id: created.id, ...indexWarningFields(created) })
+    if (input.fromRun) {
+      await appendJournalEvent({
+        path: journalPath(projectRoot),
+        event: {
+          timestamp: created.timestamp,
+          tag: 'BIND',
+          body: `\`${created.id}\` op=link run=${created.runs[0]}`,
+        },
+      })
+    }
+    emitJson({ ok: true, id: created.id, ...indexWarningFields(created) })
+  })
 }
 
 // ---------- experiment link / unlink ----------
@@ -303,78 +227,6 @@ export async function runExperimentUnlink(input: ExperimentUnlinkInput): Promise
   })
 }
 
-// ---------- experiment status set (v4) ----------
-
-export interface ExperimentStatusSetInput {
-  projectRoot?: string
-  cwd: string
-  experimentId: string
-  to: string
-  expectedMtime: number
-  expectedHash?: string
-}
-
-export async function runExperimentStatusSet(input: ExperimentStatusSetInput): Promise<void> {
-  if (!(EXPERIMENT_STATUS_VALUES as readonly string[]).includes(input.to)) {
-    emitErrorAndExit('BAD_REQUEST', `--to must be one of: ${EXPERIMENT_STATUS_VALUES.join(', ')}`)
-  }
-  const { projectRoot, expId, experiment } = await resolveExperimentTarget(
-    input,
-    input.experimentId,
-  )
-  const result = await cliMutation(
-    () =>
-      setExperimentStatus({
-        fs: nodeMutationFs,
-        index: cliIndexSink(projectRoot),
-        experiment,
-        status: input.to as ExperimentStatus,
-        lock: {
-          expectedMtime: input.expectedMtime,
-          ...(input.expectedHash === undefined ? {} : { expectedHash: input.expectedHash }),
-        },
-      }),
-    (error) =>
-      error.code === 'CONFLICT'
-        ? {
-            details: {
-              currentMtime: error.current?.mtime,
-              expectedMtime: input.expectedMtime,
-            },
-          }
-        : undefined,
-  )
-
-  let journalAppended = false
-  if (result.changed) {
-    await appendJournalEvent({
-      path: journalPath(projectRoot),
-      event: {
-        timestamp: formatIsoLocal(new Date()),
-        tag: 'EXP_STATUS',
-        body: `\`${expId}\` ${result.prevStatus} → ${result.nextStatus}`,
-      },
-    })
-    journalAppended = true
-  }
-
-  const output: Record<string, unknown> = {
-    ok: true,
-    mtime: result.mtime,
-    readmeMtime: result.mtime,
-    hash: result.hash,
-    prevStatus: result.prevStatus,
-    nextStatus: result.nextStatus,
-    journalAppended,
-    ...indexWarningFields(result),
-  }
-  if (result.archived) {
-    process.stderr.write(`warning: ${expId} is archived; modifying anyway\n`)
-    output.warning = 'archived'
-  }
-  emitJson(output)
-}
-
 // ---------- experiment archive (v4 — exp-doc form) ----------
 
 export interface ExperimentArchiveInput {
@@ -426,46 +278,6 @@ async function setExperimentArchivedCli(
     },
   })
   emitJson({ ok: true, ...outputState, noop: false, ...indexWarningFields(result) })
-}
-
-// ---------- experiment delete ----------
-
-export interface ExperimentDeleteInput {
-  projectRoot?: string
-  cwd: string
-  experimentIdOrSlug: string
-  force: boolean
-}
-
-export async function runExperimentDelete(input: ExperimentDeleteInput): Promise<void> {
-  const { projectRoot, expId, experiment } = await resolveExperimentTarget(
-    input,
-    input.experimentIdOrSlug,
-  )
-  // JSON mode cannot prompt: without --force the core refuses members and
-  // scratch content; skill code paths always pass --force.
-  const deleted = await cliMutation(() =>
-    deleteExperiment({
-      fs: nodeMutationFs,
-      index: cliIndexSink(projectRoot),
-      experiment,
-      force: input.force,
-    }),
-  )
-  await appendJournalEvent({
-    path: journalPath(projectRoot),
-    event: {
-      timestamp: formatIsoLocal(new Date()),
-      tag: 'EXPERIMENT',
-      body: `\`${expId}\` op=delete cascaded-runs=${JSON.stringify(deleted.cascadedRuns)}`,
-    },
-  })
-  emitJson({
-    ok: true,
-    deletedId: expId,
-    cascadedRuns: deleted.cascadedRuns,
-    ...indexWarningFields(deleted),
-  })
 }
 
 // ---------- helpers ----------

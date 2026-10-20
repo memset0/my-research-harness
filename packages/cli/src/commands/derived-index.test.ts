@@ -9,11 +9,8 @@ import { join } from 'node:path'
 import { ExitCalled, spyExit } from '@memon/test-utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { setRunDirs } from '../lib/discovery-options.js'
-import { runIndexCompact, runIndexRebuild, runIndexStatus } from './derived-index.js'
-import { runStatusSet } from './experiment.js'
-import { runExperimentCreate, runExperimentLink } from './experiment-doc.js'
-import { runExperimentDocumentLint } from './experiment-document.js'
-import { runRunLint } from './run-lint.js'
+import { runIndexRebuild } from './derived-index.js'
+
 import { runRunRecord } from './run-record.js'
 
 const readme = (id: string, status = 'FINISHED') =>
@@ -79,59 +76,6 @@ async function expectExit(code: number, action: () => Promise<void>): Promise<vo
   }
 }
 
-describe('memon index status', () => {
-  it('reports a missing index without failing', async () => {
-    await runIndexStatus(base())
-    const status = lastJson()
-    expect(status.present).toBe(false)
-    expect(status.snapshot.state).toBe('missing')
-    expect(status.runDirs.effective).toEqual({
-      patterns: [
-        'logs/*',
-        'outputs/*',
-        'experiments/*',
-        'logs/E????/V????/*',
-        'logs/E????/smoke/*',
-      ],
-      source: 'default',
-    })
-    expect(process.exitCode ?? 0).toBe(0)
-    expect(await exists('.memon')).toBe(false)
-  })
-
-  it('verifies a fresh rebuild without drift, then reports an external edit', async () => {
-    await runIndexRebuild(base())
-    expect(lastJson()).toMatchObject({ status: 'rebuilt', counts: { runs: 1 } })
-    await runIndexStatus({ ...base(), verify: true, strict: true })
-    const clean = lastJson()
-    expect(clean.present).toBe(true)
-    expect(clean.runDirs.recorded).toEqual(clean.runDirs.effective)
-    expect(clean.verify.drift).toEqual([])
-    expect(process.exitCode ?? 0).toBe(0)
-
-    // A launcher rewrites the status outside memon.
-    const path = join(root, 'logs/top-260901-090000/README.md')
-    await fs.writeFile(path, readme('top-260901-090000', 'FAILED'))
-    await runIndexStatus({ ...base(), verify: true, strict: true })
-    const drifted = lastJson()
-    expect(drifted.verify.drift).toContainEqual(
-      expect.objectContaining({
-        code: 'INDEX_DRIFT',
-        kind: 'runs',
-        key: 'logs/top-260901-090000',
-        field: 'status',
-        indexed: 'FINISHED',
-        disk: 'FAILED',
-      }),
-    )
-    expect(process.exitCode).toBe(1)
-  })
-
-  it('requires --verify for --strict', async () => {
-    await expectExit(2, () => runIndexStatus({ ...base(), strict: true }))
-  })
-})
-
 describe('memon index rebuild', () => {
   it('is idempotent and leaves no events', async () => {
     await runIndexRebuild(base())
@@ -162,72 +106,6 @@ describe('memon index rebuild', () => {
     expect(result.counts.runs).toBe(2)
     expect(result.audit.outside).toEqual([])
   })
-
-  it('exits 9 while another process holds the lease (rebuild and compact)', async () => {
-    await fs.mkdir(join(root, '.memon/index'), { recursive: true })
-    await fs.writeFile(join(root, '.memon/index/.gitignore'), '*\n')
-    const expires = new Date(Date.now() + 60_000).toISOString()
-    await fs.writeFile(
-      join(root, '.memon/index/compact.lock'),
-      JSON.stringify({ pid: 1, role: 'central', expires_at: expires, token: 'abcd' }),
-    )
-    await expectExit(9, () => runIndexRebuild(base()))
-    expect(stderr.join('')).toContain('CONFLICT')
-    // compact only takes the lease when there is something to merge.
-    await runStatusSet({
-      ...base(),
-      runId: 'top-260901-090000',
-      to: 'FAILED',
-      expectedMtime: (await fs.stat(join(root, 'logs/top-260901-090000/README.md'))).mtimeMs,
-    })
-    lastJson()
-    await expectExit(9, () => runIndexCompact(base()))
-    expect(await exists('.memon/index/snapshot.json')).toBe(false)
-  })
-})
-
-describe('CLI writes publish index events', () => {
-  it('emits one event per write; compact merges and deletes them', async () => {
-    await fs.mkdir(join(root, 'logs/new-260902-090000'))
-    await runRunRecord({ ...base(), target: join(root, 'logs/new-260902-090000') })
-    expect(lastJson()).toMatchObject({ ok: true, created: true })
-    expect(await events()).toHaveLength(1)
-
-    await runExperimentCreate({ ...base(), slug: 'probe' })
-    const created = lastJson()
-    await runExperimentLink({
-      ...base(),
-      experimentIdOrSlug: created.id,
-      runIdOrDir: 'new-260902-090000',
-    })
-    expect(lastJson().indexWarnings).toBeUndefined()
-    expect(await events()).toHaveLength(3)
-
-    await runIndexCompact(base())
-    expect(lastJson()).toMatchObject({ status: 'compacted', merged: 3 })
-    expect(await events()).toEqual([])
-    const snapshot = JSON.parse(await fs.readFile(join(root, '.memon/index/snapshot.json'), 'utf8'))
-    expect(snapshot.runs['logs/new-260902-090000'].owner).toBe(created.id)
-  })
-
-  it('reports INDEX_EVENT_FAILED without changing the exit code', async () => {
-    await fs.mkdir(join(root, '.memon'), { recursive: true })
-    // `.memon/index` is a file: the event cannot be written.
-    await fs.writeFile(join(root, '.memon/index'), 'not a directory\n')
-    const path = join(root, 'logs/top-260901-090000/README.md')
-    await runStatusSet({
-      ...base(),
-      runId: 'top-260901-090000',
-      to: 'FAILED',
-      expectedMtime: (await fs.stat(path)).mtimeMs,
-    })
-    const result = lastJson()
-    expect(result.ok).toBe(true)
-    expect(result.indexWarnings).toEqual([expect.objectContaining({ code: 'INDEX_EVENT_FAILED' })])
-    expect(stderr.join('')).toContain('INDEX_EVENT_FAILED')
-    expect(process.exitCode ?? 0).toBe(0)
-    expect(await fs.readFile(path, 'utf8')).toContain('status: FAILED')
-  })
 })
 
 describe('Run nesting', () => {
@@ -237,37 +115,5 @@ describe('Run nesting', () => {
     await expectExit(2, () => runRunRecord({ ...base(), target: nested }))
     expect(stderr.join('')).toContain('RUN_NESTED')
     expect(await exists('logs/top-260901-090000/inner-260901-100000/README.md')).toBe(false)
-  })
-
-  it('run lint reports Run-shaped children', async () => {
-    await fs.mkdir(join(root, 'logs/top-260901-090000/inner-260901-100000'))
-    await runRunLint({ ...base(), runId: 'top-260901-090000' })
-    const result = lastJson()
-    expect(result.diagnostics).toContainEqual(
-      expect.objectContaining({ code: 'RUN_NESTED', file: 'inner-260901-100000' }),
-    )
-    expect(process.exitCode).toBe(1)
-  })
-})
-
-describe('experiment doc lint with the effective run_dirs', () => {
-  it('reports a declared Run outside run_dirs, and not once it is declared', async () => {
-    await runExperimentCreate({ ...base(), slug: 'deep' })
-    const { id } = lastJson()
-    await runExperimentLink({
-      ...base(),
-      experimentIdOrSlug: id,
-      runIdOrDir: 'outputs/group/deep-260901-100000',
-    })
-    lastJson()
-    await runExperimentDocumentLint({ ...base(), idOrSlug: id })
-    expect(lastJson().diagnostics).toContainEqual(
-      expect.objectContaining({ code: 'RUN_OUTSIDE_RUN_DIRS' }),
-    )
-    setRunDirs(['logs/*', 'outputs/*/*'])
-    await runExperimentDocumentLint({ ...base(), idOrSlug: id })
-    expect(lastJson().diagnostics).not.toContainEqual(
-      expect.objectContaining({ code: 'RUN_OUTSIDE_RUN_DIRS' }),
-    )
   })
 })

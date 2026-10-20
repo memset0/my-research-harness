@@ -8,9 +8,15 @@ import { join } from 'node:path'
 import { ProjectDeclarationError } from '@memon/core'
 import { spyExit } from '@memon/test-utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { runResolveExp } from '../commands/run-resolve-exp.js'
-import { runScan } from '../commands/scan.js'
+import { runRefresh } from '../commands/refresh.js'
+import { runShow } from '../commands/show.js'
 import { effectiveRunDirs, parseRunDirs, runWalkOptions, setRunDirs } from './discovery-options.js'
+
+async function readInventory() {
+  await runRefresh({ projectRoot: root, cwd: root, format: 'json', experiments: [] })
+  stdout = []
+  await runShow({ projectRoot: root, cwd: root, format: 'json', includeHistory: true })
+}
 
 const readme = (id: string) =>
   `---\nid: ${id}\nname: x\nstatus: FINISHED\ncreated_at: '2026-09-01T09:00:00+08:00'\nupdated_at: '2026-09-01T09:00:00+08:00'\n---\n`
@@ -40,6 +46,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   process.stdout.write = realWrite
+  process.exitCode = 0
   setRunDirs(undefined)
   await fs.rm(root, { recursive: true, force: true })
 })
@@ -55,11 +62,17 @@ describe('--run-dir', () => {
   it('uses the FS v8 default run_dirs when unset and undeclared', async () => {
     expect(runWalkOptions()).toEqual({})
     expect(await effectiveRunDirs(root)).toEqual({
-      patterns: ['logs/*', 'outputs/*', 'experiments/*'],
+      patterns: [
+        'logs/*',
+        'outputs/*',
+        'experiments/*',
+        'logs/E????/V????/*',
+        'logs/E????/smoke/*',
+      ],
       source: 'default',
     })
-    await runScan({ projectRoot: root, format: 'json' })
-    const ids = JSON.parse(stdout.join('')).experiments.map((run: { id: string }) => run.id)
+    await readInventory()
+    const ids = JSON.parse(stdout.join('')).runs.map((run: { id: string }) => run.id)
     // `outputs/group/<run>` is deeper than `outputs/*`, so the default misses it.
     expect(ids).toEqual(['top-260901-090000'])
   })
@@ -74,8 +87,8 @@ describe('--run-dir', () => {
       patterns: ['logs/*', 'outputs/*/*'],
       source: 'project',
     })
-    await runScan({ projectRoot: root, format: 'json' })
-    const ids = JSON.parse(stdout.join('')).experiments.map((run: { id: string }) => run.id)
+    await readInventory()
+    const ids = JSON.parse(stdout.join('')).runs.map((run: { id: string }) => run.id)
     expect(ids.sort()).toEqual(['deep-260901-100000', 'top-260901-090000'])
   })
 
@@ -87,8 +100,8 @@ describe('--run-dir', () => {
     )
     setRunDirs(['logs/*'])
     expect(await effectiveRunDirs(root)).toEqual({ patterns: ['logs/*'], source: 'cli' })
-    await runScan({ projectRoot: root, format: 'json' })
-    const ids = JSON.parse(stdout.join('')).experiments.map((run: { id: string }) => run.id)
+    await readInventory()
+    const ids = JSON.parse(stdout.join('')).runs.map((run: { id: string }) => run.id)
     expect(ids).toEqual(['top-260901-090000'])
   })
 
@@ -96,14 +109,12 @@ describe('--run-dir', () => {
     await fs.mkdir(join(root, '.memon'), { recursive: true })
     await fs.writeFile(join(root, '.memon/project.yml'), 'schema_version: 1\nwalk_depth: 3\n')
     const invalid = { name: 'ProjectDeclarationError', code: 'PROJECT_DECLARATION_INVALID' }
-    await expect(runScan({ projectRoot: root, format: 'json' })).rejects.toMatchObject(invalid)
+    await expect(readInventory()).rejects.toMatchObject(invalid)
     // `--run-dir` covers only `run_dirs`; `include`/`exclude` still fall through to the
     // invalid declaration, so the walk keeps failing instead of using the defaults.
     setRunDirs(['logs/*'])
-    await expect(runScan({ projectRoot: root, format: 'json' })).rejects.toBeInstanceOf(
-      ProjectDeclarationError,
-    )
-    await expect(runScan({ projectRoot: root, format: 'json' })).rejects.toMatchObject(invalid)
+    await expect(readInventory()).rejects.toBeInstanceOf(ProjectDeclarationError)
+    await expect(readInventory()).rejects.toMatchObject(invalid)
     expect(stdout.join('')).toBe('')
   })
 
@@ -120,32 +131,36 @@ describe('--run-dir', () => {
     )
     setRunDirs(['logs/*'])
     expect(await effectiveRunDirs(root)).toEqual({ patterns: ['logs/*'], source: 'cli' })
-    await runScan({ projectRoot: root, format: 'json' })
-    const ids = JSON.parse(stdout.join('')).experiments.map((run: { id: string }) => run.id)
+    await readInventory()
+    const ids = JSON.parse(stdout.join('')).runs.map((run: { id: string }) => run.id)
     expect(ids).toEqual(['top-260901-090000'])
   })
 
-  it('bounds memon scan', async () => {
+  it('bounds inventory refresh', async () => {
     setRunDirs(['logs/*'])
-    await runScan({ projectRoot: root, format: 'json' })
-    const ids = JSON.parse(stdout.join('')).experiments.map((run: { id: string }) => run.id)
+    await readInventory()
+    const ids = JSON.parse(stdout.join('')).runs.map((run: { id: string }) => run.id)
     expect(ids).toEqual(['top-260901-090000'])
   })
 
   it('resolves a path target beyond the bound but not its bare base name', async () => {
     setRunDirs(['logs/*'])
-    await runResolveExp({
+    await runShow({
       projectRoot: root,
       cwd: root,
-      runIdOrDir: 'outputs/group/deep-260901-100000',
+      format: 'json',
+      id: 'outputs/group/deep-260901-100000',
     })
-    expect(stdout.join('')).toBe('E0001-deep\n')
+    expect(JSON.parse(stdout.join('')).id).toBe('deep-260901-100000')
 
     const exit = spyExit()
     try {
-      await runResolveExp({ projectRoot: root, cwd: root, runIdOrDir: 'deep-260901-100000' }).catch(
-        () => undefined,
-      )
+      await runShow({
+        projectRoot: root,
+        cwd: root,
+        format: 'json',
+        id: 'deep-260901-100000',
+      }).catch(() => undefined)
       expect(exit.code).not.toBeNull()
     } finally {
       exit.restore()

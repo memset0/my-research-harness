@@ -1,4 +1,4 @@
-// `memon update` — pull the configured trusted upstream into this installation's
+// `memon-tools update` — pull the configured trusted upstream into this installation's
 // source checkout and reinstall the CLI plus the managed bundled skills.
 //
 // Scope is deliberately narrow, because this runs on user machines that have no
@@ -117,7 +117,7 @@ function tail(text: string): string {
 
 /**
  * Child environment without the npm/pnpm lifecycle variables of the current
- * process: `memon update` may itself be launched through a package script, and
+ * process: `memon-tools update` may itself be launched through a package script, and
  * inherited `npm_config_*` would silently redirect the nested pnpm run.
  */
 function childEnv(): NodeJS.ProcessEnv {
@@ -284,7 +284,7 @@ export async function updateInstallation(options: UpdateOptions): Promise<Update
     return refuse(
       result,
       'not_a_git_source',
-      `${sourceInput} is not a git checkout; memon update needs the published git source`,
+      `${sourceInput} is not a git checkout; memon-tools update needs the published git source`,
     )
   }
   const source = topLevel.stdout.trim()
@@ -314,7 +314,7 @@ export async function updateInstallation(options: UpdateOptions): Promise<Update
     return refuse(
       result,
       'dirty_source',
-      `${source} has ${modified.length} uncommitted tracked change(s); memon update never resets or stashes local work: ${sample}`,
+      `${source} has ${modified.length} uncommitted tracked change(s); memon-tools update never resets or stashes local work: ${sample}`,
     )
   }
 
@@ -351,7 +351,7 @@ export async function updateInstallation(options: UpdateOptions): Promise<Update
     return refuse(
       result,
       'unknown_remote',
-      `remote ${remote} is not configured in ${source}; memon update only pulls from a configured trusted remote`,
+      `remote ${remote} is not configured in ${source}; memon-tools update only pulls from a configured trusted remote`,
     )
   }
   result.upstream = { remote, branch: upstreamBranch, url: remoteUrl.stdout.trim() }
@@ -398,14 +398,17 @@ export async function updateInstallation(options: UpdateOptions): Promise<Update
     if (!ancestor.ok) {
       result.outcome = 'refused'
       result.reason = 'divergent'
-      result.message = `local ${branch} has commits that ${remote}/${upstreamBranch} does not contain; memon update is fast-forward only and will not rewrite local history`
+      result.message = `local ${branch} has commits that ${remote}/${upstreamBranch} does not contain; memon-tools update is fast-forward only and will not rewrite local history`
       result.steps.push({ step: 'fast-forward', outcome: 'failed', detail: result.message })
       return result
     }
   }
 
   const cliEntry = join(source, 'packages', 'cli', 'dist', 'index.js')
-  const builtCliPresent = await pathExists(cliEntry)
+  const cliEntries = ['index.js', 'tools.js', 'legacy.js'].map((name) =>
+    join(source, 'packages', 'cli', 'dist', name),
+  )
+  const builtCliPresent = (await Promise.all(cliEntries.map(pathExists))).every(Boolean)
   const installNeeded = !alreadyCurrent || !builtCliPresent
 
   if (options.dryRun) {
@@ -575,19 +578,24 @@ export async function updateInstallation(options: UpdateOptions): Promise<Update
       detail: 'built @memon/file-protocol, @memon/core and @memon/cli',
     })
 
-    const version = await run(process.execPath, [cliEntry, '--version'], source)
-    if (!version.ok) {
-      return rollback(
-        'verify',
-        'verify_failed',
-        `the newly built memon binary does not run: ${tail(version.stderr) || tail(version.stdout)}`,
-      )
+    for (const entry of cliEntries) {
+      const version = await run(process.execPath, [entry, '--version'], source)
+      if (!version.ok) {
+        return rollback(
+          'verify',
+          'verify_failed',
+          `the newly built ${entry.split('/').at(-1)} entrypoint does not run: ${tail(version.stderr) || tail(version.stdout)}`,
+        )
+      }
+      const installed = version.stdout.trim() || null
+      if (result.installedRelease !== null && result.installedRelease !== installed)
+        return rollback('verify', 'verify_failed', 'CLI entrypoints report different releases')
+      result.installedRelease = installed
     }
-    result.installedRelease = version.stdout.trim() || null
     result.steps.push({
       step: 'verify',
       outcome: 'ok',
-      detail: `memon ${result.installedRelease ?? 'unknown'} runs from the new build`,
+      detail: `memon, memon-tools and memon-legacy ${result.installedRelease ?? 'unknown'} run from the new build`,
     })
     result.outcome = 'updated'
     await fs.rm(backupDir, { recursive: true, force: true })
@@ -664,7 +672,7 @@ export async function runUpdate(options: UpdateOptions): Promise<UpdateResult> {
     emitJson(result)
     return result
   }
-  emitHuman(`memon update: ${result.outcome}${result.message ? ` — ${result.message}` : ''}`)
+  emitHuman(`memon-tools update: ${result.outcome}${result.message ? ` — ${result.message}` : ''}`)
   if (result.source) emitHuman(`  source    ${result.source}`)
   if (result.upstream) {
     emitHuman(`  upstream  ${result.upstream.remote}/${result.upstream.branch}`)

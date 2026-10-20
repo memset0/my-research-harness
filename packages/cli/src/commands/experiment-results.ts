@@ -6,16 +6,13 @@ import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import {
   aggregateLightweightExperiment,
-  assertDocumentLock,
   EXPERIMENT_DESCRIPTION_FILE,
   EXPERIMENT_RESULTS_FILE,
   EXPERIMENTS_RELDIR,
-  type IndexEventWarning,
   LEGACY_RESULTS_FILE,
   type LoadedResultsSummary,
   listExperimentIds,
   loadResultsSummary,
-  nodeMutationFs,
   type ParsedExperimentDescription,
   parseExperimentDescription,
   parseSnapshot,
@@ -26,7 +23,6 @@ import {
   type ResultsSummaryError,
   type ResultsTable,
   type ResultsTableColumnGroup,
-  readDocumentState,
   readExperimentDoc,
   readLightweightRunRecords,
   rebuildResultsSummaries,
@@ -36,8 +32,6 @@ import {
   type SummaryColumn,
   serializeLightweightSummaryResults,
   setLightweightPublicationError,
-  upsertDescriptionColumnAnnotation,
-  writeFileAtomic,
 } from '@memon/core'
 
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
@@ -45,7 +39,6 @@ import { runWalkOptions } from '../lib/discovery-options.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { cliIndexSink, indexWarningFields } from '../lib/index-sink.js'
 import { withCliWriterLock } from '../lib/invocation.js'
-import { cliMutation } from '../lib/mutation-error.js'
 import { emitJson, type OutputFormat } from '../lib/output.js'
 import {
   renderCsvResultsTable,
@@ -103,7 +96,9 @@ export function summaryErrorDetails(error: ResultsSummaryError): Record<string, 
   }))
   return {
     files,
-    ...(error.upgrade_command === undefined ? {} : { upgradeCommand: error.upgrade_command }),
+    ...(error.upgrade_command === undefined
+      ? {}
+      : { upgradeCommand: error.upgrade_command.replace(/^memon /, 'memon-legacy ') }),
     ...(error.expected_version === undefined ? {} : { expectedVersion: error.expected_version }),
     ...(error.diagnostics === undefined ? {} : { diagnostics: error.diagnostics }),
   }
@@ -152,6 +147,7 @@ async function loadSummary(
     emitErrorAndExit('BAD_REQUEST', '--research-version must be a positive integer')
   const loaded = await loadResultsSummary(projectRoot, id, {
     role: 'cli',
+    write: false,
     runRecords: await indexedRunRecords(projectRoot),
     ...(researchVersion === undefined ? {} : { researchVersion }),
   })
@@ -529,6 +525,13 @@ export async function runExperimentResultsRebuild(
     for (const id of experiments ?? (await listExperimentIds(projectRoot))) {
       try {
         const description = await readDescription(projectRoot, id)
+        const document = await readExperimentDoc(projectRoot, context.config.projects[0]!.name, id)
+        if (document?.parseErrors.length) {
+          const message = `Invalid Experiment README: ${document.parseErrors.map((issue) => issue.message).join('; ')}`
+          if (description?.data?.format === 'lightweight')
+            await setLightweightPublicationError(projectRoot, id, message)
+          throw new Error(message)
+        }
         if (description?.data?.format !== 'lightweight') {
           const summaries = await rebuildResultsSummaries(projectRoot, {
             role: 'cli',
@@ -626,148 +629,5 @@ export async function runExperimentResultsRebuild(
       )
     } else emitJson(output)
     if (counts.failed > 0) process.exitCode = conflict ? 9 : 1
-  })
-}
-
-// ---------- annotation read/write ----------
-
-async function loadDescriptionOrExit(
-  projectRoot: string,
-  id: string,
-): Promise<{ parsed: ParsedExperimentDescription; path: string; raw: string }> {
-  const relative = `${EXPERIMENTS_RELDIR}/${id}/${EXPERIMENT_DESCRIPTION_FILE}`
-  const parsed = await readDescription(projectRoot, id)
-  if (!parsed) {
-    let legacy = false
-    try {
-      legacy = (
-        await fs.stat(join(projectRoot, EXPERIMENTS_RELDIR, id, LEGACY_RESULTS_FILE))
-      ).isFile()
-    } catch {}
-    emitErrorAndExit(
-      'NOT_FOUND',
-      legacy
-        ? `${relative} does not exist; ${id} is still an FS v8 bundle (LEGACY_RESULTS_YAML) — migrate the project with the reviewed v8-to-v9 migration (${MIGRATION_GUIDE})`
-        : `${relative} does not exist`,
-      { file: relative, ...(legacy ? { legacyResultsYaml: true } : {}) },
-    )
-  }
-  if (!parsed.data || parsed.raw === null)
-    emitErrorAndExit(
-      'INVALID_RESULTS',
-      `${relative} is not a valid description file: ${parsed.parseErrors.map((issue) => issue.message).join('; ')}`,
-      { file: relative, diagnostics: parsed.parseErrors },
-    )
-  return { parsed, path: join(projectRoot, ...relative.split('/')), raw: parsed.raw }
-}
-
-type ColumnAnnotations = Record<
-  string,
-  { description?: string; valueDescriptions?: Record<string, string> }
->
-
-function descriptionAnnotations(parsed: ParsedExperimentDescription): ColumnAnnotations {
-  const out: ColumnAnnotations = {}
-  for (const column of parsed.data?.columns ?? []) {
-    if (column.description === undefined && column.valueDescriptions === undefined) continue
-    out[column.path] = {
-      ...(column.description === undefined ? {} : { description: column.description }),
-      ...(column.valueDescriptions === undefined
-        ? {}
-        : { valueDescriptions: { ...column.valueDescriptions } }),
-    }
-  }
-  return out
-}
-
-export interface ExperimentResultsAnnotationGetInput extends ResultsBaseInput {
-  column?: string
-  value?: string
-}
-
-export async function runExperimentResultsAnnotationGet(
-  input: ExperimentResultsAnnotationGetInput,
-): Promise<void> {
-  if (input.value !== undefined && input.column === undefined)
-    emitErrorAndExit('BAD_REQUEST', '--value requires --column')
-  const { projectRoot, id } = await resolveExperiment(input)
-  const { parsed } = await loadDescriptionOrExit(projectRoot, id)
-  const annotations = descriptionAnnotations(parsed)
-  if (input.column !== undefined && input.value !== undefined) {
-    const description = annotations[input.column]?.valueDescriptions?.[input.value] ?? null
-    if (input.format === 'human')
-      process.stdout.write(
-        description === null
-          ? `(no description for ${input.column}=${input.value})\n`
-          : `${input.column}=${input.value}\n\n${description}\n`,
-      )
-    else emitJson({ experimentId: id, column: input.column, value: input.value, description })
-    return
-  }
-  const selected: ColumnAnnotations =
-    input.column === undefined
-      ? annotations
-      : annotations[input.column] === undefined
-        ? {}
-        : { [input.column]: annotations[input.column]! }
-  if (input.format === 'human') {
-    const blocks = Object.entries(selected).map(([path, annotation]) => {
-      const lines = [`#### \`${path}\``, '']
-      if (annotation.description !== undefined) lines.push(annotation.description, '')
-      for (const [value, description] of Object.entries(annotation.valueDescriptions ?? {}))
-        lines.push(`- \`${value}\`: ${indent(description)}`)
-      return lines.join('\n').trimEnd()
-    })
-    process.stdout.write(
-      blocks.length > 0 ? `${blocks.join('\n\n')}\n` : '_No column annotations._\n',
-    )
-  } else emitJson({ experimentId: id, columnAnnotations: selected })
-}
-
-export interface ExperimentResultsAnnotationSetInput extends ResultsBaseInput {
-  column: string
-  value?: string
-  description: string
-}
-
-export async function runExperimentResultsAnnotationSet(
-  input: ExperimentResultsAnnotationSetInput,
-): Promise<void> {
-  const { projectRoot, id } = await resolveExperiment(input)
-  const { path, raw } = await loadDescriptionOrExit(projectRoot, id)
-  const lockState = await readDocumentState(nodeMutationFs, path)
-  if (lockState.content !== raw)
-    emitErrorAndExit('CONFLICT', 'experiment.json changed while loading annotations')
-  let result: ReturnType<typeof upsertDescriptionColumnAnnotation>
-  try {
-    result = upsertDescriptionColumnAnnotation(raw, input.column, input.description, input.value)
-  } catch (error) {
-    emitErrorAndExit('BAD_REQUEST', (error as Error).message)
-  }
-  let indexWarnings: IndexEventWarning[] = []
-  if (result.changed) {
-    await cliMutation(async () => {
-      assertDocumentLock(await readDocumentState(nodeMutationFs, path), {
-        expectedMtime: lockState.mtime,
-        expectedHash: lockState.hash,
-      })
-      await writeFileAtomic(path, result.content)
-    })
-    indexWarnings = await publishMutationEvent(
-      cliIndexSink(projectRoot),
-      'experiment.results-annotation',
-      [{ path, after: result.content }],
-    )
-  }
-  emitJson({
-    ok: true,
-    experimentId: id,
-    path: `${EXPERIMENTS_RELDIR}/${id}/${EXPERIMENT_DESCRIPTION_FILE}`,
-    column: input.column,
-    ...(input.value === undefined ? {} : { value: input.value }),
-    description: input.description,
-    replaced: result.replaced,
-    changed: result.changed,
-    ...indexWarningFields({ indexWarnings }),
   })
 }
