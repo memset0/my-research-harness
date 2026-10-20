@@ -1,15 +1,6 @@
-// memon experiment results {table, summary, rebuild, annotation get|set} (FS v9).
-//
-// `table` and `summary` read the Experiment's generated Results summary
-// (`.memon/index/results/<id>.json`), reusing it when its input fingerprints
-// are unchanged and otherwise regenerating it from `experiment.json`, the
-// member Run READMEs and their `result.csv` files. Storing a regenerated
-// summary is best effort: a failure is the warning `RESULTS_CACHE_FAILED` and
-// never changes the exit code. A schema-version mismatch or a duplicate row
-// fails the summary as a whole (exit 1, offending files and the upgrade
-// command in `error.details`); no partial table is ever printed. `rebuild`
-// writes only `.memon/index/results/`. The annotation helpers edit column
-// descriptions in `experiment.json`, keeping every other key.
+// Read saved lightweight results or legacy summaries. Refresh writes derived
+// CSVs and publishes current evidence to the index under the writer lock.
+// Legacy annotation/schema helpers remain callable during gradual migration.
 
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
@@ -36,16 +27,21 @@ import {
   type ResultsTable,
   type ResultsTableColumnGroup,
   readDocumentState,
+  readExperimentDoc,
+  readLightweightRunRecords,
   rebuildResultsSummaries,
   resolveExperimentId,
+  resolveRunReference,
   resultsShapeFromDescription,
   type SummaryColumn,
   serializeLightweightSummaryResults,
+  setLightweightPublicationError,
   upsertDescriptionColumnAnnotation,
   writeFileAtomic,
 } from '@memon/core'
 
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
+import { runWalkOptions } from '../lib/discovery-options.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { cliIndexSink, indexWarningFields } from '../lib/index-sink.js'
 import { withCliWriterLock } from '../lib/invocation.js'
@@ -505,39 +501,85 @@ export interface ExperimentResultsRebuildInput {
   cwd: string
   format: OutputFormat
   idOrSlug?: string
+  /** The refresh entrypoint accepts several explicit targets in one invocation. */
+  targets?: readonly string[]
   all: boolean
 }
 
 export async function runExperimentResultsRebuild(
   input: ExperimentResultsRebuildInput,
 ): Promise<void> {
-  if (input.all === (input.idOrSlug !== undefined))
+  const requested = input.targets ?? (input.idOrSlug === undefined ? [] : [input.idOrSlug])
+  if ((input.targets && input.idOrSlug !== undefined) || input.all === requested.length > 0)
     emitErrorAndExit('BAD_REQUEST', 'name one Experiment or pass --all (not both)')
   const context = await resolveContext(input)
   const projectRoot = singleProjectRoot(context)
   return withCliWriterLock(projectRoot, async () => {
     let experiments: string[] | undefined
-    if (input.idOrSlug !== undefined) {
-      const id = await resolveExperimentId(projectRoot, input.idOrSlug)
-      if (!id) emitErrorAndExit('NOT_FOUND', `experiment "${input.idOrSlug}" not found`)
-      experiments = [id]
+    if (requested.length) {
+      experiments = []
+      for (const target of requested) {
+        const id = await resolveExperimentId(projectRoot, target)
+        if (!id) emitErrorAndExit('NOT_FOUND', `experiment "${target}" not found`)
+        if (!experiments.includes(id)) experiments.push(id)
+      }
     }
     const rebuilt: Awaited<ReturnType<typeof rebuildResultsSummaries>> = []
     let conflict = false
     for (const id of experiments ?? (await listExperimentIds(projectRoot))) {
-      const description = await readDescription(projectRoot, id)
-      if (description?.data?.format !== 'lightweight') {
-        rebuilt.push(
-          ...(await rebuildResultsSummaries(projectRoot, { role: 'cli', experiments: [id] })),
-        )
-        continue
-      }
       try {
+        const description = await readDescription(projectRoot, id)
+        if (description?.data?.format !== 'lightweight') {
+          const summaries = await rebuildResultsSummaries(projectRoot, {
+            role: 'cli',
+            experiments: [id],
+          })
+          if (input.targets) {
+            const project = { ...context.config.projects[0]!, ...runWalkOptions() }
+            const doc = await readExperimentDoc(projectRoot, project.name, id)
+            if (doc) {
+              const members = await Promise.all(
+                doc.frontMatter.runs.map((run) => resolveRunReference(project, run)),
+              )
+              const warnings = await publishMutationEvent(
+                cliIndexSink(projectRoot),
+                'experiment.refresh',
+                [{ path: doc.path, after: await fs.readFile(doc.path, 'utf8') }],
+                { upsertRuns: members.filter((path): path is string => path !== null) },
+              )
+              if (indexWarningFields({ indexWarnings: warnings }).incomplete)
+                throw new Error('Inventory publication incomplete; repair with memon refresh.')
+            }
+          }
+          rebuilt.push(...summaries)
+          continue
+        }
         const result = await aggregateLightweightExperiment({ projectRoot, experimentId: id })
-        const event = await publishMutationEvent(cliIndexSink(projectRoot), 'experiment.results', [
-          { path: result.path, after: result.content },
-        ])
-        indexWarningFields({ indexWarnings: event })
+        const { records } = await readLightweightRunRecords(projectRoot, id)
+        const previous = await indexedRunRecords(projectRoot)
+        const prefix = `logs/${id.slice(0, 5)}/`
+        const event = await publishMutationEvent(
+          cliIndexSink(projectRoot),
+          'experiment.results',
+          [{ path: result.path, after: result.content }],
+          {
+            upsertRuns: Object.keys(records).map((path) => join(projectRoot, path)),
+            removeRuns: Object.keys(previous ?? {})
+              .filter((path) => path.startsWith(prefix) && !(path in records))
+              .map((path) => join(projectRoot, path)),
+          },
+        )
+        const publication = indexWarningFields({ indexWarnings: event })
+        if (publication.incomplete) {
+          await setLightweightPublicationError(
+            projectRoot,
+            id,
+            'Result inventory publication incomplete; run memon refresh.',
+          )
+          throw new Error(
+            `Results saved; inventory publication incomplete. Run memon refresh, then memon refresh ${id}.`,
+          )
+        }
         rebuilt.push({ id, status: result.changed ? 'regenerated' : 'unchanged', warnings: [] })
       } catch (error) {
         conflict ||= (error as { code?: string }).code === 'CONFLICT'

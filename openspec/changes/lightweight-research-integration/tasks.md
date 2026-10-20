@@ -8,6 +8,7 @@
 - [x] 2.1 Use Run-owned active flags with directory-derived membership; refresh Run/Experiment CSVs after supported creation, state, activity and result writes; verify no stale metrics after replacement, READY metrics exclusion, concurrent activation and partial-failure recovery.
 - [x] 2.2 Publish snapshots after FS11 CLI mutations and surface incomplete registration; make registered inventories read snapshots without recursive refresh; verify concurrent writer, failed publication and no-walk inventory cases.
 - [x] 2.3 Support FS11 project initialization and concise command help, retaining explicit legacy compatibility; verify a fresh-project create, queued update, result write and aggregation CLI sequence.
+- [x] 2.4 Consolidate routine CLI entrypoints: allocate Variants through Run creation, publish directly edited files through one refresh command, keep Run reads targeted, and simplify help/Skills. Verify concurrent allocation, scoped refresh and failure handling, legacy compatibility and a literal CLI workflow.
 
 ## 3. Migration and agent guidance
 

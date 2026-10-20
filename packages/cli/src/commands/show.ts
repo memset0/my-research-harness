@@ -4,9 +4,9 @@
 // — that's the most useful thing for a person reading on the command line.
 // In `json` mode we emit a structured `{ frontMatter, body, sections }`.
 
-import { serializeRunMetadata } from '@memon/core'
+import { readRunDir, resolveRunReference, serializeRunMetadata } from '@memon/core'
+import { runWalkOptions } from '../lib/discovery-options.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
-import { buildIndex } from '../lib/index-builder.js'
 import { emitHuman, emitJson, type OutputFormat } from '../lib/output.js'
 import { resolveConfig } from '../lib/resolver.js'
 
@@ -22,9 +22,18 @@ export async function runShow(opts: ShowOptions): Promise<void> {
     projectRoot: opts.projectRoot,
     cwd: opts.cwd,
   })
-  const idx = await buildIndex(config)
-  const exp = idx.get(opts.id)
-  if (!exp) emitErrorAndExit('NOT_FOUND', `experiment "${opts.id}" not found`)
+  const matches: Array<{ path: string; project: string }> = []
+  for (const project of config.projects) {
+    const path = await resolveRunReference({ ...project, ...runWalkOptions() }, opts.id)
+    if (path) matches.push({ path, project: project.name })
+  }
+  if (matches.length === 0) emitErrorAndExit('NOT_FOUND', `Run "${opts.id}" not found`)
+  if (matches.length > 1)
+    emitErrorAndExit('BAD_REQUEST', `Run "${opts.id}" is ambiguous; select --project-root`, {
+      paths: matches.map((match) => match.path),
+    })
+  const target = matches[0]!
+  const exp = await readRunDir(target.path, target.project)
 
   if (opts.format === 'human') {
     if (exp.recordFormat === 'json' && exp.metadata) {

@@ -41,6 +41,19 @@ All bundled skill entrypoints SHALL retain essential file contracts and authorit
 - **WHEN** an agent follows the default research skill to create an experiment and execute a Variant
 - **THEN** it can complete the task with CLI-maintained Run metadata and native result files without creating task ledgers or Run README prose
 
+### Requirement: CLI provides small standardized entrypoints
+Agents SHALL be able to edit project files directly. Routine CLI help SHALL emphasize creation, coordinated Run updates, refresh, validation and structured reads instead of document-field editing wrappers. Existing script entrypoints SHALL remain callable during legacy coexistence. Omitting `--variant` from Run creation SHALL allocate a new ordinary Variant under the writer lock, preserving explicit Variant/smoke creation and returning the allocated identities and directory.
+
+`refresh [E…]` SHALL publish each named experiment's result exports and current Run/Experiment index records, including directly edited metadata. Without targets it SHALL rebuild the inventory only. Scoped refresh SHALL NOT read unrelated experiment Runs. A failed result or inventory publication SHALL return failure, preserve primary evidence and identify the failed target. Explicit Run inspection SHALL resolve only the requested record and reject ambiguous identifiers rather than hydrate every Run.
+
+#### Scenario: Create and edit without field-by-field commands
+- **WHEN** an agent creates a Run without choosing a Variant, edits its native metadata and results, then refreshes its Experiment
+- **THEN** the CLI returns a unique V ID and Run directory, and both saved results and indexed metadata reflect the edits without an additional index command
+
+#### Scenario: Historical commands remain callable
+- **WHEN** an existing script requests a legacy document helper explicitly
+- **THEN** its existing behavior remains available although routine help directs new work to direct file editing and refresh
+
 ### Requirement: Lifecycle writes publish derived result files
 Supported lightweight Run creation, metadata/status/activity changes and result writes SHALL export current Run metadata and parameters to `result.csv`, aggregate the experiment’s `results.csv`, and publish the index. CLI updates SHALL report an incomplete write with failing exit status if any later publication fails. Direct external edits SHALL be supported by an explicit refresh operation. No background watcher or metric fabrication SHALL be required.
 

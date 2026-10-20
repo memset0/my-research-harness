@@ -83,6 +83,7 @@ export const CLI_LEDGER_CLASSES: Readonly<Record<string, CliLedgerClass>> = {
   'index status': 'readonly',
   'index compact': 'readonly',
   'index rebuild': 'readonly',
+  refresh: 'readonly',
   'project init': 'readonly',
   'project lint': 'readonly',
 
@@ -115,7 +116,7 @@ export const CLI_LEDGER_CLASSES: Readonly<Record<string, CliLedgerClass>> = {
   'experiment results show': 'readonly',
   'experiment results table': 'readonly',
   'experiment results summary': 'readonly',
-  // Writes only `.memon/index/results/` (a rebuildable cache): never journaled.
+  // Derived CSV/index publication takes its own writer lock; no narrative receipt.
   'experiment results rebuild': 'readonly',
   'experiment results annotation get': 'readonly',
   'experiment results annotation set': 'project',

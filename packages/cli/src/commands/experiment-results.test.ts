@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
+import { mergedIndexView, readDerivedIndex } from '@memon/core'
 import { Command } from 'commander'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
@@ -17,6 +18,7 @@ import {
   runExperimentResultsRebuild,
   runExperimentResultsSummary,
 } from './experiment-results.js'
+import { runRefresh } from './refresh.js'
 import { registerExperimentResultsCommands } from './results-commands.js'
 
 const A = 'logs/a-260901-090000'
@@ -513,13 +515,24 @@ describe('memon experiment results (FS v9)', () => {
     expect(neither.exitCode).toBe(2)
   })
 
-  it('lists the results group and schema upgrade in `memon experiment --help`', () => {
+  it('refreshes legacy results and registers their member metadata without conversion', async () => {
+    await seed(project)
+    const before = await project.read(`docs/experiments/${EXP}/experiment.json`)
+    const result = await captureCli(() => runRefresh({ ...base(), experiments: [EXP] }))
+    expect(result.exitCode).toBe(0)
+    const index = await readDerivedIndex(project.root)
+    const view = mergedIndexView(index, { runDirs: ['logs/*'], runDirsSource: 'default' })
+    expect(view?.runs[A]).toMatchObject({ status: 'FINISHED', owner: EXP })
+    expect(await project.read(`docs/experiments/${EXP}/experiment.json`)).toBe(before)
+  })
+
+  it('offers focused result reads while keeping explicit compatibility commands callable', () => {
     const program = new Command('memon')
     const experiment = program.command('experiment')
     registerExperimentResultsCommands(experiment, () => ({ format: 'json', cwd: process.cwd() }))
     const help = experiment.helpInformation()
-    expect(help).toMatch(/results\s+Results commands: table, summary, rebuild, annotation/)
-    expect(help).toMatch(/schema\s+Experiment result-schema commands: upgrade/)
+    expect(help).toMatch(/results\s+read saved Variant results/)
+    expect(help).not.toMatch(/schema\s+Experiment result-schema commands/)
     const results = experiment.commands.find((command) => command.name() === 'results')!
     expect(results.commands.map((command) => command.name())).toEqual([
       'show',
@@ -528,6 +541,14 @@ describe('memon experiment results (FS v9)', () => {
       'rebuild',
       'annotation',
     ])
+    const visible = results
+      .createHelp()
+      .visibleCommands(results)
+      .map((command) => command.name())
+    expect(visible).toContain('table')
+    expect(visible).toContain('summary')
+    expect(visible).not.toContain('annotation')
+    expect(visible).not.toContain('rebuild')
     const schema = experiment.commands.find((command) => command.name() === 'schema')!
     expect(schema.commands.map((command) => command.name())).toEqual(['upgrade'])
   })

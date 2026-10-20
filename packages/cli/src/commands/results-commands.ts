@@ -34,10 +34,10 @@ export function registerExperimentResultsCommands(
   const results = experiment
     .command('results')
     .description(
-      'Results commands: table, summary, rebuild, annotation get|set (generated from experiment.json and member result.csv files)',
+      'read saved Variant results and table shape; edit source files directly and publish with memon refresh',
     )
   results
-    .command('show <id-or-slug>')
+    .command('show <id-or-slug>', { hidden: true })
     .description('render the Results section (the generated summary) as Markdown or JSON')
     .action(async (idOrSlug: string) => {
       await runExperimentDocumentShow({ ...globals(), idOrSlug, section: 'results' })
@@ -102,7 +102,7 @@ export function registerExperimentResultsCommands(
       })
     })
   results
-    .command('rebuild [id-or-slug]')
+    .command('rebuild [id-or-slug]', { hidden: true })
     .description(
       'write lightweight results.csv or rebuild a legacy Results summary (one Experiment, or --all)',
     )
@@ -115,7 +115,7 @@ export function registerExperimentResultsCommands(
       })
     })
   const annotation = results
-    .command('annotation')
+    .command('annotation', { hidden: true })
     .description('read or optionally update column/value descriptions in experiment.json')
   annotation
     .command('get <id-or-slug>')

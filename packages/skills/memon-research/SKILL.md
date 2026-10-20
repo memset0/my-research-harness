@@ -13,12 +13,14 @@ within the authorized resources, analyze native outputs, and update conclusions.
 Commands below use `memon --project-root .`:
 
 - `experiment create <slug>` creates `README.md` and `experiment.json`.
-- `experiment variant create <E-id> --params '<json>'` prepares a Variant's
-  first READY Run. Use the returned path; do not create another draft registry.
-- `run create --experiment <E-id> --variant V0001` creates another execution;
-  use `--variant smoke` for program/environment checks.
-- `run update <path>` records status, parameters, tracking links and optional
-  explanations. `run result set <path> metrics.loss=0.2` records useful results.
+- `run create --experiment <E-id> --params '<json>'` allocates a Variant and its
+  READY Run; use the returned directory. Add `--variant V0001` for another Run
+  of that Variant, or `--variant smoke` for program/environment checks.
+- `run update <path> --status RUNNING` maintains execution state and timestamps.
+- Edit documents, metadata and result files directly; `refresh <E-id>` publishes
+  the changes. `run result set <path> metrics.loss=0.2` is an optional CSV helper.
+- Read with `experiment ls/show`, `list`, `show <run-path>` or
+  `experiment results table <E-id>`; JSON is the default output.
 
 Ownership comes from `logs/E0001/V0001/<runid>/` or `logs/E0001/smoke/<runid>/`.
 `run.json` holds execution facts; no Run README or binding list is needed.
@@ -34,7 +36,6 @@ smoke never contributes formal results. For multiple inputs or custom logic,
 read [aggregation.md](aggregation.md). Optional names live on the Run.
 
 CLI writes refresh `run.json → result.csv → results.csv` and the index.
-Use `experiment results rebuild <E-id>` after manual extraction or direct edits.
 Extract only useful fields; retain native evidence. `experiment.json` holds
 presentation columns/groups and optional aggregation settings, not a second plan.
 

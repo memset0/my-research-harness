@@ -31,6 +31,28 @@ async function projectFixture() {
 }
 
 describe('lightweight Run CLI', () => {
+  it('allocates distinct Variants concurrently and skips existing empty directories', async () => {
+    const project = await projectFixture()
+    await fs.mkdir(project.path('logs/E0001/V0007'), { recursive: true })
+    const base = { projectRoot: project.root, cwd: project.root, format: 'json' as const }
+    await Promise.all([
+      runRunCreate({ ...base, experiment: 'E0001', id: 'first', params: '{"rate":0.1}' }),
+      runRunCreate({ ...base, experiment: 'E0001', id: 'second', params: '{"rate":0.2}' }),
+    ])
+    const responses = vi
+      .mocked(process.stdout.write)
+      .mock.calls.map(([text]) => JSON.parse(String(text)))
+    expect(responses.map((item) => item.variantId).sort()).toEqual(['V0008', 'V0009'])
+    for (const response of responses) {
+      expect(response.experimentId).toBe('E0001-example')
+      expect(response.path).toBe(`${response.directory}/run.json`)
+      const metadata = JSON.parse(await fs.readFile(project.path(response.path), 'utf8'))
+      expect(metadata).toMatchObject({ status: 'READY', active: true })
+      expect(metadata.created_at).toMatch(/[+-]\d{2}:\d{2}$/)
+      expect(await fs.readdir(project.path(response.directory))).not.toContain('README.md')
+    }
+  })
+
   it('creates queued metadata, updates links and status, and resumes without writing README', async () => {
     const project = await projectFixture()
     const base = { projectRoot: project.root, cwd: project.root, format: 'json' as const }
@@ -197,5 +219,5 @@ it('reports a saved record but incomplete publication when custom aggregation fa
   expect(await fs.readFile(project.path(directory, 'results.csv'), 'utf8')).toContain(
     'metrics.loss,,0.9',
   )
-  expect(result.stderr).toContain('results rebuild')
+  expect(result.stderr).toContain('memon refresh E0001')
 })

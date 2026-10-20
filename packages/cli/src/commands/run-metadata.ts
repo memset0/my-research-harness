@@ -125,7 +125,7 @@ export async function runRunCreate(
     cwd: string
     format: OutputFormat
     experiment: string
-    variant: string
+    variant?: string
     id?: string
     activate?: boolean
   },
@@ -136,21 +136,6 @@ export async function runRunCreate(
     const experiment = await resolveExperimentId(root, input.experiment)
     if (!experiment) emitErrorAndExit('NOT_FOUND', `Experiment ${input.experiment} not found`)
     const experimentId = experiment.slice(0, 5)
-    if (!/^(?:V\d{4}|smoke)$/.test(input.variant))
-      emitErrorAndExit('BAD_REQUEST', '--variant must be V followed by four digits, or smoke')
-    if (input.variant === 'V0000')
-      emitErrorAndExit('BAD_REQUEST', 'Use smoke as the smoke directory name')
-    const id = input.id ?? `run-${randomUUID().slice(0, 8)}-${formatRunStamp(new Date())}`
-    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id))
-      emitErrorAndExit(
-        'BAD_REQUEST',
-        'Run ID must contain only letters, digits, dots, underscores and hyphens',
-      )
-    const path = lightweightRunPath(experimentId, input.variant, id)
-    if (!lightweightRunIdentity(path) || basename(id) !== id)
-      emitErrorAndExit('BAD_REQUEST', 'Run id must be a safe directory basename')
-    const metadata = newRunMetadata(id, input)
-    metadata.active = false
     const descriptionPath = join(root, 'docs', 'experiments', experiment, 'experiment.json')
     const description = parseExperimentDescription(await fs.readFile(descriptionPath, 'utf8')).data
     if (!description || description.format !== 'lightweight')
@@ -158,8 +143,37 @@ export async function runRunCreate(
         'BAD_REQUEST',
         'run create requires a lightweight Experiment; migrate the Experiment explicitly first',
       )
+    let variantId = input.variant
+    if (variantId === undefined) {
+      // Allocation and creation share the writer lock, including concurrent CLI processes.
+      await readLightweightRunRecords(root, experiment)
+      const directories = await fs.readdir(join(root, 'logs', experimentId)).catch((error) => {
+        if (error.code === 'ENOENT') return []
+        throw error
+      })
+      const ids = [...directories, ...description.variants.map((variant) => variant.id)]
+      const next =
+        Math.max(0, ...ids.filter((id) => /^V\d{4}$/.test(id)).map((id) => Number(id.slice(1)))) + 1
+      if (next > 9999) emitErrorAndExit('BAD_STATE', 'No available four-digit Variant ID')
+      variantId = `V${String(next).padStart(4, '0')}`
+    }
+    if (!/^(?:V\d{4}|smoke)$/.test(variantId))
+      emitErrorAndExit('BAD_REQUEST', '--variant must be V followed by four digits, or smoke')
+    if (variantId === 'V0000')
+      emitErrorAndExit('BAD_REQUEST', 'Use smoke as the smoke directory name')
+    const id = input.id ?? `run-${randomUUID().slice(0, 8)}-${formatRunStamp(new Date())}`
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id))
+      emitErrorAndExit(
+        'BAD_REQUEST',
+        'Run ID must contain only letters, digits, dots, underscores and hyphens',
+      )
+    const path = lightweightRunPath(experimentId, variantId, id)
+    if (!lightweightRunIdentity(path) || basename(id) !== id)
+      emitErrorAndExit('BAD_REQUEST', 'Run id must be a safe directory basename')
+    const metadata = newRunMetadata(id, input)
+    metadata.active = false
     if (
-      description.variants.find((variant) => variant.id === input.variant)?.deprecated &&
+      description.variants.find((variant) => variant.id === variantId)?.deprecated &&
       input.active !== 'false'
     )
       emitErrorAndExit(
@@ -168,15 +182,14 @@ export async function runRunCreate(
       )
     if (
       input.active === 'true' &&
-      input.variant !== 'smoke' &&
+      variantId !== 'smoke' &&
       !input.activate &&
-      !description.variants.find((variant) => variant.id === input.variant)?.aggregate
+      !description.variants.find((variant) => variant.id === variantId)?.aggregate
     ) {
       const { records } = await readLightweightRunRecords(root, experiment)
       if (
         Object.entries(records).some(
-          ([key, record]) =>
-            key.startsWith(`logs/${experimentId}/${input.variant}/`) && record.active,
+          ([key, record]) => key.startsWith(`logs/${experimentId}/${variantId}/`) && record.active,
         )
       )
         emitErrorAndExit(
@@ -198,7 +211,7 @@ export async function runRunCreate(
             activateLightweightRun({
               projectRoot: root,
               experimentId: experiment,
-              variantId: input.variant,
+              variantId,
               runId: id,
               replace: input.activate,
               allowMultiple: input.active === 'true',
@@ -212,6 +225,9 @@ export async function runRunCreate(
     emitJson({
       ok: true,
       id,
+      experimentId: experiment,
+      variantId,
+      directory: path,
       path: relative(root, result.path),
       mtime: finalState.mtime,
       hash: finalState.hash,

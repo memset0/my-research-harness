@@ -165,8 +165,8 @@ export function registerExperimentResearchCommands(
       runResearchMutation({ ...globals(), idOrSlug }, 'import', { ...opts, run }),
     )
   const variant = experiment
-    .command('variant')
-    .description('prepare lightweight Variants; legacy deprecate/restore remain callable')
+    .command('variant', { hidden: true })
+    .description('compatibility helpers; run create now allocates a new Variant by default')
   variant
     .command('create <id-or-slug>')
     .description('prepare the first READY Run in a new Variant directory')

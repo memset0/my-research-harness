@@ -32,7 +32,7 @@ export async function publishLightweightWrite(
     await setLightweightPublicationError(
       root,
       experimentId,
-      'Run saved; refreshing results. Rerun experiment results rebuild if interrupted.',
+      'Run saved; refreshing results. Rerun memon refresh with this Experiment if interrupted.',
     )
     const experimentDir = join(root, 'docs/experiments', experimentId)
     const description = parseExperimentDescription(
@@ -66,7 +66,7 @@ export async function publishLightweightWrite(
     warnings.push({
       code: 'INDEX_EVENT_FAILED',
       incomplete: true,
-      message: `Run saved, result publication incomplete: ${(error as Error).message}. Repair with memon experiment results rebuild ${identity.experimentId}.`,
+      message: `Run saved, result publication incomplete: ${(error as Error).message}. Repair with memon refresh ${identity.experimentId}.`,
     })
   }
   return [...warnings, ...(await publishMutationEvent(cliIndexSink(root), 'run.publish', changes))]

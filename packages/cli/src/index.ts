@@ -47,6 +47,7 @@ import { runJournalSubmit } from './commands/journal-submit.js'
 import { runList } from './commands/list.js'
 import { runMockSeed } from './commands/mock.js'
 import { runProjectInit, runProjectLint } from './commands/project.js'
+import { registerRefreshCommand } from './commands/refresh.js'
 import {
   registerExperimentResultsCommands,
   registerRunResultCommands,
@@ -98,7 +99,7 @@ import {
 const program = new Command()
 program
   .name('memon')
-  .description('experiment monitoring and management')
+  .description('create standard research records, publish edits and read evidence')
   .version(MEMON_RELEASE)
   .option('--project-root <path>', 'use <path> as the only project (default: cwd)')
   .option('--format <fmt>', 'output format: json | human', 'json')
@@ -106,6 +107,10 @@ program
     '--run-dir <pattern>',
     'declare where Run directories live, e.g. logs/* or outputs/*/* (repeatable; overrides .memon/project.yml; default: logs/*, outputs/*, experiments/*)',
     (value: string, previous: string[] = []) => [...previous, value],
+  )
+  .addHelpText(
+    'after',
+    '\nEdit Markdown, JSON and CSV directly; refresh publishes those edits. Optional/maintenance groups remain available: components, fs-version, index, journal, hypotheses, hypo, mock.',
   )
 
 let parsingCommand = program
@@ -170,7 +175,7 @@ function assertDeprecationFlags(opts: {
 
 program
   .command('list')
-  .description('list experiments across configured projects')
+  .description('list Runs across configured projects (Experiments: experiment ls)')
   .option('--project <name>', 'restrict to a single project')
   .option('--include-deprecated', 'also list runs marked deprecated', false)
   .option('--deprecated-only', 'list ONLY runs marked deprecated', false)
@@ -192,9 +197,7 @@ program
 
 program
   .command('show <id>')
-  .description(
-    'show a single experiment by directory id. Explicit-id inspection: resolves archived and deprecated runs too, carrying their markers.',
-  )
+  .description('read one Run by project-relative path or unique ID, including historical Runs')
   .action(async (id: string) => {
     const g = readGlobals()
     await runShow({ ...g, id })
@@ -202,7 +205,7 @@ program
 
 program
   .command('search <query>')
-  .description('substring search across experiments')
+  .description('search Run content and metadata')
   .option('--in <scope>', 'search scope: all | body | fm', 'all')
   .option('--include-deprecated', 'also match runs marked deprecated', false)
   .option('--deprecated-only', 'match ONLY runs marked deprecated', false)
@@ -224,7 +227,7 @@ program
     },
   )
 
-const hypo = program.command('hypo').description('hypothesis registry commands (human-friendly)')
+const hypo = program.command('hypo', { hidden: true }).description('hypothesis registry reads')
 hypo
   .command('list')
   .description('list hypotheses across projects')
@@ -242,7 +245,7 @@ hypo
     await runHypoShow({ ...g, id, project: opts.project })
   })
 
-const mock = program.command('mock').description('manage mock data fixtures')
+const mock = program.command('mock', { hidden: true }).description('manage mock data fixtures')
 mock
   .command('seed')
   .description('copy in-repo mock/ into a writable runtime location')
@@ -330,7 +333,7 @@ program
 // ---------- new agent-shaped read commands ----------
 
 program
-  .command('scan [project-root]')
+  .command('scan [project-root]', { hidden: true })
   .description('bulk-read a project root: experiments + hypotheses')
   .option('--include-archived', 'include archived runs in the result', false)
   .option('--archived-only', 'return ONLY archived runs', false)
@@ -367,7 +370,7 @@ program
   )
 
 const journal = program
-  .command('journal')
+  .command('journal', { hidden: true })
   .description('diagnostic invocation history and direct-maintenance submission')
 journal
   .command('read')
@@ -415,7 +418,7 @@ journal
   })
 
 program
-  .command('hypotheses')
+  .command('hypotheses', { hidden: true })
   .description('hypotheses commands (agent-shaped JSON output)')
   .addCommand(
     new Command('read').description('read parsed docs/hypotheses.md (JSON)').action(async () => {
@@ -426,10 +429,10 @@ program
 
 const experiment = program
   .command('experiment')
-  .description('create research questions, draft Variants and aggregate results')
+  .description('create and read Experiments and their results')
   .addHelpText(
     'after',
-    '\nFS11: create → variant create → run create/update → results rebuild. Optional/legacy doc, implementation, investigation, section and version commands remain callable through their own --help.',
+    '\nCreate an Experiment, then run create --experiment E0001. Edit documents and experiment.json directly; memon refresh E0001 publishes changes. Legacy document/status/variant/version helpers remain callable.',
   )
 
 experiment
@@ -561,7 +564,7 @@ experiment
   })
 
 experiment
-  .command('delete <id-or-slug>')
+  .command('delete <id-or-slug>', { hidden: true })
   .description(
     'delete an experiment doc, releasing its declared runs (requires --force when runs are declared)',
   )
@@ -576,7 +579,7 @@ experiment
   })
 
 const status = experiment
-  .command('status')
+  .command('status', { hidden: true })
   .description(
     'status field operations. Run-id form (`<slug>-<YYMMDD>-<HHMMSS>`) is a deprecation alias for `memon run status`; exp-id form (`E<NNNN>-<slug>`) writes ExperimentStatus on the exp doc.',
   )
@@ -622,7 +625,7 @@ status
     },
   )
 
-const readme = experiment.command('readme').description('README.md operations')
+const readme = experiment.command('readme', { hidden: true }).description('README.md operations')
 readme
   .command('write <id>')
   .description('overwrite README.md (content from stdin) with mtime/hash lock')
@@ -759,7 +762,7 @@ warning
   )
 
 experiment
-  .command('archive <id>')
+  .command('archive <id>', { hidden: true })
   .description(
     'archive an Experiment: FS10 sets lifecycle ARCHIVED, FS9 retains the archive flag. Run-id form aliases memon run archive.',
   )
@@ -777,7 +780,7 @@ experiment
     emitErrorAndExit('BAD_REQUEST', `id "${id}" matches neither exp nor run pattern`)
   })
 experiment
-  .command('unarchive <id>')
+  .command('unarchive <id>', { hidden: true })
   .description(
     'unarchive an Experiment: FS10 sets lifecycle ACTIVE, FS9 clears the archive flag. Run-id form aliases memon run unarchive.',
   )
@@ -871,14 +874,14 @@ const createRunCommand = run
   .command('create [id]')
   .description('create a lightweight Run directory and tracked run.json; never launches a process')
   .requiredOption('--experiment <id>', 'owning Experiment')
-  .requiredOption('--variant <id>', 'V followed by four digits, or smoke')
+  .option('--variant <id>', 'existing/explicit V ID, or smoke (default: allocate next V ID)')
   .option(
     '--activate',
     'replace the Variant selection with this Run; the first Run is selected automatically',
   )
 const updateRunCommand = run
   .command('update <id-or-path>')
-  .description('update execution facts in run.json without editing files')
+  .description('record Run state and publish results/index; direct file edits are also supported')
   .option('--activate', 'make this Run active and deactivate its peers')
   .option('--expected-mtime <ms>', 'optional metadata mtime lock', Number)
   .option('--expected-hash <hash>', 'optional metadata content hash lock')
@@ -905,11 +908,31 @@ for (const command of [createRunCommand, updateRunCommand]) {
     .option('--wandb <url>', 'tracking URL')
     .option('--job-id <id>', 'scheduler job identity')
     .option('--scheduler <name>', 'scheduler name, with --job-id')
+  const routineOptions = new Set([
+    'experiment',
+    'variant',
+    'activate',
+    'status',
+    'active',
+    'params',
+    'wandb',
+    'jobId',
+    'assessment',
+    'reason',
+    'expectedMtime',
+    'expectedHash',
+  ])
+  for (const option of command.options)
+    if (!routineOptions.has(option.attributeName())) option.hideHelp()
+  command.addHelpText(
+    'after',
+    '\nCreation returns directory, variantId and Run id. Other metadata may be edited in run.json; publish direct edits with memon refresh E0001. CLI updates publish automatically.',
+  )
 }
 createRunCommand.action(
   async (
     id: string | undefined,
-    opts: RunMetadataOptions & { experiment: string; variant: string },
+    opts: RunMetadataOptions & { experiment: string; variant?: string },
   ) => {
     await runRunCreate({ ...readGlobals(), ...opts, ...(id ? { id } : {}) })
   },
@@ -976,14 +999,14 @@ run
     },
   )
 run
-  .command('archive <id>')
+  .command('archive <id>', { hidden: true })
   .description('mark a Run archived in its execution record')
   .action(async (id: string) => {
     const g = readGlobals()
     await runArchive({ ...g, runId: id })
   })
 run
-  .command('unarchive <id>')
+  .command('unarchive <id>', { hidden: true })
   .description('unmark archived')
   .action(async (id: string) => {
     const g = readGlobals()
@@ -997,7 +1020,7 @@ run
     await runRunLint({ ...g, runId: id })
   })
 run
-  .command('deprecate <id-or-dir>')
+  .command('deprecate <id-or-dir>', { hidden: true })
   .description(
     'mark a run deprecated (writes deprecated: true to README frontmatter). Orthogonal to status and archival: no signal, no artifact deletion, RUNNING runs may be deprecated. Idempotent.',
   )
@@ -1011,7 +1034,7 @@ run
     await runRunDeprecate({ ...g, runId: id, expectedMtime: opts.expectedMtime })
   })
 run
-  .command('undeprecate <id-or-dir>')
+  .command('undeprecate <id-or-dir>', { hidden: true })
   .description('clear the deprecated marker on a run. Idempotent.')
   .option('--expected-mtime <ms>', 'optional README mtime lock', (v) => Number(v))
   .action(async (id: string, opts: { expectedMtime?: number }) => {
@@ -1126,7 +1149,7 @@ share
   })
 
 const fsVersion = program
-  .command('fs-version')
+  .command('fs-version', { hidden: true })
   .description('FS convention version commands (per-project marker .memon/version.json)')
 fsVersion
   .command('check')
@@ -1138,8 +1161,10 @@ fsVersion
 
 // ---------- memon index (FS v8 derived index) ----------
 
+registerRefreshCommand(program, readGlobals)
+
 const indexCommand = program
-  .command('index')
+  .command('index', { hidden: true })
   .description(
     'maintain and inspect the derived index .memon/index/ (a rebuildable cache, never edited by hand; writes keep it current automatically)',
   )
@@ -1226,7 +1251,7 @@ withCentralOptions(
 // ---------- memon components ----------
 
 const components = program
-  .command('components')
+  .command('components', { hidden: true })
   .description('document component blocks (docs under the project root)')
 
 components
