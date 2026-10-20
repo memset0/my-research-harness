@@ -50,7 +50,9 @@ describe('v7-to-v8 migration guide', () => {
     expect(commands.length).toBeGreaterThan(0)
     for (const command of commands) {
       expect(command).toMatch(/&& echo OK$/)
-      expect(command).not.toMatch(/\b(node|python3?|yq|xmllint|sed|awk|perl)\b/)
+      if (/\bnode\b/.test(command))
+        expect(command).toContain('node "$MEMON_SOURCE/packages/core/migrations/scripts/')
+      expect(command).not.toMatch(/\b(python3?|yq|xmllint|sed|awk|perl)\b/)
     }
   })
 
@@ -77,9 +79,9 @@ describe('v7-to-v8 migration guide', () => {
     expect(guide).not.toMatch(/\b(might|consider|you could)\b/i)
   })
 
-  it('verifies the index with memon index status and git check-ignore', () => {
+  it('verifies the index with migration inspector and git check-ignore', () => {
     const verification = section('Verification')
-    expect(verification).toContain('memon index status --verify --strict')
+    expect(verification).toContain('inspect.mjs" --project-root "$PROJECT_ROOT" --verify-index')
     expect(verification).toContain(
       'git -C "$PROJECT_ROOT" check-ignore -q .memon/index/snapshot.json',
     )
@@ -99,9 +101,9 @@ describe('v7-to-v8 migration guide', () => {
     const edges = flat(section('Edge Cases'))
     expect(edges).toContain('**Runs deeper than, or outside, the default locations:**')
     expect(edges).toMatch(/After the migration, the user creates `\.memon\/project\.yml` by hand/)
-    expect(edges).toContain('memon project init')
+    expect(edges).toContain('schema_version: 1')
     expect(edges).toMatch(/commit it separately from the migration commit/)
-    expect(edges).toContain('memon index rebuild')
+    expect(edges).toContain('memon refresh')
     for (const label of ['**Nested Runs:**', '**CLI nodes still on 7.x:**'])
       expect(edges).toContain(label)
   })

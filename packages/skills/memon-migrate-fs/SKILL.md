@@ -1,23 +1,26 @@
 ---
 name: memon-migrate-fs
-description: Migrate selected memon data using the shipped version guides when the user requests it.
+description: Migrate selected legacy memon experiments or reports using shipped migration guides and scripts when requested.
 disable-model-invocation: true
 ---
 
-# Filesystem migration
+# Migrate selected data
 
-Run `memon --project-root . fs-version check` and read the shipped guide for
-each required `vN-to-vN+1` step in `packages/core/migrations/` of the installed
-checkout. Missing guides or a newer project version block conversion.
+Read `.memon/version.json` and the selected files; FS11 may still contain legacy
+experiments. Locate the installed checkout from the launcher or the `source`
+returned by `memon --project-root . install-skills --dry-run`, then read the
+relevant guide in `packages/core/migrations/`. Missing guides or newer data
+block conversion; never infer a migration from missing metadata.
 
-For FS11, use `memon --project-root . experiment migrate <E-id>` to prepare a
-plan, inspect its paths, times, exclusions and rewritten explanation, then
-apply with `--apply <plan.json>` within the agreed scope. Ask about unresolved
-scientific boundaries, not mechanical steps already authorized.
+Run the guide's executor from `packages/core/migrations/scripts/` on the
+file-owning machine. FS10-to-FS11 uses `v10-to-v11.mjs`; Reports use
+`reports-to-wiki.mjs` and its guide.
+Read the plan, resolve scientific ambiguities with the user, and apply only the
+requested scope. Existing authorization covers mechanical steps within it.
 
-Keep recoverable preimages; preserve unrelated edits, raw outputs and historical
-links. Never move running/queued executions or silently merge research generations.
-Missing extracted metrics are valid. Follow the guide's verification and rollback
-steps, write the version marker last with a local-offset time, and use its exact
-commit message under the project's Git rules. A new marker does not mean every
-legacy experiment was converted. Inspect partial failures before retrying.
+Preserve original offset timestamps, raw outputs, useful caveats and historical
+links. Keep recoverable preimages and unrelated edits. Do not move running or
+queued work, invent measurements, or treat retirement as invalidity. Verify the
+result before updating the marker or committing under the project's Git rules.
+A partial migration does not convert every legacy experiment. Inspect failures
+before retrying; use the guide's recovery instructions.

@@ -148,7 +148,7 @@ describe('writeRunResult', () => {
     ).rejects.toMatchObject({
       code: 'BAD_STATE',
       reason: 'RESULT_OWNER_MISSING',
-      message: expect.stringContaining('memon experiment link'),
+      message: expect.stringContaining('scoped migration guide'),
     })
     await expect(fs.access(join(root, RUN, 'result.csv'))).rejects.toThrow()
   })
@@ -180,7 +180,8 @@ describe('writeRunResult', () => {
       details: {
         recorded: 1,
         expected: 2,
-        upgradeCommand: 'memon experiment schema upgrade E0001-foo --to 2',
+        upgradeCommand:
+          'node "$MEMON_SOURCE/packages/core/migrations/scripts/experiment-schema.mjs" --project-root . --experiment E0001-foo --to 2',
       },
     })
     expect(await read(`${RUN}/result.csv`)).toBe(original)

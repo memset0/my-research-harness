@@ -505,7 +505,9 @@ describe('v6 README tolerant read and strict lint', () => {
     // A Results-data failure keeps the section a projection: the README stays editable.
     expect(rendered.source).toBe('yaml')
     expect(rendered.diagnostics[0]).toMatchObject({ code: 'RESULT_SCHEMA_MISMATCH' })
-    expect(rendered.markdown).toContain('memon experiment schema upgrade E0001-foo --to 2')
+    expect(rendered.markdown).toContain(
+      'node "$MEMON_SOURCE/packages/core/migrations/scripts/experiment-schema.mjs" --project-root . --experiment E0001-foo --to 2',
+    )
     expect(rendered.markdown).not.toContain('| Variant |')
   })
 
@@ -667,7 +669,9 @@ describe('v6 README tolerant read and strict lint', () => {
       ['RESULT_VALUE_TYPE_MISMATCH', 'logs/foo-260810-010000/result.csv', 3],
       ['RESULT_SCHEMA_MISMATCH', 'logs/foo-260810-000000/result.csv', undefined],
     ])
-    expect(diagnostics[1]!.message).toContain('memon experiment schema upgrade E0001-foo --to 1')
+    expect(diagnostics[1]!.message).toContain(
+      'node "$MEMON_SOURCE/packages/core/migrations/scripts/experiment-schema.mjs" --project-root . --experiment E0001-foo --to 1',
+    )
   })
 })
 

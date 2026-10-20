@@ -32,7 +32,7 @@ production host that shares its build output before rebuilding that output.
 ## Preview
 
 ```sh
-node scripts/migrate-v6-to-v7.mjs plan "$PROJECT_ROOT" "$PLAN_FILE"
+node packages/core/migrations/scripts/migrate-v6-to-v7.mjs plan "$PROJECT_ROOT" "$PLAN_FILE"
 ```
 
 The plan is read-only. It resolves Experiment README members and result
@@ -59,7 +59,7 @@ print its contents. Inspect the reported counts and blockers before proceeding.
 With explicit operator approval, pass `--keep-version` during planning:
 
 ```sh
-node scripts/migrate-v6-to-v7.mjs plan "$PROJECT_ROOT" "$PLAN_FILE" --keep-version
+node packages/core/migrations/scripts/migrate-v6-to-v7.mjs plan "$PROJECT_ROOT" "$PLAN_FILE" --keep-version
 ```
 
 This upgrades actual Experiment membership, result references and Run headers,
@@ -72,8 +72,8 @@ This operation neither releases v7 nor claims other migrations are complete.
 ## Apply and verify
 
 ```sh
-node scripts/migrate-v6-to-v7.mjs apply "$PLAN_FILE" "$BACKUP_DIRECTORY"
-node scripts/migrate-v6-to-v7.mjs verify "$PROJECT_ROOT"
+node packages/core/migrations/scripts/migrate-v6-to-v7.mjs apply "$PLAN_FILE" "$BACKUP_DIRECTORY"
+node packages/core/migrations/scripts/migrate-v6-to-v7.mjs verify "$PROJECT_ROOT"
 ```
 
 Use a new backup directory outside the project. Application checks every
@@ -89,7 +89,7 @@ Verification exits nonzero for unresolved references or pending conversions.
 ## Recovery and commits
 
 ```sh
-node scripts/migrate-v6-to-v7.mjs rollback "$BACKUP_DIRECTORY"
+node packages/core/migrations/scripts/migrate-v6-to-v7.mjs rollback "$BACKUP_DIRECTORY"
 ```
 
 Recovery refuses files changed since migration rather than overwriting them.

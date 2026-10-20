@@ -47,15 +47,15 @@ if (marker.fs_convention_version !== 5) {
   process.exit(1)
 }
 appendFileSync(join(projectRoot, '.memon', 'fake-memon.log'), args.join(' ') + '\\n')
-if (${JSON.stringify(failLint)} && !projectRoot.endsWith('staged-validation') && args.includes('lint')) {
+if (${JSON.stringify(failLint)} && !projectRoot.endsWith('staged-validation') && !args.includes('--section')) {
   process.stdout.write('{"ok":false,"diagnostics":[{"severity":"error"}]}\\n')
   process.exit(1)
 }
-if (${JSON.stringify(failStaged)} && projectRoot.endsWith('staged-validation') && args.includes('validate')) {
+if (${JSON.stringify(failStaged)} && projectRoot.endsWith('staged-validation') && !args.includes('--section')) {
   process.stdout.write('{"ok":false,"diagnostics":[{"severity":"error"}]}\\n')
   process.exit(1)
 }
-if (args.includes('json')) process.stdout.write('{"ok":true}\\n')
+if (!args.includes('--section')) process.stdout.write('{"ok":true}\\n')
 else process.stdout.write('_rendered section_\\n')
 `,
   )
@@ -104,15 +104,14 @@ describe('v5-to-v6 staged migration executor', () => {
       staging,
       '--confirm',
       'review-1',
-      '--memon-bin',
+      '--validator',
       memonBin,
     )
     expect(await readFile(path.join(liveDir, 'results.yaml'), 'utf8')).toContain('# reviewed edit')
     const productionChecks = await readFile(path.join(root, '.memon', 'fake-memon.log'), 'utf8')
-    expect(productionChecks.trim().split('\n')).toHaveLength(5)
-    expect(productionChecks).toContain('experiment doc validate E0001-demo')
-    expect(productionChecks).toContain('experiment doc lint E0001-demo')
-    expect(productionChecks).toContain('experiment doc render E0001-demo results')
+    expect(productionChecks.trim().split('\n')).toHaveLength(4)
+    expect(productionChecks).toContain('--experiment E0001-demo')
+    expect(productionChecks).toContain('--experiment E0001-demo --section results')
     expect(
       JSON.parse(await readFile(path.join(root, '.memon', 'version.json'), 'utf8')),
     ).toHaveProperty('fs_convention_version', 6)
@@ -151,8 +150,8 @@ describe('v5-to-v6 staged migration executor', () => {
     await run(root, 'init', '--project-root', root, '--migration-id', 'rollback')
     await run(root, 'approve', '--staging', staging, '--experiment', 'E0001-demo')
     await expect(
-      run(root, 'publish', '--staging', staging, '--confirm', 'rollback', '--memon-bin', memonBin),
-    ).rejects.toMatchObject({ stderr: expect.stringContaining('production lint failed') })
+      run(root, 'publish', '--staging', staging, '--confirm', 'rollback', '--validator', memonBin),
+    ).rejects.toMatchObject({ stderr: expect.stringContaining('production inspection failed') })
 
     expect(await readFile(path.join(liveDir, 'README.md'), 'utf8')).toBe(originalReadme)
     await expect(readFile(path.join(liveDir, 'results.yaml'), 'utf8')).rejects.toThrow()
@@ -171,8 +170,8 @@ describe('v5-to-v6 staged migration executor', () => {
     await run(root, 'init', '--project-root', root, '--migration-id', 'bad-stage')
     await run(root, 'approve', '--staging', staging, '--experiment', 'E0001-demo')
     await expect(
-      run(root, 'publish', '--staging', staging, '--confirm', 'bad-stage', '--memon-bin', memonBin),
-    ).rejects.toMatchObject({ stderr: expect.stringContaining('staged validate failed') })
+      run(root, 'publish', '--staging', staging, '--confirm', 'bad-stage', '--validator', memonBin),
+    ).rejects.toMatchObject({ stderr: expect.stringContaining('staged inspection failed') })
 
     expect(await readFile(path.join(liveDir, 'README.md'), 'utf8')).toBe(originalReadme)
     await expect(readFile(path.join(liveDir, 'results.yaml'), 'utf8')).rejects.toThrow()

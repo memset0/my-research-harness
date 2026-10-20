@@ -1353,7 +1353,7 @@ export function lintVariantMembership(
             'VARIANT_RUN_NOT_EXPERIMENT_MEMBER',
             'error',
             file,
-            `${variant.id}.runs references ${run}, which is absent from the README runs; link it (memon experiment link) or remove it from the Variant`,
+            `${variant.id}.runs references ${run}, which is absent from the README runs; reconcile the legacy declarations or use the scoped migration guide`,
             { field: `${variant.id}.runs` },
           ),
         )

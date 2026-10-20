@@ -22,7 +22,7 @@ function leaves(program: Command, prefix = ''): string[] {
     .sort()
 }
 
-it('keeps all 32 retained commands in one memon tree without duplicate groups', async () => {
+it('keeps all 19 retained commands in one memon tree without duplicate groups', async () => {
   const program = createResearchProgram()
   const registered = leaves(program)
   const expected = [
@@ -33,7 +33,6 @@ it('keeps all 32 retained commands in one memon tree without duplicate groups', 
     'run update',
     'show',
     'components run',
-    'experiment migrate',
     'journal read',
     'mock seed',
     'serve',
@@ -42,22 +41,10 @@ it('keeps all 32 retained commands in one memon tree without duplicate groups', 
     'share revoke',
     'update',
     'wiki create',
-    'wiki migrate-report',
     'wiki move',
     'experiment archive',
-    'experiment link',
-    'experiment schema upgrade',
     'experiment unarchive',
-    'experiment unlink',
-    'experiment variant deprecate',
-    'experiment variant restore',
-    'experiment version advance',
-    'experiment version import',
-    'experiment version show',
-    'run archive',
     'run record',
-    'run rename',
-    'run unarchive',
   ]
   expect(program.name()).toBe('memon')
   expect(registered).toEqual(expected.sort())
@@ -72,7 +59,7 @@ it('keeps all 32 retained commands in one memon tree without duplicate groups', 
   expect(pkg.bin).toEqual({ memon: './dist/index.js' })
 })
 
-it('shares root options and invocation handling across routine, optional and legacy commands', async () => {
+it('shares root options and invocation handling across routine and optional commands', async () => {
   const project = await createTempProject()
   const cli = (format: string, ...args: string[]) =>
     captureCli(() =>
@@ -94,10 +81,9 @@ it('shares root options and invocation handling across routine, optional and leg
   expect(await fs.readFile(project.path('docs/wiki/note/W0001-summary.md'), 'utf8')).toContain(
     'Summary',
   )
-  const legacyRead = await cli('json', 'experiment', 'version', 'show', 'E0001')
-  expect(legacyRead.exitCode, legacyRead.stderr).toBe(0)
-  expect(legacyRead.json.mode).toBe('lightweight')
-  const invalid = await cli('invalid', 'experiment', 'version', 'show', 'E0001')
+  expect((await cli('json', 'experiment', 'archive', 'E0001')).exitCode).toBe(0)
+  expect((await cli('json', 'experiment', 'unarchive', 'E0001')).exitCode).toBe(0)
+  const invalid = await cli('invalid', 'show', 'E0001')
   expect(invalid.exitCode).not.toBe(0)
   expect(invalid.stderr).toContain('--format must be json or human')
 })
@@ -119,6 +105,19 @@ it.each([
   ['wiki', 'commit'],
   ['journal', 'submit', '--files', 'README.md'],
   ['list'],
+  ['experiment', 'migrate', 'E0001'],
+  ['wiki', 'migrate-report', 'trial'],
+  ['experiment', 'schema', 'upgrade', 'E0001'],
+  ['experiment', 'version', 'show', 'E0001'],
+  ['experiment', 'version', 'advance', 'E0001'],
+  ['experiment', 'version', 'import', 'E0001'],
+  ['experiment', 'link', 'E0001'],
+  ['experiment', 'unlink', 'E0001'],
+  ['experiment', 'variant', 'deprecate', 'E0001'],
+  ['experiment', 'variant', 'restore', 'E0001'],
+  ['run', 'rename', 'trial'],
+  ['run', 'archive', 'trial'],
+  ['run', 'unarchive', 'trial'],
 ])('rejects removed invocation %j before touching the project', async (...args) => {
   const project = await createTempProject()
   const program = createResearchProgram()

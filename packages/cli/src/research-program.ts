@@ -159,7 +159,7 @@ export function createResearchProgram() {
     })
 
   registerRefreshCommand(program, readGlobals)
-  registerToolsCommands(program, experiment)
+  registerToolsCommands(program)
   registerLegacyCommands(program, experiment, run)
   return program
 }

@@ -5,7 +5,7 @@ import {
   planResearchMigration,
   rollbackResearchMigration,
   verifyResearchMigration,
-} from '../packages/core/dist/migrations/v9-to-v10.js'
+} from '../../dist/migrations/v9-to-v10.js'
 
 const [mode, target, output, ...flags] = process.argv.slice(2)
 if (mode === 'plan' && target && output) {
@@ -47,7 +47,7 @@ if (mode === 'plan' && target && output) {
   console.log(JSON.stringify(await rollbackResearchMigration(target), null, 2))
 } else {
   console.error(
-    'Usage: node scripts/migrate-v9-to-v10.mjs plan PROJECT PLAN [--allow-dirty] [--lifecycles JSON] | apply PLAN NEW_EXTERNAL_BACKUP_DIRECTORY | verify PROJECT | rollback BACKUP_DIRECTORY',
+    'Usage: node packages/core/migrations/scripts/migrate-v9-to-v10.mjs plan PROJECT PLAN [--allow-dirty] [--lifecycles JSON] | apply PLAN NEW_EXTERNAL_BACKUP_DIRECTORY | verify PROJECT | rollback BACKUP_DIRECTORY',
   )
   process.exitCode = 2
 }

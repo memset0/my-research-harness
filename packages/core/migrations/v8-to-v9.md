@@ -29,7 +29,7 @@ allow rules appended to ignore files (Git mode), `.memon/version.json` and
 deletes `results.yaml`. It never creates, edits or deletes `.memon/project.yml`,
 and it leaves per-Run JSON sidecars in place.
 
-The executor is `scripts/migrate-v8-to-v9.mjs` in the reviewed memon checkout
+The executor is `packages/core/migrations/scripts/migrate-v8-to-v9.mjs` in the reviewed memon checkout
 (`$MEMON_SOURCE`); it calls the planner, applier, verifier and rollback in
 `@memon/core` (`packages/core/src/migrations/v8-to-v9.ts`). Build Core from that
 checkout before running it (`pnpm --filter @memon/core build`), and never
@@ -40,12 +40,12 @@ then migrate the project.
 ## Detection
 
 - `test "$(jq -r .fs_convention_version "$PROJECT_ROOT/.memon/version.json")" = 8 && echo V8` — the project is at v8. If it prints nothing, stop: this guide does not apply.
-- `memon fs-version check --project-root "$PROJECT_ROOT" --format json | jq -r .status` — prints `behind` when the running memon expects v9.
-- `test -f "$MEMON_SOURCE/scripts/migrate-v8-to-v9.mjs" && test -f "$MEMON_SOURCE/packages/core/dist/migrations/v8-to-v9.js" && echo EXECUTOR` — the reviewed checkout and its built Core are present.
+- `jq -r .fs_convention_version "$PROJECT_ROOT/.memon/version.json"` — prints the recorded convention; use the guide for that consecutive step.
+- `test -f "$MEMON_SOURCE/packages/core/migrations/scripts/migrate-v8-to-v9.mjs" && test -f "$MEMON_SOURCE/packages/core/dist/migrations/v8-to-v9.js" && echo EXECUTOR` — the reviewed checkout and its built Core are present.
 - `if test "$(git -C "$PROJECT_ROOT" rev-parse --show-toplevel 2>/dev/null)" = "$(cd "$PROJECT_ROOT" && pwd -P)"; then GIT_MODE=1; else GIT_MODE=0; fi; echo "GIT_MODE=$GIT_MODE"` — selects Git mode (the project root is a work-tree root) or non-Git mode.
 - `git -C "$PROJECT_ROOT" status --porcelain=v1 --untracked-files=all` — in Git mode, a non-empty result means the worktree is dirty (see Edge Cases).
 - `ls "$PROJECT_ROOT"/docs/experiments/E[0-9][0-9][0-9][0-9]-*/results.yaml 2>/dev/null | wc -l` — the number of `results.yaml` files the step converts; every other Experiment folder receives an empty `experiment.json`.
-- `memon project lint --project-root "$PROJECT_ROOT" --format json | jq -c .effective` — prints the effective `run_dirs` and their source; a non-zero exit means `.memon/project.yml` is invalid (see Edge Cases).
+- `node "$MEMON_SOURCE/packages/core/migrations/scripts/inspect.mjs" --project-root "$PROJECT_ROOT" | jq -c .effective` — prints the effective `run_dirs` and their source; a non-zero exit means `.memon/project.yml` is invalid (see Edge Cases).
 - `git -C "$PROJECT_ROOT" check-ignore --no-index --verbose logs/probe-260101-000000/result.csv || echo NOT_IGNORED` — in Git mode, prints the deciding ignore rule when result files at the default Run location would be ignored; the plan computes the allow rules for every declared Run location.
 - `test -n "${SIDECAR_NAME:-}" && echo "SIDECAR_NAME=$SIDECAR_NAME" || echo NO_SIDECAR` — whether the operator supplies a per-Run sidecar file name (recorded in the operator's `LOCAL.md`, never guessed).
 
@@ -54,7 +54,7 @@ then migrate the project.
 Run these steps in order.
 
 1. Create the plan outside the project:
-   `node "$MEMON_SOURCE/scripts/migrate-v8-to-v9.mjs" plan "$PROJECT_ROOT" "$PLAN_FILE"`.
+   `node "$MEMON_SOURCE/packages/core/migrations/scripts/migrate-v8-to-v9.mjs" plan "$PROJECT_ROOT" "$PLAN_FILE"`.
    Add `--sidecar-name "$SIDECAR_NAME"` when Detection printed a sidecar name.
    Add `--allow-dirty` only after the user approves migrating a dirty worktree.
    The plan is read-only; the plan file holds the planned contents (mode 0600)
@@ -62,7 +62,7 @@ Run these steps in order.
 2. Read the printed summary. If `unresolved` is non-empty, show every blocker
    to the user with its choices, write the user's choices into
    `$RESOLUTIONS_FILE` as a JSON object keyed by blocker id (the choices table is
-   in `scripts/migrate-v8-to-v9.md`), and repeat step 1 with
+   in `packages/core/migrations/scripts/migrate-v8-to-v9.md`), and repeat step 1 with
    `--resolutions "$RESOLUTIONS_FILE"` and a new plan file. A blocker without
    choices is fixed by hand before planning again.
 3. Show the user `experiments`, `files.counts`, `counts`, `defaults` (the
@@ -74,7 +74,7 @@ Run these steps in order.
    and the Run directories they cover. Continue only after the user approves
    the plan.
 4. Apply it with a new backup directory outside the project:
-   `node "$MEMON_SOURCE/scripts/migrate-v8-to-v9.mjs" apply "$PLAN_FILE" "$BACKUP_DIRECTORY"`.
+   `node "$MEMON_SOURCE/packages/core/migrations/scripts/migrate-v8-to-v9.mjs" apply "$PLAN_FILE" "$BACKUP_DIRECTORY"`.
    The executor backs up every touched file, the marker and `.memon/index/`,
    writes the planned files, appends the allow rules, deletes every
    `results.yaml`, rebuilds the index and every Results summary, verifies, then
@@ -82,7 +82,7 @@ Run these steps in order.
    fixed migration message. If it fails, every touched file and the index are
    restored, the marker stays at 8 and nothing is committed; go to Rollback
    Notes.
-5. Run `node "$MEMON_SOURCE/scripts/migrate-v8-to-v9.mjs" verify "$PROJECT_ROOT"`
+5. Run `node "$MEMON_SOURCE/packages/core/migrations/scripts/migrate-v8-to-v9.mjs" verify "$PROJECT_ROOT"`
    and then the Verification block below.
 
 The per-file changes the step makes:
@@ -241,7 +241,7 @@ No other file changes. Per-Run sidecars, `implementation.yaml`,
 - Every migrated Run directory holds a `result.csv` that starts with
   `path,stat,value` and `$experiment_schema_version,,1`; every Experiment
   records `experiment_schema_version: 1`.
-- `memon experiment results table <id>` succeeds for every Experiment; frozen,
+- `memon --project-root "$PROJECT_ROOT" show <id> --results` succeeds for every Experiment; frozen,
   planned and aggregated cells show the v8 values up to the reported
   conversions.
 - `.memon/index/` holds an `index_version: 2` snapshot and one summary per
@@ -256,8 +256,8 @@ No other file changes. Per-Run sidecars, `implementation.yaml`,
 ```bash
 # 1. The marker records v9.
 test "$(jq -r .fs_convention_version "$PROJECT_ROOT/.memon/version.json")" = 9 && echo OK
-# 2. The running memon agrees with the marker.
-memon fs-version check --project-root "$PROJECT_ROOT" --format json | jq -e '.status == "match"' >/dev/null && echo OK
+# 2. The installed tool can read this historical marker.
+test "$(jq -r .fs_convention_version "$PROJECT_ROOT/.memon/version.json")" -le "$(memon --version | cut -d. -f1)" && echo OK
 # 3. No Experiment bundle keeps a results.yaml.
 ! for f in "$PROJECT_ROOT"/docs/experiments/E[0-9][0-9][0-9][0-9]-*/results.yaml; do test -e "$f" && echo "$f"; done | grep -q . && echo OK
 # 4. Every Experiment folder with a README has experiment.json.
@@ -265,11 +265,11 @@ memon fs-version check --project-root "$PROJECT_ROOT" --format json | jq -e '.st
 # 5. No README keeps the v8 Results pointer.
 { test ! -d "$PROJECT_ROOT/docs/experiments" || { grep -rlF --include=README.md 'Managed in [results.yaml](./results.yaml)' "$PROJECT_ROOT/docs/experiments"; test $? -eq 1; }; } && echo OK
 # 6. Every Results summary regenerates (no RESULT_SCHEMA_MISMATCH, RESULT_DUPLICATE_ROW or INVALID_RESULTS).
-memon --project-root "$PROJECT_ROOT" --format json experiment results rebuild --all | jq -e '.counts.failed == 0' >/dev/null && echo OK
+node "$MEMON_SOURCE/packages/core/migrations/scripts/inspect.mjs" --project-root "$PROJECT_ROOT" --results | jq -e '.ok' >/dev/null && echo OK
 # 7. The derived index is version 2 and matches the project files (fails on any INDEX_DRIFT).
-memon index status --verify --strict --project-root "$PROJECT_ROOT" --format json | jq -e '.present and .snapshot.state == "ok" and .snapshot.indexVersion == 2 and .verify.driftCount == 0' >/dev/null && echo OK
+node "$MEMON_SOURCE/packages/core/migrations/scripts/inspect.mjs" --project-root "$PROJECT_ROOT" --verify-index | jq -e '.ok' >/dev/null && echo OK
 # 8. In Git mode git check-ignore reports no declared Run's result.csv as ignored. Each Run path is first resolved through symbolic links (check-ignore rejects a path beyond a symlink) and probed at its real path; a Run resolving outside the project fails the step (memon, jq and the resolver exit 0, check-ignore exits 1 = none ignored).
-{ test "$GIT_MODE" = 0 || { ROOT_REAL=$(realpath -e -- "$PROJECT_ROOT") && memon --project-root "$PROJECT_ROOT" --format json experiment ls | jq -r '.experiments[].runs[] | select(contains("/"))' | { RC=0; while IFS= read -r RUN; do REAL=$(realpath -e -- "$PROJECT_ROOT/$RUN" 2>/dev/null) || continue; case "$REAL" in "$ROOT_REAL"/*) printf '%s/result.csv\n' "${REAL#"$ROOT_REAL"/}" ;; *) echo "OUTSIDE_PROJECT $RUN" >&2; RC=1 ;; esac; done; exit "$RC"; } | git -C "$PROJECT_ROOT" check-ignore --no-index --stdin; STATUS="${PIPESTATUS[*]}"; test "$STATUS" = "0 0 0 1"; }; } && echo OK
+{ test "$GIT_MODE" = 0 || { ROOT_REAL=$(realpath -e -- "$PROJECT_ROOT") && node "$MEMON_SOURCE/packages/core/migrations/scripts/inspect.mjs" --project-root "$PROJECT_ROOT" | jq -r '.experiments[].runs[] | select(contains("/"))' | { RC=0; while IFS= read -r RUN; do REAL=$(realpath -e -- "$PROJECT_ROOT/$RUN" 2>/dev/null) || continue; case "$REAL" in "$ROOT_REAL"/*) printf '%s/result.csv\n' "${REAL#"$ROOT_REAL"/}" ;; *) echo "OUTSIDE_PROJECT $RUN" >&2; RC=1 ;; esac; done; exit "$RC"; } | git -C "$PROJECT_ROOT" check-ignore --no-index --stdin; STATUS="${PIPESTATUS[*]}"; test "$STATUS" = "0 0 0 1"; }; } && echo OK
 # 9. In Git mode the Results summaries are ignored.
 { test "$GIT_MODE" = 0 || git -C "$PROJECT_ROOT" check-ignore -q .memon/index/results/E0001-probe.json; } && echo OK
 # 10. In Git mode nothing under .memon/ is left uncommitted (the marker is committed, the index ignored).
@@ -286,7 +286,7 @@ If any step fails before the marker moves, the executor has already restored
 every touched file (ignore files included) and `.memon/index/` and left marker
 8 with no commit; tell the user the migration did not complete and report the
 printed error. To undo a completed migration, stop every writer and run
-`node "$MEMON_SOURCE/scripts/migrate-v8-to-v9.mjs" rollback "$BACKUP_DIRECTORY"`:
+`node "$MEMON_SOURCE/packages/core/migrations/scripts/migrate-v8-to-v9.mjs" rollback "$BACKUP_DIRECTORY"`:
 in Git mode it reverts the migration commit (subject exactly
 `chore(memon): migrate FS convention v8 -> v9`) with
 `git -C "$PROJECT_ROOT" revert <migration-commit>` semantics, which restores
@@ -318,10 +318,10 @@ marker reads 8.
 - **Historical values without a Run directory:** values of a Variant whose listed Run directory no longer exists, Variant-level values not reproduced by per-Run data, and values of Variants with several listed Runs stay in that Variant's `frozen` block with the source blob of `results.yaml`. The summary shows them marked frozen; only schema upgrades transform them afterwards. A Variant left without listed Runs keeps its v8 status in `frozen.status`.
 - **`±` strings and JSON strings:** metric values convert cell by cell, and a column takes the majority convertible shape of its non-empty values. `0.31 ± 0.02` and `0.31 +/- 0.02` become `mean` and `std` rows (`PLUS_MINUS_TO_STATS`); a JSON object whose keys are statistics becomes statistic rows (`JSON_TO_STATS`; `sample_std`/`stdev` → `std`, `count`/`eligible_seeds` → `n`, `median` → `p50`, other numeric keys become sibling paths `<path>_<key>`); plain numbers in a column that holds statistics become `mean` rows (`MIGRATED_NUMBER_AS_MEAN`), so the whole column is `stats`; a JSON array becomes a `list` value (`JSON_TO_LIST`); a JSON object of scalars expands into the group `<path>.<key>` (`JSON_TO_GROUP`) only when every non-empty value of the column is such an object. Empty values stay missing. A value that does not fit its column's shape (such as `0.65 ± —` or `n/a` in a statistics column) stays a string on its own (`RESULT_CELL_NOT_CONVERTED`, one notice per cell) and appears in `expectedLintErrors`; the rest of the column still converts. JSON text that stays a string is `RESULT_JSON_STRING`; W&B URLs stay strings, parameter values are copied verbatim and env values become strings (`RESULTS_ENV_VALUE_COERCED`).
 - **Legacy per-Run result files (sidecars):** the two legacy JSON shapes — a role-tagged Variant snapshot (`variant_id`, `role`, `baseline{parameters,metrics,provenance}`) and a definition-plus-statistics record (`variant`, `definition{parameters}`, `metrics`, `statistics`) — are converted into `result.csv` rows only when the operator passes `--sidecar-name` with the file name from `LOCAL.md`; only Run directories a Variant lists are read. Parameters equal to the Variant's planned values are not duplicated, `results.yaml` values win over differing sidecar values (`SIDECAR_VALUE_CONFLICT`), a sidecar naming another Variant is a `SIDECAR_VARIANT_CONFLICT` blocker and an unknown shape is reported and left alone. Sidecars stay in place; delete them in a separate, user-reviewed commit after the migration.
-- **Ignored result files:** in Git mode an ignored `result.csv` never blocks the step. The plan computes the smallest allow rules from the deciding rules and shows them before anything is written: an anchored negation per Run location (`!/logs/*/result.csv`) appended to the `.gitignore` that holds the deciding rule, or to the project root `.gitignore` when the rule comes from `.git/info/exclude`, `core.excludesFile` or a `.gitignore` above the project root. When a directory above the result file is excluded (for example `logs/`), Git cannot re-include a file below it, so the plan appends the re-inclusion form `!/logs/`, `/logs/*`, `!/logs/*/`, `/logs/*/*`, `!/logs/*/result.csv`, which re-includes only the Run directories and their `result.csv`. The rules are committed with the migration and removed by rollback. Non-Git projects need no rules. A declared Run path that is (or lies below) a symbolic link is resolved first: `git check-ignore` refuses a path beyond a symlink, so the plan probes, writes and commits that Run's `result.csv` at its real path when the target lies inside the project, and reports a `RUN_PATH_OUTSIDE_PROJECT` blocker (fix by hand) when the target leaves the project root; two declared paths with planned writes that resolve to the same directory are a `RUN_PATH_ALIASED` blocker. After the migration, `memon run result set` still writes an ignored new file and warns `RESULT_FILE_IGNORED` with the deciding rule and a fix command; ignore files change afterwards only with the user's consent.
+- **Ignored result files:** in Git mode an ignored `result.csv` never blocks the step. The plan computes the smallest allow rules from the deciding rules and shows them before anything is written: an anchored negation per Run location (`!/logs/*/result.csv`) appended to the `.gitignore` that holds the deciding rule, or to the project root `.gitignore` when the rule comes from `.git/info/exclude`, `core.excludesFile` or a `.gitignore` above the project root. When a directory above the result file is excluded (for example `logs/`), Git cannot re-include a file below it, so the plan appends the re-inclusion form `!/logs/`, `/logs/*`, `!/logs/*/`, `/logs/*/*`, `!/logs/*/result.csv`, which re-includes only the Run directories and their `result.csv`. The rules are committed with the migration and removed by rollback. Non-Git projects need no rules. A declared Run path that is (or lies below) a symbolic link is resolved first: `git check-ignore` refuses a path beyond a symlink, so the plan probes, writes and commits that Run's `result.csv` at its real path when the target lies inside the project, and reports a `RUN_PATH_OUTSIDE_PROJECT` blocker (fix by hand) when the target leaves the project root; two declared paths with planned writes that resolve to the same directory are a `RUN_PATH_ALIASED` blocker. After the migration, preserve result-file tracking when directly editing CSVs; change ignore rules only within the authorized scope.
 - **Finished attempts and status changes:** v9 counts every `FINISHED`, non-deprecated member Run as evidence, so a `FINISHED`, non-deprecated Run in a v8 `attempts` list is by default kept as the Variant's history: it is recorded in that Variant's `frozen.attempts`, is not added to its `runs`, never becomes evidence, and the Variant's v8 values stay frozen unless its single listed Run carries them. The plan counts these (`finishedAttemptsKept`) and reports each as `FINISHED_ATTEMPT_KEPT_AS_HISTORY`; nothing blocks. Only when the user asks for it, write `deprecate` or `adopt` for the id `FINISHED_ATTEMPT:<experiment>:<run>` into `$RESOLUTIONS_FILE`. A `deprecate` choice edits that Run's `README.md`, which the migration commit includes; if Git ignores that README (`git -C "$PROJECT_ROOT" check-ignore -q <run>/README.md` succeeds), the plan reports a `RUN_README_IGNORED` blocker, so choose `adopt`, drop the resolution or have the user track the README first. A Variant whose derived status differs from its v8 status is reported as `VARIANT_STATUS_CHANGED`; an `INTERRUPTED` Run now keeps its Variant `RUNNING`.
 - **Existing `result.csv` files:** a listed Run that already holds a `result.csv` which is not a version-1 result table (written by the project's own tooling) does not block. The plan renames it to `result.legacy.csv` (or `result.legacy.<N>.csv` with the first free `N` ≥ 2), writes the migrated table as `result.csv` (or deletes `result.csv` when no migrated rows belong to that Run), counts it (`legacyResultFilesRenamed`) and lists every rename in `legacyRenames`. The legacy file is backed up, committed with the migration even when ignore rules cover it, and removed by rollback, which restores the original `result.csv` byte for byte. Write `keep` or `replace` for the id `RESULT_FILE_EXISTS:<experiment>:<run>` only when the user asks for it. An existing file that is already a version-1 result table is a `RESULT_FILE_EXISTS` blocker (`keep` or `replace`).
 - **Views that use flat column keys:** saved Results Views keep their `schema:<key>` column ids. The dashboard resolves each one at render time to the unique `params.<key>` or `metrics.<key>` path and stores the path on the owner's next save; the migration never rewrites View rows.
 - **CLI nodes still on 8.x:** an 8.x skill on a v9 project stops at its preflight with `MEMON_TOO_OLD` (exit 11); run `memon update` on every node before migrating. A 9.x CLI on an unmigrated project fails Results reads with `NOT_FOUND` naming `experiment.json` and reports `LEGACY_RESULTS_YAML`, so migrate promptly after the update.
-- **Invalid `.memon/project.yml`:** if `memon project lint` exits non-zero, the plan reports a `PROJECT_NOT_READY` blocker; fix the declaration and plan again. The migration uses the effective `run_dirs` for the index rebuild and to name Run locations in the allow rules, and never edits the declaration.
+- **Invalid `.memon/project.yml`:** if `scripts/inspect.mjs` exits non-zero, the plan reports a `PROJECT_NOT_READY` blocker; fix the declaration and plan again. The migration uses the effective `run_dirs` for the index rebuild and to name Run locations in the allow rules, and never edits the declaration.
 - **Already migrated:** a plan on a v9 project reports `alreadyMigrated: true`; applying it only rebuilds the index and the summaries and makes no commit.

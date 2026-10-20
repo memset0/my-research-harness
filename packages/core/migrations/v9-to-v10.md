@@ -18,7 +18,7 @@ for explicit lifecycle normalization without recreating their research history.
 ## Detection
 
 - `test -f "$PROJECT_ROOT/.memon/version.json" && jq -e '.fs_convention_version == 9 or .fs_convention_version == 10' "$PROJECT_ROOT/.memon/version.json"` — require FS9 or an initial-FS10 project needing lifecycle normalization.
-- `test -f "$MEMON_SOURCE/scripts/migrate-v9-to-v10.mjs" && test -f "$MEMON_SOURCE/packages/core/dist/migrations/v9-to-v10.js"` — require the reviewed executor and built Core.
+- `test -f "$MEMON_SOURCE/packages/core/migrations/scripts/migrate-v9-to-v10.mjs" && test -f "$MEMON_SOURCE/packages/core/dist/migrations/v9-to-v10.js"` — require the reviewed executor and built Core.
 - `git -C "$PROJECT_ROOT" rev-parse --show-toplevel 2>/dev/null || echo NON_GIT_MODE` — determine Git mode.
 - `git -C "$PROJECT_ROOT" status --porcelain=v1 --untracked-files=all` — require a clean tree in Git mode unless the user explicitly approves a scoped dirty-tree conversion.
 
@@ -30,7 +30,7 @@ for explicit lifecycle normalization without recreating their research history.
    of `ACTIVE`, `PAUSED`, `ARCHIVED`, `RETIRED`. Review archived, resolved and
    abandoned legacy cases against their documented intent; obtain decisions
    for ambiguous cases. A plain unarchived OPEN maps to ACTIVE by default.
-   Run `node "$MEMON_SOURCE/scripts/migrate-v9-to-v10.mjs" plan "$PROJECT_ROOT" "$PLAN_FILE" --lifecycles "$LIFECYCLES_FILE"`.
+   Run `node "$MEMON_SOURCE/packages/core/migrations/scripts/migrate-v9-to-v10.mjs" plan "$PROJECT_ROOT" "$PLAN_FILE" --lifecycles "$LIFECYCLES_FILE"`.
    Read the listed files and blockers. If blockers exist, stop and resolve them
    before generating another plan. Review `retainedDiagnostics`: existing
    value-type mismatches and declared members without a Variant stay unchanged;
@@ -40,7 +40,7 @@ for explicit lifecycle normalization without recreating their research history.
 3. Review the plan's exact before/after contents and obtain project-migration
    approval. In non-Git mode also create a pre-migration tarball of the listed
    files for the migration runtime's backup protocol.
-4. Run `node "$MEMON_SOURCE/scripts/migrate-v9-to-v10.mjs" apply "$PLAN_FILE" "$BACKUP_DIRECTORY"`.
+4. Run `node "$MEMON_SOURCE/packages/core/migrations/scripts/migrate-v9-to-v10.mjs" apply "$PLAN_FILE" "$BACKUP_DIRECTORY"`.
    The executor rechecks content hashes and mtimes under a writer lock, keeps
    preimages in a private receipt, replaces descriptions, verifies them, and
    updates the marker last. Experiment frontmatter changes status, removes
@@ -136,9 +136,9 @@ find "$PROJECT_ROOT/docs/experiments" -mindepth 2 -maxdepth 2 -name experiment.j
 # 3. Verify canonical lifecycle fields; no independent Experiment archive flag.
 find "$PROJECT_ROOT/docs/experiments" -mindepth 2 -maxdepth 2 -name README.md -exec sh -c 'for f do grep -Eq "^status: (ACTIVE|PAUSED|ARCHIVED|RETIRED)$" "$f" && ! grep -q "^archived:" "$f" || exit 1; done' sh {} + && echo OK
 # 4. Rebuild the derived index from the new source fields.
-memon index rebuild --project-root "$PROJECT_ROOT" --format json
+memon --project-root "$PROJECT_ROOT" refresh
 # 5. Check the running tool accepts the project version.
-memon fs-version check --project-root "$PROJECT_ROOT" --format json | jq -e '.status == "match"' >/dev/null && echo OK
+test "$(jq -r .fs_convention_version "$PROJECT_ROOT/.memon/version.json")" -le "$(memon --version | cut -d. -f1)" && echo OK
 ```
 
 Run the executor's `verify` mode before committing as well. If any check exits
@@ -152,7 +152,7 @@ Stop writers before rollback. The executor restores written preimages after a
 failed apply unless a concurrent edit prevents safe restoration; report the
 retained receipt and resolve that conflict instead of overwriting it. For an
 uncommitted or non-Git migration run
-`node "$MEMON_SOURCE/scripts/migrate-v9-to-v10.mjs" rollback "$BACKUP_DIRECTORY"`.
+`node "$MEMON_SOURCE/packages/core/migrations/scripts/migrate-v9-to-v10.mjs" rollback "$BACKUP_DIRECTORY"`.
 For a committed migration use `git -C "$PROJECT_ROOT" revert <migration-commit>`;
 the original commit subject is exactly
 `chore(memon): migrate FS convention v9 -> v10`. In non-Git mode without the

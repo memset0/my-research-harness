@@ -4,12 +4,13 @@ The pre-refactor CLI registered 90 commands, including 51 hidden compatibility c
 
 ## What Changes
 
-- **BREAKING**: remove 58 redundant spellings. The six routine operations are `experiment create`, `run create`, `run update`, `refresh`, `show` and `install-skills`; retained operational and historical commands remain available under `memon`.
-- Defer moving the 12 operational/optional and 14 historical commands to independent binaries. Restore their `memon …` paths, keep one installed binary, and describe all 32 retained leaves accurately.
+- **BREAKING**: remove 71 redundant or retired spellings. The six routine operations are `experiment create`, `run create`, `run update`, `refresh`, `show` and `install-skills`; retained operational and historical commands remain available under `memon`.
+- Defer moving the retained operational/optional commands to independent binaries. Keep one installed binary and describe all 19 retained leaves accurately.
 - Make `show` the inventory and targeted Experiment/Run/Wiki reader, including result projections and diagnostics. Inventory reads the published index instead of repeatedly scanning Run directories.
 - Initialize a genuinely new research project on first Experiment creation; never infer migration of existing research from a missing marker.
 - Validate during creation, reads and refresh. Agents edit Markdown/JSON/CSV directly and publish once, without manual journal receipts or repeated lint ceremonies.
-- Preserve the seven bundled Skill entrypoints and their responsibilities. Skill consolidation is explicitly excluded; any command-reference corrections require the user's separate clarification.
+- Remove the 11 legacy version/schema/binding/Variant/Run-rename/Run-archive leaves and the two migration leaves. Preserve historical readers; use scoped migration scripts under `packages/core/migrations/scripts/` rather than retaining old write interfaces.
+- Refresh the concise migration Skill and shipped guides to invoke those scripts. Keep the seven Skill entrypoints; general Skill consolidation remains separate.
 
 ## Capabilities
 
@@ -23,4 +24,4 @@ The pre-refactor CLI registered 90 commands, including 51 hidden compatibility c
 
 ## Impact
 
-CLI registration, command adapters, installation/update entrypoints, focused tests and current usage documentation change. Shared domain services and historical file readers remain available to the website. FS11 formats, results aggregation semantics, central hosting, Wiki formats and the seven Skill roles are unchanged. No research-project migration or data deletion is included.
+CLI registration, command adapters, installation/update entrypoints, focused tests and current usage documentation change. Shared domain services and historical file readers remain available to the website. FS11 formats, results aggregation semantics, central hosting, Wiki formats and non-migration Skill roles are unchanged. No research-project migration or data deletion is included.

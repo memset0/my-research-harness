@@ -431,7 +431,7 @@ export async function renameRun(input: RenameRunInput): Promise<RenameRunResult>
     if (!experiment) {
       throw new MutationError(
         'BAD_STATE',
-        `run claims experiment ${owner} but no such exp doc found; reconcile first via 'memon experiment unlink'`,
+        `run claims experiment ${owner} but no such exp doc found; reconcile the legacy declarations before conversion`,
         { reason: 'OWNER_MISSING' },
       )
     }

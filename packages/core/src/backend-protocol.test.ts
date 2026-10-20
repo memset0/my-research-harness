@@ -317,7 +317,8 @@ describe('Backend Results summary wire shape (FS v9)', () => {
       error: {
         code: 'RESULT_SCHEMA_MISMATCH',
         files: [{ file: `${runs[0]}/result.csv`, version: 2 }],
-        upgradeCommand: 'memon experiment schema upgrade E0001-foo --to 1',
+        upgradeCommand:
+          'node "$MEMON_SOURCE/packages/core/migrations/scripts/experiment-schema.mjs" --project-root . --experiment E0001-foo --to 1',
         expectedVersion: 1,
       },
     })
@@ -326,7 +327,8 @@ describe('Backend Results summary wire shape (FS v9)', () => {
     )
     expect(body).toMatchObject({
       error: { code: 'RESULT_SCHEMA_MISMATCH' },
-      upgradeCommand: 'memon experiment schema upgrade E0001-foo --to 1',
+      upgradeCommand:
+        'node "$MEMON_SOURCE/packages/core/migrations/scripts/experiment-schema.mjs" --project-root . --experiment E0001-foo --to 1',
       updatedAt: '2026-10-02T12:00:00+08:00',
     })
     expect(resultsErrorStatus('RESULT_SCHEMA_MISMATCH')).toBe(422)

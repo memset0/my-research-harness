@@ -87,7 +87,7 @@ gate in step 3 before any filesystem write:
    > 一眼看出归属？例如 foo-260501-100000 → vpred-convergence-foo-260501-100000。
    > 不改也没问题，只是软约定的视觉提示。(y/N)
 
-   On `y`, run `memon run rename` for each. On any other answer, skip
+   On `y`, rename each selected directory and update its recorded ID and affected references through ordinary file operations. On any other answer, skip
    this step (the soft-prefix violation is non-blocking).
 
 8. **Update `docs/hypotheses.md`** — see the Diff section's "File 4".

@@ -56,7 +56,7 @@ function buildProgram(action: () => Promise<void>): Command {
   })
 
   const experiment = program.command('experiment')
-  experiment.command('link <exp> <run>').action(async () => {
+  experiment.command('archive <exp>').action(async () => {
     await action()
   })
   program.command('show').action(async () => {
@@ -102,13 +102,13 @@ describe('command classification', () => {
     const program = buildProgram(async () => {})
     const link = program.commands
       .find((c) => c.name() === 'experiment')!
-      .commands.find((c) => c.name() === 'link')!
+      .commands.find((c) => c.name() === 'archive')!
 
-    expect(cliCommandPath(link)).toBe('experiment link')
+    expect(cliCommandPath(link)).toBe('experiment archive')
   })
 
   it.each([
-    ['experiment link', 'project'],
+    ['experiment archive', 'project'],
     ['show', 'readonly'],
     ['journal read', 'readonly'],
     ['run update', 'project'],
@@ -143,18 +143,17 @@ describe('automatic interception', () => {
       '--project-root',
       root,
       'experiment',
-      'link',
+      'archive',
       'E0001-foo',
-      'foo-260901-090000',
     ])
 
     const records = await readJournalInvocations(root)
     expect(records).toHaveLength(1)
     expect(records[0]).toMatchObject({
-      command: 'experiment link',
+      command: 'experiment archive',
       origin: 'cli',
       outcome: 'success',
-      parameters: { args: ['E0001-foo', 'foo-260901-090000'] },
+      parameters: { args: ['E0001-foo'] },
     })
   })
 
@@ -164,7 +163,7 @@ describe('automatic interception', () => {
     })
 
     await expect(
-      program.parseAsync(['node', 'memon', '--project-root', root, 'experiment', 'link', 'a', 'b']),
+      program.parseAsync(['node', 'memon', '--project-root', root, 'experiment', 'archive', 'a']),
     ).rejects.toMatchObject({ exitCode: 2 })
 
     const records = await readJournalInvocations(root)
@@ -181,7 +180,7 @@ describe('automatic interception', () => {
     })
 
     await expect(
-      program.parseAsync(['node', 'memon', '--project-root', root, 'experiment', 'link', 'a', 'b']),
+      program.parseAsync(['node', 'memon', '--project-root', root, 'experiment', 'archive', 'a']),
     ).rejects.toMatchObject({ exitCode: 9 })
 
     const records = await readJournalInvocations(root)
@@ -216,11 +215,11 @@ describe('automatic interception', () => {
 
     // No --project-root: the mutation would resolve, and write to, the cwd.
     // The receipt has to land in the same place, not nowhere.
-    await program.parseAsync(['node', 'memon', 'experiment', 'link', 'a', 'b'])
+    await program.parseAsync(['node', 'memon', 'experiment', 'archive', 'a'])
 
     const records = await readJournalInvocations(root)
     expect(records).toHaveLength(1)
-    expect(records[0]).toMatchObject({ command: 'experiment link', outcome: 'success' })
+    expect(records[0]).toMatchObject({ command: 'experiment archive', outcome: 'success' })
   })
 
   it('records nothing when no project root can be resolved at all', async () => {
@@ -233,9 +232,8 @@ describe('automatic interception', () => {
       '--project-root',
       missing,
       'experiment',
-      'link',
+      'archive',
       'a',
-      'b',
     ])
 
     expect(await readJournalInvocations(root)).toEqual([])

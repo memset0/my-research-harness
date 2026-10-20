@@ -335,7 +335,8 @@ describe('generateResultsSummary', () => {
       error: {
         code: 'RESULT_SCHEMA_MISMATCH',
         files: [{ path: `${B}/result.csv`, version: 1 }],
-        upgrade_command: 'memon experiment schema upgrade E0001-foo --to 2',
+        upgrade_command:
+          'node "$MEMON_SOURCE/packages/core/migrations/scripts/experiment-schema.mjs" --project-root . --experiment E0001-foo --to 2',
         expected_version: 2,
       },
     })
@@ -539,7 +540,9 @@ describe('projections', () => {
     const callout = renderResultsSummaryMarkdown(failed)
     expect(callout).toContain('**RESULT_SCHEMA_MISMATCH**')
     expect(callout).toContain(`\`${A}/result.csv\` records version 1`)
-    expect(callout).toContain('`memon experiment schema upgrade E0001-foo --to 2`')
+    expect(callout).toContain(
+      '`node "$MEMON_SOURCE/packages/core/migrations/scripts/experiment-schema.mjs" --project-root . --experiment E0001-foo --to 2`',
+    )
     expect(() => projectResultsTable(failed)).toThrow(/failed/)
   })
 

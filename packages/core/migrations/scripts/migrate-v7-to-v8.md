@@ -16,7 +16,7 @@ release (`memon update`) before migrating a project they write to.
 ## Preview
 
 ```sh
-node scripts/migrate-v7-to-v8.mjs plan "$PROJECT_ROOT" "$PLAN_FILE" [--allow-dirty] [--run-dir PATTERN]...
+node packages/core/migrations/scripts/migrate-v7-to-v8.mjs plan "$PROJECT_ROOT" "$PLAN_FILE" [--allow-dirty] [--run-dir PATTERN]...
 ```
 
 The plan is read-only. It checks the marker (7 to migrate, 8 reports
@@ -32,16 +32,16 @@ content; it is written with mode 0600 and never overwritten.
 
 Warnings need the operator's acknowledgement and are never rewritten
 automatically. For Runs outside the effective locations the remedies are:
-after the migration, `memon project init`, edit `run_dirs`, commit the file
-separately and `memon index rebuild`; or declare `run_dirs` in the central
+after the migration, create `.memon/project.yml` with `schema_version: 1` and `run_dirs`, commit the file
+separately and `memon refresh`; or declare `run_dirs` in the central
 Project configuration; or accept that those Runs leave walks (declared
 Experiment members still resolve by path).
 
 ## Apply and verify
 
 ```sh
-node scripts/migrate-v7-to-v8.mjs apply "$PLAN_FILE" "$BACKUP_DIRECTORY" [--acknowledge-warnings] [--no-commit]
-node scripts/migrate-v7-to-v8.mjs verify "$PROJECT_ROOT" [--run-dir PATTERN]...
+node packages/core/migrations/scripts/migrate-v7-to-v8.mjs apply "$PLAN_FILE" "$BACKUP_DIRECTORY" [--acknowledge-warnings] [--no-commit]
+node packages/core/migrations/scripts/migrate-v7-to-v8.mjs verify "$PROJECT_ROOT" [--run-dir PATTERN]...
 ```
 
 Use a new backup directory outside the project. Apply rechecks the marker bytes
@@ -62,7 +62,7 @@ snapshot is missing, the index reports drift, or the snapshot is tracked.
 ## Recovery and commits
 
 ```sh
-node scripts/migrate-v7-to-v8.mjs rollback "$BACKUP_DIRECTORY"
+node packages/core/migrations/scripts/migrate-v7-to-v8.mjs rollback "$BACKUP_DIRECTORY"
 ```
 
 Rollback restores marker 7 — by `git revert` of the recorded migration commit in

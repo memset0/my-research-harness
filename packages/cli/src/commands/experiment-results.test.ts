@@ -298,7 +298,9 @@ describe('memon experiment results (FS v9)', () => {
     expect(out.stdout).toBe('')
     expect(out.error?.code).toBe('RESULT_SCHEMA_MISMATCH')
     expect(out.error?.details.files).toEqual([{ path: `${B}/result.csv`, version: 1 }])
-    expect(out.error?.details.upgradeCommand).toBe(`memon experiment schema upgrade ${EXP} --to 2`)
+    expect(out.error?.details.upgradeCommand).toBe(
+      `node "$MEMON_SOURCE/packages/core/migrations/scripts/experiment-schema.mjs" --project-root . --experiment ${EXP} --to 2`,
+    )
   })
 
   it('fails with RESULT_DUPLICATE_ROW naming the file and both lines', async () => {
@@ -394,7 +396,7 @@ describe('memon experiment results (FS v9)', () => {
     expect(out.json.rows.every((row: { status: unknown }) => row.status === null)).toBe(true)
     expect(out.json.error).toMatchObject({
       code: 'RESULT_SCHEMA_MISMATCH',
-      upgradeCommand: `memon experiment schema upgrade ${EXP} --to 2`,
+      upgradeCommand: `node "$MEMON_SOURCE/packages/core/migrations/scripts/experiment-schema.mjs" --project-root . --experiment ${EXP} --to 2`,
     })
     expect(out.error?.code).toBe('RESULT_SCHEMA_MISMATCH')
   })
@@ -424,7 +426,8 @@ describe('memon experiment results (FS v9)', () => {
       error: {
         code: 'RESULT_SCHEMA_MISMATCH',
         files: [{ path: 'logs/z-260901-090000/result.csv', version: 1 }],
-        upgradeCommand: 'memon experiment schema upgrade E0003-baz --to 2',
+        upgradeCommand:
+          'node "$MEMON_SOURCE/packages/core/migrations/scripts/experiment-schema.mjs" --project-root . --experiment E0003-baz --to 2',
       },
     })
     expect(await project.exists('.memon/index/results/E0001-foo.json')).toBe(true)

@@ -27,7 +27,7 @@ to the project to a 9.x release (`memon update`) before migrating it.
 ## Preview
 
 ```sh
-node scripts/migrate-v8-to-v9.mjs plan "$PROJECT_ROOT" "$PLAN_FILE" \
+node packages/core/migrations/scripts/migrate-v8-to-v9.mjs plan "$PROJECT_ROOT" "$PLAN_FILE" \
   [--sidecar-name NAME] [--resolutions "$RESOLUTIONS_FILE"] [--allow-dirty] [--run-dir PATTERN]...
 ```
 
@@ -114,8 +114,8 @@ blocker id, review it with the user, and plan again with
 ## Apply and verify
 
 ```sh
-node scripts/migrate-v8-to-v9.mjs apply "$PLAN_FILE" "$BACKUP_DIRECTORY" [--no-commit]
-node scripts/migrate-v8-to-v9.mjs verify "$PROJECT_ROOT" [--run-dir PATTERN]...
+node packages/core/migrations/scripts/migrate-v8-to-v9.mjs apply "$PLAN_FILE" "$BACKUP_DIRECTORY" [--no-commit]
+node packages/core/migrations/scripts/migrate-v8-to-v9.mjs verify "$PROJECT_ROOT" [--run-dir PATTERN]...
 ```
 
 Use a new backup directory outside the project. Apply refuses a plan with
@@ -143,7 +143,7 @@ index reports drift or (Git mode) a member `result.csv` is ignored.
 ## Recovery and commits
 
 ```sh
-node scripts/migrate-v8-to-v9.mjs rollback "$BACKUP_DIRECTORY"
+node packages/core/migrations/scripts/migrate-v8-to-v9.mjs rollback "$BACKUP_DIRECTORY"
 ```
 
 Rollback restores marker 8 — by `git revert` of the recorded migration commit in

@@ -1,98 +1,22 @@
-import { EXPERIMENT_DIR_REGEX, RUN_DIR_REGEX } from '@memon/core'
 import type { Command } from 'commander'
-import { readStdin, runArchive, runUnarchive } from './commands/experiment.js'
-import {
-  runExperimentArchiveDoc,
-  runExperimentLink,
-  runExperimentUnarchiveDoc,
-  runExperimentUnlink,
-} from './commands/experiment-doc.js'
-import { registerExperimentResearchCommands } from './commands/experiment-research.js'
-import { registerLegacySchemaCommand } from './commands/results-commands.js'
+import { runExperimentArchiveDoc, runExperimentUnarchiveDoc } from './commands/experiment-doc.js'
 import { runRunRecord } from './commands/run-record.js'
-import { runRunRename } from './commands/run-rename.js'
-import { emitErrorAndExit } from './lib/emit-error.js'
 import { readGlobalsFor } from './lib/program.js'
 
 export function registerLegacyCommands(program: Command, experiment: Command, run: Command): void {
   const readGlobals = () => readGlobalsFor(program)
-
-  registerExperimentResearchCommands(experiment, readGlobals)
-  registerLegacySchemaCommand(experiment, readGlobals)
-
-  experiment
-    .command('link <id-or-slug> <run-dir-or-id>')
-    .description(
-      "add a run's project-relative path to the experiment's runs (run README untouched)",
-    )
-    .action(async (experimentIdOrSlug: string, runIdOrDir: string) => {
-      const g = readGlobals()
-      await runExperimentLink({ ...g, experimentIdOrSlug, runIdOrDir })
-    })
-
-  experiment
-    .command('unlink <id-or-slug> <run-dir-or-id>')
-    .description("remove a run from the experiment's runs (run README untouched)")
-    .action(async (experimentIdOrSlug: string, runIdOrDir: string) => {
-      const g = readGlobals()
-      await runExperimentUnlink({ ...g, experimentIdOrSlug, runIdOrDir })
-    })
-
   experiment
     .command('archive <id>')
-    .description(
-      'archive an Experiment: FS10 sets lifecycle ARCHIVED, FS9 retains the archive flag. Run-id form aliases memon run archive.',
-    )
+    .description('set an Experiment lifecycle to ARCHIVED')
     .action(async (id: string) => {
-      const g = readGlobals()
-      if (EXPERIMENT_DIR_REGEX.test(id)) {
-        await runExperimentArchiveDoc({ ...g, experimentId: id })
-        return
-      }
-      if (RUN_DIR_REGEX.test(id)) {
-        emitV2DeprecationBanner('experiment archive', 'run archive')
-        await runArchive({ ...g, runId: id })
-        return
-      }
-      emitErrorAndExit('BAD_REQUEST', `id "${id}" matches neither exp nor run pattern`)
+      await runExperimentArchiveDoc({ ...readGlobals(), experimentId: id })
     })
-
   experiment
     .command('unarchive <id>')
-    .description(
-      'unarchive an Experiment: FS10 sets lifecycle ACTIVE, FS9 clears the archive flag. Run-id form aliases memon run unarchive.',
-    )
+    .description('restore an Experiment lifecycle to ACTIVE')
     .action(async (id: string) => {
-      const g = readGlobals()
-      if (EXPERIMENT_DIR_REGEX.test(id)) {
-        await runExperimentUnarchiveDoc({ ...g, experimentId: id })
-        return
-      }
-      if (RUN_DIR_REGEX.test(id)) {
-        emitV2DeprecationBanner('experiment unarchive', 'run unarchive')
-        await runUnarchive({ ...g, runId: id })
-        return
-      }
-      emitErrorAndExit('BAD_REQUEST', `id "${id}" matches neither exp nor run pattern`)
+      await runExperimentUnarchiveDoc({ ...readGlobals(), experimentId: id })
     })
-
-  function emitV2DeprecationBanner(legacy: string, replacement: string): void {
-    if (process.env.MEMON_QUIET_DEPRECATIONS) return
-    process.stderr.write(
-      `[deprecation] \`memon ${legacy}\` is a v2 alias and will be removed in a future release; use \`memon ${replacement}\` instead.\n`,
-    )
-  }
-
-  run
-    .command('rename <id-or-dir> <new-slug>')
-    .description(
-      "rename a run's slug (timestamp suffix preserved); updates the declaring exp's runs path",
-    )
-    .action(async (runIdOrDir: string, newSlug: string) => {
-      const g = readGlobals()
-      await runRunRename({ ...g, runIdOrDir, newSlug })
-    })
-
   run
     .command('record <id-or-dir>')
     .option(
@@ -145,20 +69,12 @@ export function registerLegacyCommands(program: Command, experiment: Command, ru
         await runRunRecord({ ...g, ...opts, target: idOrDir, body })
       },
     )
+}
 
-  run
-    .command('archive <id>')
-    .description('mark a Run archived in its execution record')
-    .action(async (id: string) => {
-      const g = readGlobals()
-      await runArchive({ ...g, runId: id })
-    })
-
-  run
-    .command('unarchive <id>')
-    .description('unmark archived')
-    .action(async (id: string) => {
-      const g = readGlobals()
-      await runUnarchive({ ...g, runId: id })
-    })
+async function readStdin(): Promise<string> {
+  if (process.stdin.isTTY) return ''
+  const chunks: Buffer[] = []
+  for await (const chunk of process.stdin)
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+  return Buffer.concat(chunks).toString('utf8')
 }

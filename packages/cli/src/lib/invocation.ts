@@ -81,25 +81,12 @@ export const CLI_LEDGER_CLASSES: Readonly<Record<string, CliLedgerClass>> = {
   'share create': 'project',
   'share list': 'readonly',
   'share revoke': 'project',
-  'experiment migrate': 'project',
   'wiki create': 'project',
   'wiki move': 'project',
-  'wiki migrate-report': 'project',
   'components run': 'project',
-  'experiment schema upgrade': 'project',
-  'experiment version show': 'readonly',
-  'experiment version advance': 'project',
-  'experiment version import': 'project',
-  'experiment link': 'project',
-  'experiment unlink': 'project',
-  'experiment variant deprecate': 'project',
-  'experiment variant restore': 'project',
   'experiment archive': 'project',
   'experiment unarchive': 'project',
   'run record': 'project',
-  'run rename': 'project',
-  'run archive': 'project',
-  'run unarchive': 'project',
 }
 
 /** `memon experiment warning add` -> `experiment warning add`. */
@@ -127,9 +114,6 @@ export function classifyCliCommand(
   if (declared === undefined) return 'unclassified'
   // `install-skills --target <dir>` writes outside project-root semantics.
   if (path === 'install-skills' && typeof options.target === 'string') return 'host'
-  // `experiment schema upgrade` writes only with `--apply`; otherwise it is a dry run.
-  if (path === 'experiment schema upgrade' && options.apply !== true) return 'readonly'
-  if (path === 'experiment migrate' && typeof options.apply !== 'string') return 'readonly'
   return declared
 }
 

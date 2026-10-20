@@ -1,22 +1,18 @@
-// Wiki reads and optional allocation, move and Report migration. Source targets are not hydrated.
+// Wiki reads and optional allocation and move. Source targets are not hydrated.
 
-import { type Dirent, promises as fs } from 'node:fs'
+import { promises as fs } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 import {
   buildWikiProject,
   type DiscoveredWikiPage,
   discoverWikiPages,
-  extractRunMentions,
   formatIsoLocal,
   getWikiKind,
   isWikiLanguage,
   padId,
   parseId,
   parseWikiFrontmatter,
-  REPORT_FILENAME_REGEX,
-  RUN_MENTION_SOURCE,
-  SLUG_SOURCE,
   serializeWikiPage,
   updateWikiFrontmatter,
   WIKI_DIR_RELPATH,
@@ -28,7 +24,6 @@ import {
   WIKI_RESERVED_KINDS,
   WIKI_SLUG_REGEX,
   WIKI_STATUS_BY_KIND,
-  WIKI_TIMESTAMP_REGEX,
   type WikiDiagnostic,
   type WikiFrontmatter,
   type WikiKind,
@@ -36,23 +31,13 @@ import {
   type WikiProjectProjection,
   type WikiSummary,
   wikiContentHash,
-  wikiStringList,
   writeFileAtomic,
 } from '@memon/core'
 
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
-import { EXIT } from '../lib/exit-codes.js'
 import { emitJson } from '../lib/output.js'
 
-const REPORT_DIR_REGEX = new RegExp(`^R(\\d{4})-(${SLUG_SOURCE})$`)
-const REPORTS_SUBDIR = 'docs/reports'
-/** Evidence tokens a migrated Report body can supply as `sources`. */
-const EVIDENCE_TOKEN_REGEX = new RegExp(
-  `\\b(E\\d{4}(?:-${SLUG_SOURCE})?(?:\\/V\\d{4})?|H\\d{4}|${RUN_MENTION_SOURCE})\\b`,
-  'g',
-)
-const LEGACY_RUN_MENTION = new RegExp(RUN_MENTION_SOURCE)
 const WIKI_BUNDLE_MAX_DEPTH = 8
 const WIKI_BUNDLE_MAX_FILES = 5000
 
@@ -99,58 +84,6 @@ function projectWiki(projectRoot: string, pages: DiscoveredWikiPage[]): WikiCont
 async function loadWiki(input: WikiCommonInput): Promise<WikiContext> {
   const projectRoot = singleProjectRoot(await resolveContext(input))
   return projectWiki(projectRoot, await discoverWikiPages(projectRoot))
-}
-
-interface DiscoveredReport {
-  id: string
-  slug: string
-  format: 'markdown' | 'bundle'
-  /** Project-relative POSIX path of the `.md` / `README.md`. */
-  path: string
-  absolutePath: string
-  /** Absolute bundle directory; null for the single-file form. */
-  bundleDir: string | null
-}
-
-/** Locate one explicitly requested Report without reading unrelated Reports. */
-async function discoverReport(
-  projectRoot: string,
-  reportId: string,
-): Promise<DiscoveredReport | null> {
-  const dir = join(projectRoot, REPORTS_SUBDIR)
-  let entries: Dirent[]
-  try {
-    entries = await fs.readdir(dir, { withFileTypes: true })
-  } catch {
-    return null
-  }
-  for (const entry of entries) {
-    if (entry.isDirectory()) {
-      const match = REPORT_DIR_REGEX.exec(entry.name)
-      if (!match || `R${match[1]}` !== reportId) continue
-      const readme = join(dir, entry.name, 'README.md')
-      if (!(await exists(readme))) continue
-      return {
-        id: reportId,
-        slug: match[2]!,
-        format: 'bundle',
-        path: `${REPORTS_SUBDIR}/${entry.name}/README.md`,
-        absolutePath: readme,
-        bundleDir: join(dir, entry.name),
-      }
-    }
-    const match = REPORT_FILENAME_REGEX.exec(entry.name)
-    if (!match || `R${match[1]}` !== reportId) continue
-    return {
-      id: reportId,
-      slug: match[2]!,
-      format: 'markdown',
-      path: `${REPORTS_SUBDIR}/${entry.name}`,
-      absolutePath: join(dir, entry.name),
-      bundleDir: null,
-    }
-  }
-  return null
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -577,150 +510,4 @@ export async function runWikiMove(input: WikiMoveInput): Promise<void> {
   }
 
   await emitPageResult(ctx, format, newRelative, { oldPath: summary.path, newPath: newRelative })
-}
-
-// ---------- memon wiki migrate-report ----------
-
-export interface WikiMigrateReportInput extends WikiCommonInput {
-  report: string
-  kind: string
-  slug?: string
-  status?: string
-}
-
-export async function runWikiMigrateReport(input: WikiMigrateReportInput): Promise<void> {
-  const format = readFormat(input)
-  const kind = assertKind(input.kind)
-  const status = resolveStatus(kind, input.status)
-  if (/^[Rr]\d+$/.test(input.report) && !/^R\d{4}$/.test(input.report)) {
-    emitErrorAndExit('BAD_REQUEST', `"${input.report}" is not a canonical Report id (R<NNNN>)`)
-  }
-
-  const ctx = await loadWiki(input)
-  const report = await discoverReport(ctx.projectRoot, input.report)
-  if (!report) {
-    emitErrorAndExit('NOT_FOUND', `report "${input.report}" not found under ${REPORTS_SUBDIR}/`)
-  }
-  const slug = assertSlug(input.slug ?? report.slug)
-  assertSlugFree(ctx, slug)
-  const id = nextWikiId(ctx)
-
-  const name = `${id}-${slug}`
-  const newRelative =
-    report.format === 'bundle'
-      ? `${WIKI_DIR_RELPATH}/${kind}/${name}/README.md`
-      : `${WIKI_DIR_RELPATH}/${kind}/${name}.md`
-  const newRoot =
-    report.format === 'bundle'
-      ? join(ctx.projectRoot, WIKI_DIR_RELPATH, kind, name)
-      : join(ctx.projectRoot, newRelative)
-  if (await exists(newRoot)) emitErrorAndExit('CONFLICT', `${newRelative} already exists`)
-  await fs.mkdir(join(ctx.projectRoot, WIKI_DIR_RELPATH, kind), { recursive: true })
-
-  let aborted = false
-  const rollback = async (): Promise<void> => {
-    await fs.rm(newRoot, { recursive: true, force: true })
-  }
-
-  try {
-    if (report.format === 'bundle') {
-      await fs.cp(report.bundleDir!, newRoot, { recursive: true })
-    } else {
-      await fs.cp(report.absolutePath, newRoot)
-    }
-
-    const readme = join(ctx.projectRoot, newRelative)
-    const raw = await fs.readFile(readme, 'utf8')
-    const parsed = parseWikiFrontmatter(raw)
-    const existing: WikiFrontmatter = parsed.frontmatter ?? ({} as WikiFrontmatter)
-    const mtime = (await fs.stat(readme)).mtimeMs
-    const now = formatIsoLocal(new Date())
-    const body = parsed.frontmatter ? parsed.body : raw
-
-    const patch: Record<string, unknown> = {
-      id,
-      kind,
-      legacy_id: report.id,
-      updated_at: now,
-      ...(status === undefined ? { status: undefined } : { status }),
-    }
-    if (typeof existing.title !== 'string' || existing.title.trim() === '') {
-      patch.title = firstHeading(body) ?? slug
-    }
-    if (
-      typeof existing.created_at !== 'string' ||
-      !WIKI_TIMESTAMP_REGEX.test(existing.created_at)
-    ) {
-      patch.created_at = formatIsoLocal(new Date(mtime))
-    }
-    if (getWikiKind(kind)?.policy.dateRequired && typeof existing.date !== 'string') {
-      const created = typeof patch.created_at === 'string' ? patch.created_at : existing.created_at
-      if (typeof created === 'string') patch.date = created.slice(0, 10)
-    }
-    if (
-      getWikiKind(kind)?.policy.sourcesRequired &&
-      wikiStringList(existing.sources).length === 0
-    ) {
-      const derived = deriveSources(body)
-      if (derived.length > 0) patch.sources = derived
-    }
-
-    await writeFileAtomic(readme, serializeWikiPage(updateWikiFrontmatter(existing, patch), body))
-
-    // Lint only the page in its new home before the Report is destroyed.
-    const summary = await changedPageSummary(ctx, newRelative)
-    const errors = summary.diagnostics.filter((d) => d.severity === 'error')
-    if (errors.length > 0) {
-      aborted = true
-      await rollback()
-      emitErrorAndExit(
-        'LINT_ERROR',
-        `migrated page would carry ${errors.length} lint error(s); ${report.path} left untouched`,
-        { diagnostics: errors },
-        EXIT.GENERIC,
-      )
-    }
-
-    if (report.format === 'bundle') {
-      await fs.rm(report.bundleDir!, { recursive: true, force: true })
-    } else {
-      await fs.rm(report.absolutePath, { force: true })
-    }
-
-    if (format === 'json') {
-      emitJson({
-        oldPath: report.path,
-        newPath: newRelative,
-        page: listEntry(summary),
-      })
-      return
-    }
-    process.stdout.write(
-      `${report.id} ${report.path} -> ${summary.id} ${newRelative}\n${renderShowHeader(summary)}`,
-    )
-  } catch (err) {
-    if (!aborted) await rollback()
-    throw err
-  }
-}
-
-function firstHeading(body: string): string | null {
-  for (const line of body.split('\n')) {
-    const match = /^ {0,3}#\s+(.+?)\s*#*\s*$/.exec(line)
-    if (match) return match[1]!.trim()
-  }
-  return null
-}
-
-function deriveSources(body: string): string[] {
-  const out: string[] = []
-  for (const match of body.matchAll(EVIDENCE_TOKEN_REGEX)) {
-    const token = match[1]!
-    if (!out.includes(token)) out.push(token)
-  }
-  // Discoverable Run names the legacy token cannot see (non-ASCII, dots…).
-  for (const name of extractRunMentions(body)) {
-    if (!LEGACY_RUN_MENTION.test(name) && !out.includes(name)) out.push(name)
-  }
-  return out
 }

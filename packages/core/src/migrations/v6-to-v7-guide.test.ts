@@ -48,7 +48,9 @@ describe('v6-to-v7 migration guide', () => {
     expect(commands.length).toBeGreaterThan(0)
     for (const command of commands) {
       expect(command).toMatch(/&& echo OK$/)
-      expect(command).not.toMatch(/\b(node|python3?|yq|xmllint|sed|awk|perl)\b/)
+      if (/\bnode\b/.test(command))
+        expect(command).toContain('node "$MEMON_SOURCE/packages/core/migrations/scripts/')
+      expect(command).not.toMatch(/\b(python3?|yq|xmllint|sed|awk|perl)\b/)
     }
   })
 

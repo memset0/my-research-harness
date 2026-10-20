@@ -984,7 +984,7 @@ export const BackendResultsSummaryErrorSchema = z
       .min(1)
       .max(64 * 1024),
     files: z.array(BackendResultsErrorFileSchema).max(10_000),
-    /** `memon experiment schema upgrade <id> --to <N>` for a version mismatch. */
+    /** Shipped migration-script invocation for a historical schema mismatch. */
     upgradeCommand: z.string().min(1).max(1024).optional(),
     expectedVersion: z.number().int().positive().optional(),
     /** A leftover `results.yaml` (an unmigrated FS v8 bundle). */

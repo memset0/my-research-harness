@@ -250,7 +250,7 @@ Keep `installed_at` unchanged. Update this marker only after every live candidat
     ```bash
     MIGRATION_ID="$(sed -n 's/^migration_id: //p' "$STAGING/state.yaml")"
     MEMON_BIN="$(command -v memon)"
-    node "$MEMON_SOURCE/packages/core/migrations/scripts/v5-to-v6-stage.mjs" publish --staging "$STAGING" --confirm "$MIGRATION_ID" --memon-bin "$MEMON_BIN"
+    node "$MEMON_SOURCE/packages/core/migrations/scripts/v5-to-v6-stage.mjs" publish --staging "$STAGING" --confirm "$MIGRATION_ID"
     ```
 
 11. Run the Verification block. Commit only after every command succeeds.
@@ -290,12 +290,12 @@ find docs/experiments -mindepth 1 -maxdepth 1 -type d -name 'E*-*' | while read 
   grep -Fqx '> Managed in [investigation.yaml](./investigation.yaml); read and update that file directly.' "$d/README.md"
   grep -Fqx '> Managed in [results.yaml](./results.yaml); read and update that file directly.' "$d/README.md"
   id="$(basename "$d")"
-  memon --project-root . --format json experiment doc lint "$id" | jq -e '.ok == true' >/dev/null
+  node "$MEMON_SOURCE/packages/core/migrations/scripts/inspect.mjs" --project-root . --experiment "$id" | jq -e '.ok == true' >/dev/null
 done
 echo OK
 
-memon --project-root . --format json experiment ls | jq -e '.experiments | type == "array"' >/dev/null && echo OK
-memon --project-root . --format json doctor | jq -e '[.issues[] | select(.severity == "error")] | length == 0' >/dev/null && echo OK
+node "$MEMON_SOURCE/packages/core/migrations/scripts/inspect.mjs" --project-root . | jq -e '.experiments | type == "array"' >/dev/null && echo OK
+node "$MEMON_SOURCE/packages/core/migrations/scripts/inspect.mjs" --project-root . | jq -e '.ok' >/dev/null && echo OK
 ```
 
 Open the web dashboard. Confirm that Implementation, Investigation, and Results show the shared human-readable Markdown projection; confirm that an unsupported legacy H2 remains visible with a diagnostic instead of disappearing. Commit the migration with the exact message `chore(memon): migrate FS convention v5 -> v6` and no body.

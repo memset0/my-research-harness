@@ -1,4 +1,4 @@
-// Experiment creation, targeted reading and explicit historical membership helpers.
+// Experiment creation, targeted reading and lifecycle helpers.
 
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
@@ -11,7 +11,6 @@ import {
   type ExperimentTarget,
   formatIsoLocal,
   isExperimentLifecycle,
-  linkExperimentRun,
   nodeMutationFs,
   projectExperimentLifecycle,
   projectRunPath,
@@ -22,7 +21,6 @@ import {
   resolveRunTarget,
   SLUG_STRICT_REGEX,
   setExperimentArchived,
-  unlinkExperimentRun,
 } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { runWalkOptions } from '../lib/discovery-options.js'
@@ -140,90 +138,6 @@ export async function runExperimentCreate(input: ExperimentCreateInput): Promise
       })
     }
     emitJson({ ok: true, id: created.id, ...indexWarningFields(created) })
-  })
-}
-
-// ---------- experiment link / unlink ----------
-
-export interface ExperimentLinkInput {
-  projectRoot?: string
-  cwd: string
-  experimentIdOrSlug: string
-  runIdOrDir: string
-}
-
-async function resolveBindTargets(input: ExperimentLinkInput) {
-  const r = await resolveContext(input)
-  const projectRoot = singleProjectRoot(r)
-  const projectName = r.config.projects[0]!.name
-  const expId = await resolveOrFail(projectRoot, input.experimentIdOrSlug)
-  const exp = await readExperimentDoc(projectRoot, projectName, expId)
-  if (!exp) emitErrorAndExit('NOT_FOUND', `experiment "${expId}" not found`)
-  const run = await resolveRunTarget(projectRoot, input.runIdOrDir, {
-    projectName,
-    ...runWalkOptions(),
-  })
-  if (!run) emitErrorAndExit('NOT_FOUND', `run "${input.runIdOrDir}" not found`)
-  return { projectRoot, expId, experiment: { id: expId, path: exp.path }, run }
-}
-
-export async function runExperimentLink(input: ExperimentLinkInput): Promise<void> {
-  const { projectRoot, expId, experiment, run } = await resolveBindTargets(input)
-  const linked = await cliMutation(() =>
-    linkExperimentRun({
-      fs: nodeMutationFs,
-      index: cliIndexSink(projectRoot),
-      projectRoot,
-      experiment,
-      run,
-    }),
-  )
-  // Soft prefix warning to stderr.
-  for (const warning of linked.warnings) {
-    process.stderr.write(`${JSON.stringify({ warning })}\n`)
-  }
-  await appendJournalEvent({
-    path: journalPath(projectRoot),
-    event: {
-      timestamp: formatIsoLocal(new Date()),
-      tag: 'BIND',
-      body: `\`${expId}\` op=link run=${run.id}`,
-    },
-  })
-  emitJson({
-    ok: true,
-    experimentId: expId,
-    runId: linked.runPath,
-    ...indexWarningFields(linked),
-  })
-}
-
-export type ExperimentUnlinkInput = ExperimentLinkInput
-
-export async function runExperimentUnlink(input: ExperimentUnlinkInput): Promise<void> {
-  const { projectRoot, expId, experiment, run } = await resolveBindTargets(input)
-  const unlinked = await cliMutation(() =>
-    unlinkExperimentRun({
-      fs: nodeMutationFs,
-      index: cliIndexSink(projectRoot),
-      projectRoot,
-      experiment,
-      run,
-    }),
-  )
-  await appendJournalEvent({
-    path: journalPath(projectRoot),
-    event: {
-      timestamp: formatIsoLocal(new Date()),
-      tag: 'BIND',
-      body: `\`${expId}\` op=unlink run=${run.id}`,
-    },
-  })
-  emitJson({
-    ok: true,
-    experimentId: expId,
-    runId: unlinked.runPath,
-    ...indexWarningFields(unlinked),
   })
 }
 

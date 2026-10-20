@@ -105,7 +105,7 @@ Git-backed human-review workflow; use normal project Git conventions.
 ## CLI
 
 Daily research uses **six routine commands**. The single `memon` binary retains
-32 command leaves in total; there are no hidden retired aliases:
+19 command leaves in total; there are no hidden retired aliases:
 
 | Command | Purpose |
 |---|---|
@@ -133,22 +133,20 @@ support `--variant`, `--status`, `--column`, `--group` and `--output`. An absent
 invalid inventory reports `memon refresh` instead of silently walking every Run.
 Direct edits are not automatically observed until publication.
 
-### Optional and historical commands
+### Optional commands and migrations
 
-Moving these commands to independent entrypoints is deferred. All remain under
-`memon`, and installation/update requires only that one binary. The 58 redundant
-command spellings removed during simplification remain removed.
+The single `memon` binary also retains 13 optional leaves: `serve`, `update`,
+`share create/list/revoke`, `wiki create/move`, `components run`, `mock seed`,
+`journal read`, `experiment archive/unarchive` and `run record`.
+Independent operational entrypoints remain deferred.
 
-The 12 optional leaves are: `serve`, `update`,
-`share create/list/revoke`, `experiment migrate`, `wiki create/move/migrate-report`,
-`components run`, `mock seed` and `journal read`.
-
-The 14 transitional leaves for existing data are:
-`experiment schema upgrade`, `experiment version show/advance/import`,
-`experiment link/unlink`, `experiment variant deprecate/restore`,
-`experiment archive/unarchive`, and `run record/rename/archive/unarchive`.
-These operations preserve their historical validations. They do not introduce
-old version ledgers or binding lists into new lightweight experiments.
+Migration is handled by the concise `memon-migrate-fs` Skill and the guides and
+executors under [packages/core/migrations](packages/core/migrations/README.md).
+The 11 old version/schema/binding/Variant/Run-rename/Run-archive leaves and the
+two migration leaves are removed, bringing the original 90 commands to 19.
+Historical readers remain available; old data does not require retaining its
+old write workflow. Scripts preserve selected scope, native evidence, historical
+timestamps and recovery records. No migration runs as a deployment side effect.
 
 | Removed commands | Replacement |
 |---|---|
@@ -158,6 +156,8 @@ old version ledgers or binding lists into new lightweight experiments.
 | Result setters, annotations, warning/metadata/README setters | Edit the source file, then `refresh` |
 | Index maintenance, result rebuild, manual journal submission | `refresh`; no manual receipt |
 | Project initialization and lint commands | First creation; diagnostics during supported reads/publication |
+| Legacy experiment version/schema/link/Variant operations and Run rename/archive | Migration guides/scripts for conversion; ordinary new research uses directory ownership and Run metadata |
+| Experiment/Report migration commands | `memon-migrate-fs` with the migration directory executors |
 | Wiki commit, search, hypothesis read, delete/rename wrappers | Ordinary Git/file tools; preserve references when moving files |
 
 Exit codes remain 0 success, 1 failed/invalid state, 2 usage, 4 missing target,
@@ -174,7 +174,8 @@ relative symlink.
 
 The existing seven entrypoints remain separate: `memon-research`, `memon-wiki`,
 `memon-components`, `memon-structured-work`, `memon-write-report`,
-`memon-write-code-review` and `memon-migrate-fs`. Their consolidation is deferred.
+`memon-write-code-review` and `memon-migrate-fs`. Their consolidation is deferred. The migration Skill routes conversion to versioned
+scripts rather than public legacy commands.
 For older command examples, use the replacement table above; the registered CLI
 surface and `--help` define supported invocations.
 

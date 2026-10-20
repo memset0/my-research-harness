@@ -1,26 +1,10 @@
-// CLI tests for lifecycle-frontmatter-v4: covers tasks 4.5 + 5.8.
-//
-// Tests:
-//   - `memon experiment status set <exp-id>` — exp-doc form (writes ExperimentStatus
-//     + appends [EXP_STATUS] + soft warning on archived target + BAD_REQUEST on
-//     out-of-enum value)
-//   - `memon experiment status set <run-id>` — deprecation alias to run side
-//   - `memon run archive` — hard rule rejects archive-on-RUNNING, soft warning
-//     when re-modifying archived target (handled by status-set, archive itself
-//     is noop when already archived)
-//   - `memon experiment archive <exp-id>` — exp-side archive writes frontmatter
-//     + appends [ARCHIVE] event
-//
-// These exercise CLI surface only (the dedicated e2e tests). Underlying
-// frontmatter writes are also covered by the parser/serializer/migration
-// tests in @memon/core.
+// Retained Experiment archive behavior across historical formats.
 
 import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { runArchive } from './experiment.js'
 import { runExperimentArchiveDoc, runExperimentUnarchiveDoc } from './experiment-doc.js'
 
 const RUN_RUNNING = `---
@@ -195,28 +179,6 @@ function lastJsonOnStdout(): Record<string, unknown> {
 }
 
 // ---------- 5.x — archive subcommands ----------
-
-describe('memon run archive — hard rule on RUNNING', () => {
-  it('refuses archive when run status is RUNNING (exit 2 BAD_REQUEST)', async () => {
-    let caught: ExitCalled | null = null
-    try {
-      await runArchive({
-        cwd: root,
-        projectRoot: root,
-        runId: 'foo-260513-100000', // RUNNING
-      })
-    } catch (err) {
-      caught = err as ExitCalled
-    }
-    expect(caught?.exitCode).toBe(2)
-    const errBlob = stderrChunks.join('')
-    expect(errBlob).toContain('cannot archive a RUNNING run')
-
-    // README untouched
-    const readme = await fs.readFile(join(root, 'logs', 'foo-260513-100000', 'README.md'), 'utf8')
-    expect(readme).toContain('archived: false')
-  })
-})
 
 describe('memon experiment archive (exp-doc form)', () => {
   it('writes archived: true into the exp doc + appends [ARCHIVE] op=archive', async () => {

@@ -1,17 +1,16 @@
 import type { Command } from 'commander'
 import { runComponentsRun } from './commands/components.js'
-import { registerExperimentMigration } from './commands/experiment-migrate.js'
 import { runJournalRead } from './commands/journal.js'
 import { runMockSeed } from './commands/mock.js'
 import { runServe } from './commands/serve.js'
 import { runShareCreate, runShareList, runShareRevoke } from './commands/share.js'
 import { runUpdate, updateFailed } from './commands/update.js'
-import { runWikiCreate, runWikiMigrateReport, runWikiMove } from './commands/wiki.js'
+import { runWikiCreate, runWikiMove } from './commands/wiki.js'
 import { emitErrorAndExit } from './lib/emit-error.js'
 import { EXIT } from './lib/exit-codes.js'
 import { readGlobalsFor } from './lib/program.js'
 
-export function registerToolsCommands(program: Command, experiment: Command): void {
+export function registerToolsCommands(program: Command): void {
   const readGlobals = () => readGlobalsFor(program)
 
   const mock = program.command('mock').description('manage mock data fixtures')
@@ -141,8 +140,6 @@ export function registerToolsCommands(program: Command, experiment: Command): vo
         await runJournalRead({ ...g, ...opts })
       },
     )
-
-  registerExperimentMigration(experiment, readGlobals)
 
   const share = program
     .command('share')
@@ -291,27 +288,4 @@ export function registerToolsCommands(program: Command, experiment: Command): vo
     .action(async (page: string, target: string, opts: WikiLocalOptions & { status?: string }) => {
       await runWikiMove({ ...wikiGlobals(opts), page, target, status: opts.status })
     })
-
-  wikiCommand(
-    wiki,
-    'migrate-report <report> <kind> [slug]',
-    'move one docs/reports/R<NNNN> into the wiki',
-  )
-    .option('--status <status>', "status from the target kind's vocabulary")
-    .action(
-      async (
-        report: string,
-        kind: string,
-        slug: string | undefined,
-        opts: WikiLocalOptions & { status?: string },
-      ) => {
-        await runWikiMigrateReport({
-          ...wikiGlobals(opts),
-          report,
-          kind,
-          slug,
-          status: opts.status,
-        })
-      },
-    )
 }

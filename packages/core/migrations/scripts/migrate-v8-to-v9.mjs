@@ -1,5 +1,5 @@
 // Operator entry for the mechanical FS v8 -> v9 migration (Results model).
-// See scripts/migrate-v8-to-v9.md and packages/core/migrations/v8-to-v9.md.
+// See packages/core/migrations/scripts/migrate-v8-to-v9.md and packages/core/migrations/v8-to-v9.md.
 // Prints counts and project-relative paths only, never document content; the
 // plan file (mode 0600, outside the project) holds the planned file contents.
 
@@ -10,7 +10,7 @@ import {
   planResultsMigration,
   rollbackResultsMigration,
   verifyResultsMigration,
-} from '../packages/core/dist/migrations/v8-to-v9.js'
+} from '../../dist/migrations/v8-to-v9.js'
 
 const LIST_LIMIT = 40
 const [mode, target, output, ...rest] = process.argv.slice(2)
@@ -24,7 +24,7 @@ const single = (name) => {
 const runDirs = values('--run-dir')
 const runDirOptions = runDirs.length > 0 ? { cliRunDirs: runDirs } : {}
 const usage =
-  'Usage: node scripts/migrate-v8-to-v9.mjs plan PROJECT PLAN [--sidecar-name NAME] [--resolutions FILE] [--allow-dirty] [--run-dir P]... | apply PLAN BACKUP_DIRECTORY [--no-commit] | verify PROJECT [--run-dir P]... | rollback BACKUP_DIRECTORY'
+  'Usage: node packages/core/migrations/scripts/migrate-v8-to-v9.mjs plan PROJECT PLAN [--sidecar-name NAME] [--resolutions FILE] [--allow-dirty] [--run-dir P]... | apply PLAN BACKUP_DIRECTORY [--no-commit] | verify PROJECT [--run-dir P]... | rollback BACKUP_DIRECTORY'
 
 function fail(message, code = 2) {
   console.error(message)

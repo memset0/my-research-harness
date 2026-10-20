@@ -74,7 +74,7 @@ export interface ResultsSummaryError {
   code: ResultsSummaryErrorCode
   message: string
   files: ResultsSummaryErrorFile[]
-  /** `memon experiment schema upgrade <id> --to <N>` for a version mismatch. */
+  /** Shipped migration-script invocation for a historical schema mismatch. */
   upgrade_command?: string
   expected_version?: number
   /** A leftover `results.yaml` (an unmigrated FS v8 bundle). */
@@ -225,7 +225,7 @@ export interface GenerateResultsSummaryInput {
 }
 
 export function schemaUpgradeCommand(experimentId: string, version: number): string {
-  return `memon experiment schema upgrade ${experimentId} --to ${version}`
+  return `node "$MEMON_SOURCE/packages/core/migrations/scripts/experiment-schema.mjs" --project-root . --experiment ${experimentId} --to ${version}`
 }
 
 // ---------- canonical JSON and digest ----------

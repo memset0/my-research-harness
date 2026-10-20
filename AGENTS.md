@@ -99,8 +99,9 @@ Other sources of truth — consult these instead of copying lists here:
 
 - `FS_CONVENTION_VERSION` lives in `packages/core/src/version.ts`.
 - **CLI**: routine leaves are `experiment create`, `run create`, `run update`,
-  `refresh`, `show` and `install-skills`. Another 26 optional/legacy leaves remain
-  under `memon` (32 total); independent entrypoints are deferred. No hidden retired aliases.
+  `refresh`, `show` and `install-skills`. Another 13 optional leaves remain
+  under `memon` (19 total); independent entrypoints are deferred. No hidden retired aliases. Migration executors live under
+  `packages/core/migrations/scripts/` and are invoked through their guides/Skill.
 - **FS11 Experiment**: `docs/experiments/E<NNNN>-<slug>/README.md` and
   `experiment.json` with `format: "lightweight"`, optional groups/columns and
   optional per-Variant `aggregate: "aggregate_variant.py"` settings. Directory

@@ -15,6 +15,7 @@ import {
 } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
+import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import fg from 'fast-glob'
 import yaml from 'js-yaml'
@@ -452,45 +453,23 @@ async function restoreBackup(backup, projectRoot, ids) {
   }
 }
 
-async function runDocumentChecks(projectRoot, ids, memonBin, phase) {
+async function runDocumentChecks(projectRoot, ids, validator, phase) {
+  const executable = validator ?? process.execPath
+  const prefix = validator ? [] : [fileURLToPath(new URL('./inspect.mjs', import.meta.url))]
   for (const id of ids) {
-    for (const operation of ['validate', 'lint']) {
-      let stdout = ''
-      try {
-        const result = await runFile(
-          memonBin,
-          ['--project-root', projectRoot, '--format', 'json', 'experiment', 'doc', operation, id],
-          { maxBuffer: 10 * 1024 * 1024 },
-        )
-        stdout = result.stdout
-      } catch (error) {
-        const detail = error && typeof error === 'object' && 'stdout' in error ? error.stdout : ''
-        fail(`${phase} ${operation} failed for ${id}${detail ? `:\n${detail}` : ''}`)
-      }
-      let parsed
-      try {
-        parsed = JSON.parse(stdout)
-      } catch {
-        fail(`${phase} ${operation} returned invalid JSON for ${id}`)
-      }
-      if (parsed.ok !== true) fail(`${phase} ${operation} reported errors for ${id}`)
+    const args = [...prefix, '--project-root', projectRoot, '--experiment', id]
+    let parsed
+    try {
+      const { stdout } = await runFile(executable, args, { maxBuffer: 10 * 1024 * 1024 })
+      parsed = JSON.parse(stdout)
+    } catch (error) {
+      fail(`${phase} inspection failed for ${id}: ${error.stderr ?? error.message}`)
     }
+    if (parsed.ok !== true) fail(`${phase} inspection reported errors for ${id}`)
     for (const section of MANAGED_SECTIONS) {
-      const { stdout } = await runFile(
-        memonBin,
-        [
-          '--project-root',
-          projectRoot,
-          '--format',
-          'human',
-          'experiment',
-          'doc',
-          'render',
-          id,
-          section,
-        ],
-        { maxBuffer: 10 * 1024 * 1024 },
-      )
+      const { stdout } = await runFile(executable, [...args, '--section', section], {
+        maxBuffer: 10 * 1024 * 1024,
+      })
       if (!stdout.trim()) fail(`${phase} render returned empty output for ${id}/${section}`)
     }
   }
@@ -646,7 +625,7 @@ async function main() {
   if (command === 'approve') return approve(staging, required(flags, 'experiment'))
   if (command === 'verify') return verify(staging)
   if (command === 'publish') {
-    return publish(staging, required(flags, 'confirm'), flags.get('memon-bin') ?? 'memon')
+    return publish(staging, required(flags, 'confirm'), flags.get('validator'))
   }
   fail('usage: v5-to-v6-stage.mjs {init|status|approve|verify|publish} ...')
 }

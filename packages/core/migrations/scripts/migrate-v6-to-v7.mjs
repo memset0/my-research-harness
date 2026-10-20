@@ -3,7 +3,7 @@ import {
   applyMembershipMigration,
   planMembershipMigration,
   rollbackMembershipMigration,
-} from '../packages/core/dist/index.js'
+} from '../../dist/index.js'
 
 const [mode, target, output, ...flags] = process.argv.slice(2)
 if (mode === 'plan' && target && output) {
@@ -49,6 +49,6 @@ if (mode === 'plan' && target && output) {
   console.log('Migration applied and file postimages verified')
 } else {
   throw new Error(
-    'Usage: node scripts/migrate-v6-to-v7.mjs plan PROJECT PLAN [--allow-dirty --drop-run-only-claims --keep-version] | apply PLAN BACKUP_DIRECTORY | verify PROJECT [--keep-version] | rollback BACKUP_DIRECTORY',
+    'Usage: node packages/core/migrations/scripts/migrate-v6-to-v7.mjs plan PROJECT PLAN [--allow-dirty --drop-run-only-claims --keep-version] | apply PLAN BACKUP_DIRECTORY | verify PROJECT [--keep-version] | rollback BACKUP_DIRECTORY',
   )
 }

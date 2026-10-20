@@ -18,18 +18,18 @@ rewritten, no ownership is guessed, and nothing is regenerated from judgement.
 Anything the plan cannot decide mechanically is reported as a blocker for the
 user to resolve before a fresh plan is made.
 
-The executor is `scripts/migrate-v6-to-v7.mjs` in the reviewed memon checkout
+The executor is `packages/core/migrations/scripts/migrate-v6-to-v7.mjs` in the reviewed memon checkout
 (`$MEMON_SOURCE`); it calls the planner, applier and rollback in `@memon/core`.
 Build Core from that checkout before running it (`pnpm --filter @memon/core
 build`), and never rebuild the output directory of a running service. The same
 script with `--keep-version` is the separate, operator-approved data-only
-preparation described in `scripts/migrate-v6-to-v7.md`; it is not this step.
+preparation described in `packages/core/migrations/scripts/migrate-v6-to-v7.md`; it is not this step.
 
 ## Detection
 
 - `test "$(jq -r .fs_convention_version "$PROJECT_ROOT/.memon/version.json")" = 6 && echo V6` — the project is at v6. If it prints nothing, stop: this guide does not apply.
-- `memon fs-version check --project-root "$PROJECT_ROOT" --format json | jq -r .status` — prints `behind` when the running memon expects v7.
-- `test -f "$MEMON_SOURCE/scripts/migrate-v6-to-v7.mjs" && test -f "$MEMON_SOURCE/packages/core/dist/index.js" && echo EXECUTOR` — the reviewed checkout and its built Core are present.
+- `jq -r .fs_convention_version "$PROJECT_ROOT/.memon/version.json"` — prints the recorded convention; use the guide for that consecutive step.
+- `test -f "$MEMON_SOURCE/packages/core/migrations/scripts/migrate-v6-to-v7.mjs" && test -f "$MEMON_SOURCE/packages/core/dist/index.js" && echo EXECUTOR` — the reviewed checkout and its built Core are present.
 - `git -C "$PROJECT_ROOT" rev-parse --show-toplevel 2>/dev/null || echo NON_GIT_MODE` — selects Git mode or non-Git mode for commit and rollback handling.
 - `git -C "$PROJECT_ROOT" status --porcelain=v1 --untracked-files=all` — in Git mode, a non-empty result means the worktree is dirty (see Edge Cases).
 - `ls "$PROJECT_ROOT/docs/digests" 2>/dev/null | grep -E '^D[0-9]{4}-'` — lists legacy Digests that this migration converts.
@@ -40,7 +40,7 @@ Run these steps in order.
 
 1. Create the plan outside the project. The plan is read-only and contains full
    preimages, so keep it in a private directory and never commit or print it:
-   `node "$MEMON_SOURCE/scripts/migrate-v6-to-v7.mjs" plan "$PROJECT_ROOT" "$PLAN_FILE"`.
+   `node "$MEMON_SOURCE/packages/core/migrations/scripts/migrate-v6-to-v7.mjs" plan "$PROJECT_ROOT" "$PLAN_FILE"`.
    Add `--allow-dirty` only after the user approves migrating a dirty worktree.
    Add `--drop-run-only-claims` only after the user approves every listed Run-only
    claim being dropped.
@@ -50,7 +50,7 @@ Run these steps in order.
 3. Show the user the counts, every Digest `source → target` pair and the
    warnings. Continue only after the user approves this exact plan.
 4. Apply it with a new backup directory outside the project:
-   `node "$MEMON_SOURCE/scripts/migrate-v6-to-v7.mjs" apply "$PLAN_FILE" "$BACKUP_DIRECTORY"`.
+   `node "$MEMON_SOURCE/packages/core/migrations/scripts/migrate-v6-to-v7.mjs" apply "$PLAN_FILE" "$BACKUP_DIRECTORY"`.
    The executor rechecks every fingerprint, writes each file atomically, verifies
    the result, and writes the marker last. If it fails, go to Rollback Notes.
 
@@ -157,16 +157,16 @@ kept; `last_migrated_at` is the local offset-aware time of the apply.
 ```bash
 # 1. The marker records v7.
 test "$(jq -r .fs_convention_version "$PROJECT_ROOT/.memon/version.json")" = 7 && echo OK
-# 2. The running memon agrees with the marker.
-memon fs-version check --project-root "$PROJECT_ROOT" --format json | jq -e '.status == "match"' >/dev/null && echo OK
+# 2. The installed tool can read this historical marker.
+test "$(jq -r .fs_convention_version "$PROJECT_ROOT/.memon/version.json")" -le "$(memon --version | cut -d. -f1)" && echo OK
 # 3. Every Experiment declaration is a project-relative path, not a bare Run ID.
-memon experiment ls --project-root "$PROJECT_ROOT" | jq -e '[.experiments[].runs[] | select(contains("/") | not)] | length == 0' >/dev/null && echo OK
+node "$MEMON_SOURCE/packages/core/migrations/scripts/inspect.mjs" --project-root "$PROJECT_ROOT" | jq -e '[.experiments[].runs[] | select(contains("/") | not)] | length == 0' >/dev/null && echo OK
 # 4. No declared member README still carries the legacy parent field.
-memon experiment ls --project-root "$PROJECT_ROOT" | jq -r '.experiments[].runs[]' | { while IFS= read -r run; do if test -f "$PROJECT_ROOT/$run/README.md" && grep -q '^experiment:' "$PROJECT_ROOT/$run/README.md"; then echo "LEFTOVER $run"; exit 1; fi; done; } && echo OK
+node "$MEMON_SOURCE/packages/core/migrations/scripts/inspect.mjs" --project-root "$PROJECT_ROOT" | jq -r '.experiments[].runs[]' | { while IFS= read -r run; do if test -f "$PROJECT_ROOT/$run/README.md" && grep -q '^experiment:' "$PROJECT_ROOT/$run/README.md"; then echo "LEFTOVER $run"; exit 1; fi; done; } && echo OK
 # 5. No legacy Digest file remains.
 test -z "$(ls "$PROJECT_ROOT/docs/digests" 2>/dev/null | grep -E '^D[0-9]{4}-')" && echo OK
 # 6. Migrated Digests are listed as Wiki pages.
-memon wiki ls --project-root "$PROJECT_ROOT" --kind digest --format json | jq -e '.pages | type == "array"' >/dev/null && echo OK
+node "$MEMON_SOURCE/packages/core/migrations/scripts/inspect.mjs" --project-root "$PROJECT_ROOT" | jq -e '.pages | type == "array"' >/dev/null && echo OK
 # 7. The recovery receipt is retained outside the project.
 test -f "$BACKUP_DIRECTORY/plan.json" && echo OK
 ```
@@ -174,7 +174,7 @@ test -f "$BACKUP_DIRECTORY/plan.json" && echo OK
 ## Rollback Notes
 
 If any step fails, tell the user the migration did not complete, stop every
-writer, and restore with `node "$MEMON_SOURCE/scripts/migrate-v6-to-v7.mjs" rollback "$BACKUP_DIRECTORY"`;
+writer, and restore with `node "$MEMON_SOURCE/packages/core/migrations/scripts/migrate-v6-to-v7.mjs" rollback "$BACKUP_DIRECTORY"`;
 it restores only files that still match this migration's output and refuses files
 changed since, so report any such file for manual reconciliation instead of
 overwriting it. In Git mode, after a successful migration stage only the

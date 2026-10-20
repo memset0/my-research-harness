@@ -203,14 +203,14 @@ export async function writeRunResult(input: WriteRunResultInput): Promise<WriteR
   } catch (error) {
     throw new MutationError(
       'BAD_STATE',
-      `${runPath} is declared by more than one Experiment; reconcile the declarations with \`memon experiment unlink\` first (${(error as Error).message})`,
+      `${runPath} is declared by more than one Experiment; reconcile the legacy declarations before conversion (${(error as Error).message})`,
       { reason: 'RESULT_OWNER_AMBIGUOUS', details: { run: runPath } },
     )
   }
   if (owner === null)
     throw new MutationError(
       'BAD_STATE',
-      `${runPath} is declared by no Experiment; declare it with \`memon experiment link <experiment> ${runPath}\` before recording results`,
+      `${runPath} is declared by no Experiment; reconcile the legacy declarations or use the scoped migration guide before recording results`,
       { reason: 'RESULT_OWNER_MISSING', details: { run: runPath } },
     )
   const descriptionPath = join(

@@ -232,8 +232,8 @@ find docs/experiments -mindepth 1 -maxdepth 1 -type d -name 'E*-*' | while read 
 done
 echo OK
 
-# 4. `memon experiment ls` parses cleanly (no LEGACY_LAYOUT warnings).
-memon experiment ls --project-root . --format json | jq -e '.experiments | all(.parseWarnings | all(.message | contains("LEGACY_LAYOUT") | not))' >/dev/null && echo OK
+# 4. The migration inspector parses declarations cleanly (no LEGACY_LAYOUT warnings).
+node "$MEMON_SOURCE/packages/core/migrations/scripts/inspect.mjs" --project-root . | jq -e '.experiments | all(.parseWarnings | all(.message | contains("LEGACY_LAYOUT") | not))' >/dev/null && echo OK
 ```
 
 All four checks SHALL print `OK` on a successful migration.

@@ -53,7 +53,7 @@ describe('v8-to-v9 migration guide', () => {
     const background = flat(section('Background / Why'))
     expect(background).toMatch(/\*\*mechanical\*\*/)
     expect(background).toContain('`run-results-v9`')
-    expect(background).toContain('scripts/migrate-v8-to-v9.mjs')
+    expect(background).toContain('packages/core/migrations/scripts/migrate-v8-to-v9.mjs')
     expect(background).toMatch(/never creates, edits or deletes `\.memon\/project\.yml`/)
   })
 
@@ -102,7 +102,9 @@ describe('v8-to-v9 migration guide', () => {
     expect(commands.length).toBeGreaterThan(0)
     for (const command of commands) {
       expect(command).toMatch(/&& echo OK$/)
-      expect(command).not.toMatch(/\b(node|python3?|yq|xmllint|sed|awk|perl)\b/)
+      if (/\bnode\b/.test(command))
+        expect(command).toContain('node "$MEMON_SOURCE/packages/core/migrations/scripts/')
+      expect(command).not.toMatch(/\b(python3?|yq|xmllint|sed|awk|perl)\b/)
     }
   })
 
@@ -113,9 +115,8 @@ describe('v8-to-v9 migration guide', () => {
     // Symlinked Run paths are probed at their real path (check-ignore rejects a symlink).
     expect(verification).toContain('realpath -e -- "$PROJECT_ROOT/$RUN"')
     expect(verification).toContain('OUTSIDE_PROJECT')
-    expect(verification).toContain('experiment results rebuild --all')
-    expect(verification).toContain('.snapshot.indexVersion == 2')
-    expect(verification).toContain('memon index status --verify --strict')
+    expect(verification).toContain('--results')
+    expect(verification).toContain('--verify-index')
     expect(verification).toContain('docs/experiments/E[0-9][0-9][0-9][0-9]-*/results.yaml')
   })
 
