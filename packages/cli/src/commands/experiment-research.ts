@@ -180,31 +180,33 @@ export function registerExperimentResearchCommands(
         opts: { id?: string; name?: string; draft?: string; params?: string },
       ) => {
         const t = await target({ ...globals(), idOrSlug })
-        try {
-          const result = await createLightweightVariant({
-            projectRoot: t.projectRoot,
-            experimentId: t.experimentId,
-            ...opts,
-            params: opts.params === undefined ? undefined : JSON.parse(opts.params),
-          })
-          const event = await publishLightweightWrite(
-            t.projectRoot,
-            `logs/${t.experimentId.slice(0, 5)}/${result.id}/${result.runId}`,
-            result.changes,
-          )
-          emitJson({
-            ok: true,
-            id: result.id,
-            runId: result.runId,
-            path: `logs/${t.experimentId.slice(0, 5)}/${result.id}/${result.runId}`,
-            ...indexWarningFields({ indexWarnings: event }),
-          })
-        } catch (error) {
-          emitErrorAndExit(
-            (error as { code?: string }).code === 'CONFLICT' ? 'CONFLICT' : 'BAD_REQUEST',
-            (error as Error).message,
-          )
-        }
+        return withCliWriterLock(t.projectRoot, async () => {
+          try {
+            const result = await createLightweightVariant({
+              projectRoot: t.projectRoot,
+              experimentId: t.experimentId,
+              ...opts,
+              params: opts.params === undefined ? undefined : JSON.parse(opts.params),
+            })
+            const event = await publishLightweightWrite(
+              t.projectRoot,
+              `logs/${t.experimentId.slice(0, 5)}/${result.id}/${result.runId}`,
+              result.changes,
+            )
+            emitJson({
+              ok: true,
+              id: result.id,
+              runId: result.runId,
+              path: `logs/${t.experimentId.slice(0, 5)}/${result.id}/${result.runId}`,
+              ...indexWarningFields({ indexWarnings: event }),
+            })
+          } catch (error) {
+            emitErrorAndExit(
+              (error as { code?: string }).code === 'CONFLICT' ? 'CONFLICT' : 'BAD_REQUEST',
+              (error as Error).message,
+            )
+          }
+        })
       },
     )
   locked(variant.command('deprecate <id-or-slug> <variant>', { hidden: true }))

@@ -99,6 +99,8 @@ export const CLI_LEDGER_CLASSES: Readonly<Record<string, CliLedgerClass>> = {
   'experiment ls': 'readonly',
   'experiment show': 'readonly',
   'experiment create': 'project',
+  'experiment migrate': 'project',
+  'experiment variant create': 'project',
   'experiment version show': 'readonly',
   'experiment version advance': 'project',
   'experiment version import': 'project',

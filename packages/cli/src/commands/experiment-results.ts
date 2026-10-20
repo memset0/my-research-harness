@@ -48,6 +48,7 @@ import {
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { cliIndexSink, indexWarningFields } from '../lib/index-sink.js'
+import { withCliWriterLock } from '../lib/invocation.js'
 import { cliMutation } from '../lib/mutation-error.js'
 import { emitJson, type OutputFormat } from '../lib/output.js'
 import {
@@ -514,74 +515,76 @@ export async function runExperimentResultsRebuild(
     emitErrorAndExit('BAD_REQUEST', 'name one Experiment or pass --all (not both)')
   const context = await resolveContext(input)
   const projectRoot = singleProjectRoot(context)
-  let experiments: string[] | undefined
-  if (input.idOrSlug !== undefined) {
-    const id = await resolveExperimentId(projectRoot, input.idOrSlug)
-    if (!id) emitErrorAndExit('NOT_FOUND', `experiment "${input.idOrSlug}" not found`)
-    experiments = [id]
-  }
-  const rebuilt: Awaited<ReturnType<typeof rebuildResultsSummaries>> = []
-  let conflict = false
-  for (const id of experiments ?? (await listExperimentIds(projectRoot))) {
-    const description = await readDescription(projectRoot, id)
-    if (description?.data?.format !== 'lightweight') {
-      rebuilt.push(
-        ...(await rebuildResultsSummaries(projectRoot, { role: 'cli', experiments: [id] })),
+  return withCliWriterLock(projectRoot, async () => {
+    let experiments: string[] | undefined
+    if (input.idOrSlug !== undefined) {
+      const id = await resolveExperimentId(projectRoot, input.idOrSlug)
+      if (!id) emitErrorAndExit('NOT_FOUND', `experiment "${input.idOrSlug}" not found`)
+      experiments = [id]
+    }
+    const rebuilt: Awaited<ReturnType<typeof rebuildResultsSummaries>> = []
+    let conflict = false
+    for (const id of experiments ?? (await listExperimentIds(projectRoot))) {
+      const description = await readDescription(projectRoot, id)
+      if (description?.data?.format !== 'lightweight') {
+        rebuilt.push(
+          ...(await rebuildResultsSummaries(projectRoot, { role: 'cli', experiments: [id] })),
+        )
+        continue
+      }
+      try {
+        const result = await aggregateLightweightExperiment({ projectRoot, experimentId: id })
+        const event = await publishMutationEvent(cliIndexSink(projectRoot), 'experiment.results', [
+          { path: result.path, after: result.content },
+        ])
+        indexWarningFields({ indexWarnings: event })
+        rebuilt.push({ id, status: result.changed ? 'regenerated' : 'unchanged', warnings: [] })
+      } catch (error) {
+        conflict ||= (error as { code?: string }).code === 'CONFLICT'
+        rebuilt.push({
+          id,
+          status: 'failed',
+          error: {
+            code: 'INVALID_RESULTS',
+            message: (error as Error).message,
+            files: [{ path: `${EXPERIMENTS_RELDIR}/${id}/${EXPERIMENT_RESULTS_FILE}` }],
+          },
+          warnings: [],
+        })
+      }
+    }
+    const counts = { regenerated: 0, unchanged: 0, failed: 0 }
+    for (const item of rebuilt) counts[item.status] += 1
+    for (const item of rebuilt) reportWarnings(item.warnings)
+    const output = {
+      ok: counts.failed === 0,
+      experiments: rebuilt.map((item) => ({
+        id: item.id,
+        status: item.status,
+        ...(item.error
+          ? {
+              error: {
+                code: item.error.code,
+                message: item.error.message,
+                ...summaryErrorDetails(item.error),
+              },
+            }
+          : {}),
+        ...(item.warnings.length > 0 ? { warnings: item.warnings } : {}),
+      })),
+      counts,
+    }
+    if (input.format === 'human') {
+      const lines = rebuilt.map(
+        (item) =>
+          `${item.id.padEnd(40)} ${item.status}${item.error ? `  ${item.error.code}: ${item.error.message}` : ''}`,
       )
-      continue
-    }
-    try {
-      const result = await aggregateLightweightExperiment({ projectRoot, experimentId: id })
-      const event = await publishMutationEvent(cliIndexSink(projectRoot), 'experiment.results', [
-        { path: result.path, after: result.content },
-      ])
-      indexWarningFields({ indexWarnings: event })
-      rebuilt.push({ id, status: result.changed ? 'regenerated' : 'unchanged', warnings: [] })
-    } catch (error) {
-      conflict ||= (error as { code?: string }).code === 'CONFLICT'
-      rebuilt.push({
-        id,
-        status: 'failed',
-        error: {
-          code: 'INVALID_RESULTS',
-          message: (error as Error).message,
-          files: [{ path: `${EXPERIMENTS_RELDIR}/${id}/${EXPERIMENT_RESULTS_FILE}` }],
-        },
-        warnings: [],
-      })
-    }
-  }
-  const counts = { regenerated: 0, unchanged: 0, failed: 0 }
-  for (const item of rebuilt) counts[item.status] += 1
-  for (const item of rebuilt) reportWarnings(item.warnings)
-  const output = {
-    ok: counts.failed === 0,
-    experiments: rebuilt.map((item) => ({
-      id: item.id,
-      status: item.status,
-      ...(item.error
-        ? {
-            error: {
-              code: item.error.code,
-              message: item.error.message,
-              ...summaryErrorDetails(item.error),
-            },
-          }
-        : {}),
-      ...(item.warnings.length > 0 ? { warnings: item.warnings } : {}),
-    })),
-    counts,
-  }
-  if (input.format === 'human') {
-    const lines = rebuilt.map(
-      (item) =>
-        `${item.id.padEnd(40)} ${item.status}${item.error ? `  ${item.error.code}: ${item.error.message}` : ''}`,
-    )
-    process.stdout.write(
-      `${lines.length > 0 ? lines.join('\n') : '(no experiments)'}\n${counts.regenerated} regenerated, ${counts.unchanged} unchanged, ${counts.failed} failed\n`,
-    )
-  } else emitJson(output)
-  if (counts.failed > 0) process.exitCode = conflict ? 9 : 1
+      process.stdout.write(
+        `${lines.length > 0 ? lines.join('\n') : '(no experiments)'}\n${counts.regenerated} regenerated, ${counts.unchanged} unchanged, ${counts.failed} failed\n`,
+      )
+    } else emitJson(output)
+    if (counts.failed > 0) process.exitCode = conflict ? 9 : 1
+  })
 }
 
 // ---------- annotation read/write ----------
