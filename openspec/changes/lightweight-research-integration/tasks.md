@@ -13,6 +13,7 @@
 
 - [x] 3.1 Implement a scoped v10-to-v11 migration plan/apply/verify path and seven-section guide, preserving raw outputs, references, times, assessments and optional deprecated-format README sections; verify selected-experiment migration, legacy coexistence and running-Run refusal on neutral fixtures.
 - [x] 3.2 Consolidate bundled research skills and optional workflows, remove obsolete required scaffolding and review instructions, and update skill installation retirement handling; verify skill validators, generated references and fresh/update installations.
+- [x] 3.3 Shorten all skill entrypoints and HTML references; keep essential contracts, move the generated component catalog out of the entrypoint, and verify generation, skill validation and installation.
 
 ## 4. Integration verification
 

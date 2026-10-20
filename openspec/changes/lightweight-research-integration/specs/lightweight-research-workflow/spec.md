@@ -35,6 +35,8 @@ FS11 project initialization SHALL support creating lightweight experiments and J
 ### Requirement: Agent instructions use the lightweight workflow
 Bundled research skills SHALL teach a concise create, execute, update and inspect workflow without mandatory implementation/investigation phases, Run prose, research epochs or Wiki feedback after every execution. Optional detailed workflows SHALL remain separately discoverable. The main CLI help SHALL prioritize supported lightweight commands and identify retained legacy operations as compatibility tools.
 
+All bundled skill entrypoints SHALL retain essential file contracts and authority boundaries without generic tutorials, duplicated procedures, fixed prose outlines or mandatory draft approval. Detailed component fields SHALL remain generated and available on demand; HTML references SHALL describe the container rather than prescribe analytical or authoring workflows.
+
 #### Scenario: Ordinary experiment needs no workflow scaffolding
 - **WHEN** an agent follows the default research skill to create an experiment and execute a Variant
 - **THEN** it can complete the task with CLI-maintained Run metadata and native result files without creating task ledgers or Run README prose

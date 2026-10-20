@@ -9,6 +9,7 @@ The lightweight experiment and Run primitives need an end-to-end workflow: the d
 - Publish a usable index snapshot after writes and provide one explicit refresh path after direct edits. Registered projects use the snapshot for inventories rather than repeatedly walking directories.
 - Derive membership from directories and select evidence through each Run’s independent `active` flag. Prepared Run parameters replace Variant drafts; names are optional Run facts. Refresh `run.json → result.csv → results.csv` after supported lifecycle writes, preserving measurements and surfacing partial publication failures.
 - Simplify the research CLI help and bundled skills around creating, running, updating, refreshing and interpreting evidence. Keep optional implementation/investigation guidance separate.
+- Keep every bundled skill concise: remove repeated procedures and compulsory narrative templates; load component fields and HTML container details only when needed.
 - **BREAKING**: introduce FS11 with an explicit, scoped migration guide and tools. New projects use the lightweight layout; migration preserves raw artifacts, original times, historical links and measurement qualifications without requiring exhaustive metric extraction.
 
 ## Capabilities

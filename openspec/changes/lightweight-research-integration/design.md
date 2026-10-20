@@ -19,6 +19,7 @@ Non-goals: bulk project conversion, changing research classifications without in
 - FS11 ordinary inventory uses the published snapshot. Writers merge events and compact under the existing lease. Keep explicit rebuild/refresh for external edits and a clear partial-write error for failed publication. Avoid a second registry or a remote database.
 - Keep native configuration/log/output formats and extract only currently useful result fields. A scoped migration manifest records old/new paths, selected evidence and retained qualifications. Keep old path aliases for historical references, exclude aliases from canonical discovery, and avoid moving running directories. Keep unmigrated legacy experiments readable.
 - Consolidate default research instructions around the natural work loop. Retain specialized components, migrations and optional investigation/development guidance only where useful; remove fixed coordination roles and duplicate procedural preflights. Legacy commands remain callable where needed but are not the default tutorial.
+- Skill entrypoints retain purpose, file contracts and consequential boundaries. Remove generic tutorials, duplicate checklists, per-draft approval ceremonies and fixed document outlines. Keep one shared preflight, compact optional references, and a generated component catalog outside the entrypoint. Preserve code-review human flags, evidence provenance, timestamp/locking rules and static HTML containment.
 
 ## Risks / Trade-offs
 

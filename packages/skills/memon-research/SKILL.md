@@ -1,109 +1,54 @@
 ---
 name: memon-research
-description: "Conduct and maintain experiments with memon: define variants, run or resume work, extract useful results, and explain research conclusions. Use for research tasks and experiment maintenance; use memon-wiki for durable project-level explanations."
+description: Create, run and analyze memon experiments; maintain their evidence and conclusions.
 ---
 
-# Research with memon
+# Research
 
-Read `../PREFLIGHT.md` once for the project. Work normally: inspect code and
-existing evidence, write the code or analysis, execute within the user's
-resource authorization, and explain what changed in our understanding.
-Use memon to record identities and execution facts, not to dictate the research.
+Read `../PREFLIGHT.md` once. Work from the research question: write code, execute
+within the authorized resources, analyze native outputs, and update conclusions.
 
-## Small default workflow
+## Files and commands
 
-Use `memon --project-root .` with the following command families; consult
-`--help` for options rather than reproducing a long command checklist.
+Commands below use `memon --project-root .`:
 
-- `project init` initializes a new project. Existing projects keep their format
-  until an explicitly scoped migration.
-- `experiment create <slug>` creates a free-form README and `experiment.json`.
-- `experiment variant create <experiment>` prepares a new Variant and its first
-  READY Run. Continue using the returned Run path; do not create it twice.
-- `run create --experiment <experiment> --variant V0001` creates a directory
-  and `run.json`, also creating the Variant directory if needed. It does not
-  launch a job. Use `--variant smoke` for checks and `--params <json>` for a plan.
-- `run update <path> --status READY|QUEUED|RUNNING|FINISHED|INTERRUPTED|FAILED|RESUME_READY|UNKNOWN`
-  records observed execution state; options also record job ID, W&B and times.
-  The website displays JSON Run metadata read-only; lifecycle writes belong on
-  the source CLI so exports and registration stay together.
-- `run result set <path> metrics.loss=0.2` records
-  a useful result. Native logs and configs remain valid sources; extract more
-  only when needed.
-- CLI creation, status/activity changes and result writes refresh `run.json →
-  result.csv → results.csv`. Use `experiment results rebuild <experiment>` after
-  direct edits or native result extraction. Commit the CSVs and metadata for
-  browsing; a failed publication needs repair before trusting the displayed table.
+- `experiment create <slug>` creates `README.md` and `experiment.json`.
+- `experiment variant create <E-id> --params '<json>'` prepares a Variant's
+  first READY Run. Use the returned path; do not create another draft registry.
+- `run create --experiment <E-id> --variant V0001` creates another execution;
+  use `--variant smoke` for program/environment checks.
+- `run update <path>` records status, parameters, tracking links and optional
+  explanations. `run result set <path> metrics.loss=0.2` records useful results.
 
-Create drafts before costly work when a plan is useful. Do not require a new
-approval when the user's task already authorizes execution. Resume an existing
-Run in place; a new attempt receives its own directory. A Run belongs to one
-Experiment and one Variant through `logs/E0001/V0001/<runid>/`. Smoke directories
-use `logs/E0001/smoke/<runid>/`; their execution state matters but their outputs
-are excluded from formal aggregation. Never create a Run README for FS11.
+Ownership comes from `logs/E0001/V0001/<runid>/` or `logs/E0001/smoke/<runid>/`.
+`run.json` holds execution facts; no Run README or binding list is needed.
+READY means prepared, QUEUED means submitted, and RESUME_READY means prepared
+continuation. Other states are RUNNING, FINISHED, FAILED, INTERRUPTED and UNKNOWN;
+legacy PENDING remains ambiguous. READY parameters are plans, not measurements.
+Resume preserves identity and the actual conditions of existing measurements.
 
-## Variant intent and evidence
+`active` independently selects evidence. The first Run is active; use
+`--activate` to replace it or `--active false` to retain only its history.
+Default aggregation permits at most one active Run per ordinary Variant;
+smoke never contributes formal results. For multiple inputs or custom logic,
+read [aggregation.md](aggregation.md). Optional names live on the Run.
 
-`experiment.json` contains `format: "lightweight"`, optional `groups`/`columns`,
-and per-Variant settings only when needed (for example custom aggregation).
-It has no Run bindings, required names or drafts. Directory paths determine
-ownership. A prepared Run can be as small as:
+CLI writes refresh `run.json → result.csv → results.csv` and the index.
+Use `experiment results rebuild <E-id>` after manual extraction or direct edits.
+Extract only useful fields; retain native evidence. `experiment.json` holds
+presentation columns/groups and optional aggregation settings, not a second plan.
 
-```json
-{
-  "id": "trial-a",
-  "status": "READY",
-  "active": true,
-  "created_at": "2026-10-20T12:00:00+08:00",
-  "params": { "learning_rate": 0.0001 }
-}
-```
+## Research explanation
 
-Let the CLI generate identity and current local-offset times. READY is prepared
-but unsubmitted; QUEUED is submitted; RESUME_READY is prepared continuation but
-not resubmitted. Legacy PENDING is ambiguous: do not guess which it means.
-Partial parameters are enough to review a plan. READY parameters are planned;
-READY outputs never become measured evidence. Preserve actual conditions beside
-existing measurements when preparing resume.
+Keep questions, cross-Run evidence, current conclusions and limitations together
+in the Experiment README. Revise it when understanding changes; avoid per-Run
+bullet logs. Independent technical explanations may go in `details/`.
+Create implementation/investigation documents only on explicit request, using
+`memon-structured-work`. Update Wiki when understanding or direction changes.
 
-`active` controls current Variant participation independently of process state.
-The first Run is active by default; new attempts do not replace it unless
-`--activate` is given. `run update <path> --active false` keeps history without
-using its values. Optional `--name`, `--description`, or `--assessment
-INVALID|LIMITED|SUPERSEDED|OTHER --reason <text>` record useful context only.
-Inactivity alone does not mean invalid measurement. Do not maintain imported
-`legacy_sections` on new Runs: they are a compatibility container for old prose.
-
-The default aggregator accepts zero or one active Run per ordinary Variant.
-Multiple active Runs require `variants.V0001.aggregate: "aggregate_variant.py"`
-in experiment.json; use `--active true` to add a selected input intentionally.
-Read [aggregation.md](aggregation.md) only for custom aggregation. Explicit
-`run.*` columns project chosen metadata, such as status or a scheduler job ID.
-Saved `results.csv` has only `variant,path,stat,value`, with no cache fields.
-
-## Maintain the explanation, not a diary
-
-Keep the Experiment README short: the question, current judgment, useful
-comparisons, qualifications and links. Revise the existing analysis when the
-evidence changes; do not append one bullet per Run. Put independent technical
-setup or secondary analyses in `details/` only when they need their own file.
-Keep cross-Run evidence and conclusions together. Do not create implementation
-or investigation documents unless explicitly requested; use
-`memon-structured-work` for that optional workflow.
-
-Retirement means leaving the research direction, not invalid measurement.
-Distinguish wrong measurements, limited precision and superseded methods in
-Run assessments and the conclusion. Preserve reusable evidence and old links.
-For a fundamentally invalidated experiment, create a new E number and retire
-the old one; FS11 has no experiment epoch or research-version ledger.
-
-Change lifecycle only as authorized by the owner: ACTIVE, PAUSED, ARCHIVED
-(phase set aside, still relevant) or RETIRED (direction exited). RUNNING and
-COMPLETED are derived display states. A finished Run does not complete research.
-Update Wiki when understanding, direction or an important explanation changes.
-
-After direct Run/config/result edits, rebuild the affected experiment results,
-then run `memon index rebuild` once for the batch. CLI
-writers publish the inventory themselves; report incomplete registration and
-repair it explicitly. Never hand-edit the cache. Use native artifacts and
-scripts freely; neither a template nor a dashboard should limit the analysis.
+Inactivity and retirement do not imply invalid measurement. Use optional Run
+assessments INVALID, LIMITED, SUPERSEDED or OTHER with a reason when needed.
+Imported `legacy_sections` preserve old prose; do not maintain them for new Runs.
+A fundamental redo gets a new E ID, not an experiment epoch. Change lifecycle
+ACTIVE/PAUSED/ARCHIVED/RETIRED only within the owner's authorization;
+RUNNING/COMPLETED are derived display states.
