@@ -171,3 +171,70 @@ it('reports invalid direct metadata and Wiki edits during publication', async ()
     expect.arrayContaining([expect.objectContaining({ severity: 'error' })]),
   )
 })
+
+const wikiPage = (pageId: string) =>
+  `---\nid: ${pageId}\nkind: finding\ntitle: ${pageId}\nstatus: TENTATIVE\ncreated_at: ${timestamp}\nupdated_at: ${timestamp}\n---\n# ${pageId}\n`
+
+async function put(path: string, content: string): Promise<void> {
+  await fs.mkdir(path.slice(0, path.lastIndexOf('/')), { recursive: true })
+  await fs.writeFile(path, content)
+}
+
+it('refuses publication, listing every unindexable document, and leaves the index unchanged', async () => {
+  const { project, base } = await fixture()
+  const wikiBefore = await fs.readFile(project.path('.memon/index/wiki.json'), 'utf8')
+  await put(project.path('docs/reports/R0001-broken/manifest.json'), '{"type":"html"}\n')
+  await put(project.path('docs/reports/R0002-also/manifest.json'), '{"type":"html"}\n')
+  await put(project.path('docs/wiki/finding/W0001-first/README.md'), wikiPage('W0001'))
+
+  const refused = await captureCli(() => runRefresh({ ...base, experiments: [] }))
+
+  expect(refused.exitCode).not.toBe(0)
+  expect(refused.error).toMatchObject({ code: 'INVALID_DOCUMENTS' })
+  const details = (refused.error as { details?: { published: boolean; invalid: unknown[] } })
+    .details
+  expect(details?.published).toBe(false)
+  expect(details?.invalid).toHaveLength(2)
+  expect(await fs.readFile(project.path('.memon/index/wiki.json'), 'utf8')).toBe(wikiBefore)
+
+  // The refusal released the project writer lock: a repaired tree publishes.
+  await fs.rm(project.path('docs/reports'), { recursive: true })
+  const repaired = await captureCli(() => runRefresh({ ...base, experiments: [] }))
+  expect(repaired.exitCode).toBe(0)
+  expect(repaired.json).toMatchObject({ published: true, counts: { wiki: 1, reports: 0 } })
+})
+
+it('checks the published index without writing and reports it current after refresh', async () => {
+  const { project, base } = await fixture()
+  await put(project.path('docs/wiki/finding/W0001-first/README.md'), wikiPage('W0001'))
+  await put(
+    project.path('docs/reports/R0001-weekly/README.md'),
+    `---\ntitle: Weekly\ncreated_at: ${timestamp}\n---\n# Weekly\n`,
+  )
+  const wikiBefore = await fs.readFile(project.path('.memon/index/wiki.json'), 'utf8')
+
+  const stale = await captureCli(() => runRefresh({ ...base, experiments: [], check: true }))
+  expect(stale.exitCode).toBe(1)
+  expect(stale.json).toMatchObject({ current: false })
+  expect(stale.json.catalogs).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ kind: 'wiki', state: 'stale', missing: ['W0001'] }),
+      expect.objectContaining({ kind: 'reports', state: 'stale', missing: ['R0001'] }),
+    ]),
+  )
+  expect(await fs.readFile(project.path('.memon/index/wiki.json'), 'utf8')).toBe(wikiBefore)
+
+  const published = await captureCli(() => runRefresh({ ...base, experiments: [] }))
+  expect(published.exitCode).toBe(0)
+  expect(published.json).toMatchObject({
+    published: true,
+    counts: { experiments: 2, wiki: 1, reports: 1 },
+  })
+
+  const current = await captureCli(() => runRefresh({ ...base, experiments: [], check: true }))
+  expect(current.exitCode).toBe(0)
+  expect(current.json).toMatchObject({ current: true, invalid: [] })
+
+  const mixed = await captureCli(() => runRefresh({ ...base, experiments: [id], check: true }))
+  expect(mixed.error).toMatchObject({ code: 'BAD_REQUEST' })
+})

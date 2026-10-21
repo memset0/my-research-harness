@@ -5,7 +5,11 @@ import { deriveWikiEntry } from '../derived-index/entries.js'
 import { rebuildIndex } from '../derived-index/rebuild.js'
 import { readDerivedIndex } from '../derived-index/snapshot.js'
 import { withFileWriterLock } from '../file-writer-lock.js'
-import { publishWikiCatalog } from '../project-catalogs.js'
+import {
+  buildWikiCatalog,
+  ProjectCatalogInvalidError,
+  writeProjectCatalog,
+} from '../project-catalogs.js'
 import { formatIsoLocal } from '../time.js'
 import { MEMON_RELEASE } from '../version.js'
 import { discoverWikiPages } from './discover.js'
@@ -51,9 +55,16 @@ export async function publishWikiInventory(root: string): Promise<void> {
       read.snapshot.wiki = Object.fromEntries(entries.map((entry) => [entry!.key, entry!.entry]))
       read.snapshot.generated_at = formatIsoLocal(new Date())
       read.snapshot.generator = { role: 'cli', release: MEMON_RELEASE }
+      // Build the Wiki catalog before writing, so an unindexable page leaves
+      // the snapshot and catalogs as they were.
+      const catalog =
+        read.snapshot.fs_convention_version >= 11
+          ? await buildWikiCatalog(root, read.snapshot)
+          : null
+      if (catalog?.invalid.length) throw new ProjectCatalogInvalidError(catalog.invalid)
       if (!(await lease.held())) throw new Error('inventory publication lease expired')
       await writeSnapshot(root, read.snapshot)
-      if (read.snapshot.fs_convention_version >= 11) await publishWikiCatalog(root, read.snapshot)
+      if (catalog) await writeProjectCatalog(root, 'wiki', catalog.entries)
     } finally {
       await lease.release()
     }

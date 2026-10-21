@@ -41,8 +41,9 @@ smoke never contributes formal results. For multiple inputs or custom logic,
 read [aggregation.md](aggregation.md). Optional names live on the Run.
 
 CLI writes refresh `run.json → result.csv → results.csv` and the Experiment catalog.
-Read `.memon/index/experiments.json` for published inventory; run `refresh` after
-direct document edits. Catalogs are ignored by Git and rebuilt at the source.
+After direct edits follow the preflight Published index steps: `refresh <E-id>`
+for changed results or records, plain `refresh` for the catalogs, then
+`refresh --check`. Read `.memon/index/experiments.json` for published inventory.
 Extract only useful fields; retain native evidence. `experiment.json` holds
 presentation columns/groups and optional aggregation settings, not a second plan.
 

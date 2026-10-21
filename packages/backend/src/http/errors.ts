@@ -46,7 +46,8 @@ export const httpError = (
 /**
  * Shared by every service resource error: a malformed or uncontainable
  * identifier is the caller's bad request (400), a well-formed one that does
- * not resolve is 404, and one that resolves to several resources is 409.
+ * not resolve is 404 (`NOT_REFRESHED` when the source has it but the published
+ * catalog does not), and one that resolves to several resources is 409.
  */
 function resourceError(code: string, noun: string): HttpError {
   switch (code) {
@@ -54,6 +55,8 @@ function resourceError(code: string, noun: string): HttpError {
       return httpError(400, 'BAD_REQUEST', `Backend ${noun} resource is invalid`)
     case 'AMBIGUOUS_RESOURCE':
       return httpError(409, 'CONFLICT', `Backend ${noun} resource is ambiguous`)
+    case 'RESOURCE_NOT_REFRESHED':
+      return httpError(404, 'NOT_REFRESHED', 'Not refreshed')
     default:
       return httpError(404, 'NOT_FOUND', `Backend ${noun} resource not found`)
   }

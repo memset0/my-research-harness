@@ -25,7 +25,7 @@ vi.mock('./markdown', () => ({
 }))
 
 import { ProjectRefSchema } from '@memon/core'
-import { fetchReport, fetchReports, putReport } from '../lib/api'
+import { ApiError, fetchReport, fetchReports, putReport } from '../lib/api'
 import { queryKeys } from '../lib/query-keys'
 import { InboxShell } from './inbox-shell'
 
@@ -127,5 +127,17 @@ describe('InboxShell reports rail — placement', () => {
     expect(reading.compareDocumentPosition(rail) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(rail).toHaveClass('border-l')
     expect(rail).not.toHaveClass('border-r')
+  })
+})
+
+describe('InboxShell report detail — unrefreshed catalog', () => {
+  it('shows Not refreshed instead of an error when the source has the Report', async () => {
+    vi.mocked(fetchReports).mockResolvedValue({ reports: [] })
+    vi.mocked(fetchReport).mockRejectedValue(new ApiError(404, 'Not refreshed', 'NOT_REFRESHED'))
+
+    renderWithQuery(<InboxShell kind="reports" project={PROJECT} selectedId="R0002" />)
+
+    expect(await screen.findByText('Not refreshed: R0002')).toBeInTheDocument()
+    expect(screen.queryByText(/^error:/)).not.toBeInTheDocument()
   })
 })

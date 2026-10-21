@@ -83,7 +83,7 @@ import {
   runListWindow,
 } from './indexed-runs.js'
 import { missingOrThrow } from './missing-path.js'
-import { registeredCatalog } from './project-catalogs.js'
+import { hasUnrefreshedDocument, registeredCatalog } from './project-catalogs.js'
 import { withAutomaticProjectFileContext } from './project-file-context.js'
 import {
   projectReadIndex,
@@ -105,7 +105,11 @@ import { resolveRunReferencePath } from './run-path.js'
 
 export class BackendProjectServiceError extends Error {
   constructor(
-    public readonly code: 'PROJECT_NOT_FOUND' | 'RESOURCE_NOT_FOUND' | 'INVALID_RESOURCE',
+    public readonly code:
+      | 'PROJECT_NOT_FOUND'
+      | 'RESOURCE_NOT_FOUND'
+      | 'RESOURCE_NOT_REFRESHED'
+      | 'INVALID_RESOURCE',
     message: string,
     public readonly details?: Record<string, unknown>,
   ) {
@@ -872,7 +876,10 @@ export class FilesystemProjectService implements BackendProjectReadService {
     let experiment: Experiment | null
     if (catalog) {
       const entry = catalog.entries.find((entry) => entry.id === id)
-      if (!entry) throw new BackendProjectServiceError('RESOURCE_NOT_FOUND', 'Experiment not found')
+      if (!entry)
+        throw (await hasUnrefreshedDocument(project, 'experiments', id))
+          ? new BackendProjectServiceError('RESOURCE_NOT_REFRESHED', 'Not refreshed')
+          : new BackendProjectServiceError('RESOURCE_NOT_FOUND', 'Experiment not found')
       const path = await resolveContained(project.root, join(project.root, entry.resource))
       const [text, stat] = await Promise.all([fs.readFile(path, 'utf8'), fs.stat(path)])
       const documents = entry.resource.endsWith('/README.md')

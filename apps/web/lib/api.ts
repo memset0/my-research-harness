@@ -298,6 +298,11 @@ export class ApiError extends Error {
   }
 }
 
+/** The source has the document, but its published catalog was not refreshed. */
+export function isNotRefreshed(error: unknown): boolean {
+  return error instanceof ApiError && error.code === 'NOT_REFRESHED'
+}
+
 export async function fetchProjects(): Promise<ProjectsResponse> {
   return jsonFetch('/api/projects')
 }

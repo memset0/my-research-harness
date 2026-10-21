@@ -19,6 +19,7 @@ import {
   ApiError,
   fetchWiki,
   fetchWikiPage,
+  isNotRefreshed,
   type ProjectTarget,
   projectHost,
   projectName,
@@ -478,7 +479,11 @@ function WikiSelectedPane({
       <div className="flex h-full flex-col">
         {onShowRail && <ClosedRailToolbar onShowRail={onShowRail} />}
         <div className="p-4 text-sm" data-wiki-not-found="">
-          {error && !notFound ? (
+          {isNotRefreshed(error) ? (
+            <span className="text-muted-foreground" data-not-refreshed="">
+              Not refreshed: {selectedId}
+            </span>
+          ) : error && !notFound ? (
             <span className="text-destructive">error: {error.message}</span>
           ) : (
             <span className="text-muted-foreground">not found: {selectedId}</span>

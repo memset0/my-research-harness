@@ -121,3 +121,60 @@ it('exposes source refresh guidance through HTTP without internal paths', () => 
   expect(error?.message).toContain('memon refresh')
   expect(error?.message).not.toContain('internal detail')
 })
+
+async function put(path: string, content: string): Promise<void> {
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(path, content)
+}
+async function httpErrorOf(work: () => Promise<unknown>) {
+  try {
+    await work()
+    return null
+  } catch (error) {
+    return toHttpError(error)
+  }
+}
+it('answers a catalog miss with NOT_REFRESHED only when the source has that well-formed ID', async () => {
+  const { p, docs, projects } = await fixture()
+  const time = '2026-01-01T10:00:00+08:00'
+  await put(
+    p.path('docs/wiki/note/W0004-new/README.md'),
+    `---\nid: W0004\ntitle: New\ncreated_at: ${time}\nupdated_at: ${time}\n---\nBody\n`,
+  )
+  await put(
+    p.path('docs/reports/methods/R0002-later/README.md'),
+    '---\ntitle: Later\n---\n# Later\n',
+  )
+  await put(
+    p.path('docs/experiments/E0002-next/README.md'),
+    `---\nid: E0002-next\ntitle: Next\nstatus: ACTIVE\ncreated_at: ${time}\nupdated_at: ${time}\n---\n# Next\n`,
+  )
+
+  expect(await httpErrorOf(() => docs.getWiki('project-a', 'W0004'))).toMatchObject({
+    status: 404,
+    code: 'NOT_REFRESHED',
+  })
+  expect(await httpErrorOf(() => docs.getReport('project-a', 'R0002'))).toMatchObject({
+    status: 404,
+    code: 'NOT_REFRESHED',
+  })
+  expect(await httpErrorOf(() => projects.getExperiment('project-a', 'E0002-next'))).toMatchObject({
+    status: 404,
+    code: 'NOT_REFRESHED',
+  })
+  expect(await httpErrorOf(() => docs.getReport('project-a', 'R0099'))).toMatchObject({
+    status: 404,
+    code: 'NOT_FOUND',
+  })
+
+  // A malformed ID never reaches the source directories.
+  const list = vi.spyOn(projectFs, 'readdir')
+  expect((await httpErrorOf(() => docs.getReport('project-a', 'R!@#')))?.code).not.toBe(
+    'NOT_REFRESHED',
+  )
+  expect(list).not.toHaveBeenCalled()
+
+  await rebuildIndex(p.root)
+  dropProjectReadIndexes()
+  expect(await httpErrorOf(() => docs.getWiki('project-a', 'W0004'))).toBeNull()
+})

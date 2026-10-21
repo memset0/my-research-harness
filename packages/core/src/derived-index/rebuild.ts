@@ -1,4 +1,12 @@
-import { publishReportCatalog, publishWikiCatalog } from '../project-catalogs.js'
+import {
+  buildExperimentCatalog,
+  buildReportCatalog,
+  buildWikiCatalog,
+  type ProjectCatalogBuild,
+  type ProjectCatalogIssue,
+  type ProjectCatalogKind,
+  writeProjectCatalog,
+} from '../project-catalogs.js'
 // Full rebuild: a fresh snapshot from the project files alone.
 //
 // Under the compaction lease: resolve the effective `run_dirs` (recording
@@ -51,13 +59,19 @@ export interface RunDirsAudit {
   outside: string[]
 }
 
-export type RebuildIndexStatus = 'rebuilt' | 'dry-run' | 'conflict' | 'unsupported'
+export type RebuildIndexStatus = 'rebuilt' | 'dry-run' | 'conflict' | 'unsupported' | 'invalid'
 
 export interface RebuildIndexResult {
   status: RebuildIndexStatus
   runDirs: EffectiveRunDirs
   snapshot: IndexSnapshot | null
-  counts: { runs: number; experiments: number; wiki: number }
+  counts: { runs: number; experiments: number; wiki: number; reports: number }
+  /**
+   * FS11 catalogs built from the files (also on a dry run). `invalid` status:
+   * these documents cannot be indexed and nothing was written.
+   */
+  catalogs?: Record<ProjectCatalogKind, ProjectCatalogBuild>
+  invalid?: ProjectCatalogIssue[]
   /** Events present at the start and deleted after the snapshot was written. */
   deletedEvents: string[]
   audit?: RunDirsAudit
@@ -213,7 +227,7 @@ export async function rebuildIndex(
     cliRunDirs: options.cliRunDirs,
     centralRunDirs: options.centralRunDirs,
   })
-  const empty = { runs: 0, experiments: 0, wiki: 0 }
+  const empty = { runs: 0, experiments: 0, wiki: 0, reports: 0 }
   const base: RebuildIndexResult = {
     status: 'rebuilt',
     runDirs,
@@ -228,7 +242,21 @@ export async function rebuildIndex(
     ...(options.now ? { now: options.now } : {}),
   })
   if (existing.snapshotState === 'unsupported') return { ...base, status: 'unsupported' }
-  const finish = async (snapshot: IndexSnapshot, status: RebuildIndexStatus) => {
+  // Catalogs are built in full before anything is written, so a document
+  // that cannot be indexed leaves the published index exactly as it was.
+  const buildCatalogs = async (snapshot: IndexSnapshot) =>
+    snapshot.fs_convention_version >= 11
+      ? {
+          experiments: buildExperimentCatalog(snapshot),
+          wiki: await buildWikiCatalog(root, snapshot, fs),
+          reports: await buildReportCatalog(root, fs),
+        }
+      : undefined
+  const finish = async (
+    snapshot: IndexSnapshot,
+    status: RebuildIndexStatus,
+    catalogs?: Record<ProjectCatalogKind, ProjectCatalogBuild>,
+  ) => {
     const result: RebuildIndexResult = {
       ...base,
       status,
@@ -237,14 +265,19 @@ export async function rebuildIndex(
         runs: Object.keys(snapshot.runs).length,
         experiments: Object.keys(snapshot.experiments).length,
         wiki: Object.keys(snapshot.wiki).length,
+        reports: catalogs?.reports.entries.length ?? 0,
       },
       nested: snapshot.walk.paths.filter((path) => nestedRunAncestor(path) !== null),
+      ...(catalogs ? { catalogs } : {}),
     }
     if (options.auditRunDirs)
       result.audit = await auditRunDirs(root, new Set(snapshot.walk.paths), options)
     return result
   }
-  if (options.dryRun) return finish(await buildIndexSnapshot(root, runDirs, options), 'dry-run')
+  if (options.dryRun) {
+    const snapshot = await buildIndexSnapshot(root, runDirs, options)
+    return finish(snapshot, 'dry-run', await buildCatalogs(snapshot))
+  }
   const lease = await acquireIndexLease(root, {
     role: options.role ?? 'rebuild',
     fs,
@@ -256,14 +289,20 @@ export async function rebuildIndex(
     const snapshot = await buildIndexSnapshot(root, runDirs, options)
     const again = await readDerivedIndex(root, { fs })
     if (again.snapshotState === 'unsupported') return { ...base, status: 'unsupported' }
+    const catalogs = await buildCatalogs(snapshot)
+    const invalid = catalogs
+      ? [...catalogs.experiments.invalid, ...catalogs.wiki.invalid, ...catalogs.reports.invalid]
+      : []
+    if (invalid.length)
+      return { ...(await finish(snapshot, 'invalid', catalogs)), snapshot: null, invalid }
     await writeSnapshot(root, snapshot, fs)
-    if (snapshot.fs_convention_version >= 11) {
-      await publishWikiCatalog(root, snapshot, fs)
-      await publishReportCatalog(root, fs)
+    if (catalogs) {
+      await writeProjectCatalog(root, 'wiki', catalogs.wiki.entries, fs)
+      await writeProjectCatalog(root, 'reports', catalogs.reports.entries, fs)
     }
     const events = resolveIndexPaths(root).events
     for (const name of startEvents) await fs.rm(`${events}/${name}`, { force: true })
-    const result = await finish(snapshot, 'rebuilt')
+    const result = await finish(snapshot, 'rebuilt', catalogs)
     result.deletedEvents = startEvents
     const orphans = await pruneOrphanSummaries(root, snapshot, fs)
     const stale = await pruneStaleResultsSummaries(root, { fs })

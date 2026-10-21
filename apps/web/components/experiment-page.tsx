@@ -19,6 +19,7 @@ import {
   fetchExperiment,
   fetchExperimentDoc,
   fetchRunFiles,
+  isNotRefreshed,
   type ProjectTarget,
   projectHost,
   projectName,
@@ -70,6 +71,13 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
   if (isLoading) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>
   // A failed refresh must not blank a page that already has content: the
   // footer's status carries the error, the document stays readable.
+  if (!exp && isNotRefreshed(error)) {
+    return (
+      <div className="p-6 text-sm text-muted-foreground" data-not-refreshed="">
+        Not refreshed: {experimentId}
+      </div>
+    )
+  }
   if (!exp) {
     return (
       <div className="p-6 text-sm text-destructive">

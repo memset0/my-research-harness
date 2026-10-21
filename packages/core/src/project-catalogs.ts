@@ -90,6 +90,77 @@ export const ProjectCatalogSchema = z
 export type ProjectCatalog = z.infer<typeof ProjectCatalogSchema>
 export type ProjectCatalogEntry = z.infer<typeof ProjectCatalogEntrySchema>
 
+/** A document that cannot become a catalog entry, with its project-relative path. */
+export interface ProjectCatalogIssue {
+  kind: ProjectCatalogKind
+  resource: string
+  message: string
+}
+
+/** Entries built in memory; `invalid` lists every document that could not be indexed. */
+export interface ProjectCatalogBuild {
+  entries: ProjectCatalogEntry[]
+  invalid: ProjectCatalogIssue[]
+}
+
+/** Publication refused: nothing was written and every problem is listed. */
+export class ProjectCatalogInvalidError extends Error {
+  readonly issues: ProjectCatalogIssue[]
+  constructor(issues: ProjectCatalogIssue[]) {
+    super(
+      `Cannot index ${issues.length} document(s): ${issues
+        .map((issue) => `${issue.resource}: ${issue.message}`)
+        .join('; ')}`,
+    )
+    this.name = 'ProjectCatalogInvalidError'
+    this.issues = issues
+  }
+}
+
+/**
+ * Catalog-level validation as issues instead of a thrown parse error:
+ * duplicate IDs name both documents, and every entry the catalog schema
+ * rejects is reported with its resource. Only clean entries are kept.
+ */
+function validatedBuild(
+  kind: ProjectCatalogKind,
+  candidates: ProjectCatalogEntry[],
+  invalid: ProjectCatalogIssue[],
+): ProjectCatalogBuild {
+  const first = new Map<string, string>()
+  const unique: ProjectCatalogEntry[] = []
+  for (const entry of candidates) {
+    const other = first.get(entry.id)
+    if (other === undefined) {
+      first.set(entry.id, entry.resource)
+      unique.push(entry)
+    } else {
+      invalid.push({
+        kind,
+        resource: entry.resource,
+        message: `duplicate ID ${entry.id} (also ${other})`,
+      })
+    }
+  }
+  const entries: ProjectCatalogEntry[] = []
+  for (const entry of unique) {
+    const parsed = ProjectCatalogSchema.safeParse({
+      catalog_version: 1,
+      kind,
+      generated_at: formatIsoLocal(new Date()),
+      entries: [entry],
+    })
+    if (parsed.success) entries.push(entry)
+    else
+      invalid.push({
+        kind,
+        resource: entry.resource,
+        message: [...new Set(parsed.error.issues.map((issue) => issue.message))].join('; '),
+      })
+  }
+  return { entries, invalid }
+}
+
 export async function writeProjectCatalog(
   root: string,
   kind: ProjectCatalogKind,
@@ -115,6 +186,10 @@ export async function writeProjectCatalog(
     await io.rm(temporary, { force: true }).catch(() => undefined)
     throw error
   }
+}
+
+export function buildExperimentCatalog(snapshot: IndexSnapshot): ProjectCatalogBuild {
+  return validatedBuild('experiments', experimentCatalogEntries(snapshot), [])
 }
 
 export function experimentCatalogEntries(snapshot: IndexSnapshot): ProjectCatalogEntry[] {
@@ -229,48 +304,71 @@ async function contained(root: string, resource: string): Promise<string> {
   return path
 }
 
-export async function publishWikiCatalog(
+/** Every Wiki page of the snapshot as a catalog entry, or the reason it cannot be one. */
+export async function buildWikiCatalog(
   root: string,
   snapshot: IndexSnapshot,
   io: IndexFs = defaultIndexFs,
-): Promise<void> {
+): Promise<ProjectCatalogBuild> {
   const entries: ProjectCatalogEntry[] = []
+  const invalid: ProjectCatalogIssue[] = []
   for (const resource of Object.keys(snapshot.wiki)) {
-    const path = await contained(root, resource)
-    const [text, stat] = await Promise.all([io.readFile(path, 'utf8'), io.stat(path)])
     const format = /\/(README\.md|manifest\.json)$/.test(resource)
       ? ('bundle' as const)
       : ('markdown' as const)
     const stem = format === 'bundle' ? basename(dirname(resource)) : basename(resource, '.md')
     const match = /^(W\d{4})-(.+)$/.exec(stem)
-    if (!match) throw new Error(`Invalid Wiki catalog source: ${resource}`)
-    const kind = resource.split('/')[2]!
-    const { frontmatter, body } = parseWikiFrontmatter(text, resource)
-    const summary = {
-      ...buildWikiSummary({
-        location: {
-          id: match[1]!,
-          slug: match[2]!,
-          kind,
-          format,
-          path: resource,
-          mtime: stat.mtimeMs,
-        },
-        frontmatter,
-        body,
-      }),
-      ...parseContent(text, resource, kind).fields,
+    if (!match) {
+      invalid.push({ kind: 'wiki', resource, message: 'name must be W<NNNN>-<slug>' })
+      continue
     }
-    entries.push({ id: summary.id, slug: summary.slug, resource, summary: { ...summary } })
+    const path = await contained(root, resource)
+    const [text, stat] = await Promise.all([io.readFile(path, 'utf8'), io.stat(path)])
+    const kind = resource.split('/')[2]!
+    let summary: Record<string, unknown>
+    try {
+      const { frontmatter, body } = parseWikiFrontmatter(text, resource)
+      summary = {
+        ...buildWikiSummary({
+          location: {
+            id: match[1]!,
+            slug: match[2]!,
+            kind,
+            format,
+            path: resource,
+            mtime: stat.mtimeMs,
+          },
+          frontmatter,
+          body,
+        }),
+        ...parseContent(text, resource, kind).fields,
+      }
+    } catch (error) {
+      invalid.push({ kind: 'wiki', resource, message: (error as Error).message })
+      continue
+    }
+    entries.push({ id: match[1]!, slug: match[2]!, resource, summary })
   }
-  await writeProjectCatalog(root, 'wiki', entries, io)
+  return validatedBuild('wiki', entries, invalid)
 }
 
-export async function publishReportCatalog(
+export async function publishWikiCatalog(
   root: string,
+  snapshot: IndexSnapshot,
   io: IndexFs = defaultIndexFs,
 ): Promise<void> {
+  const built = await buildWikiCatalog(root, snapshot, io)
+  if (built.invalid.length) throw new ProjectCatalogInvalidError(built.invalid)
+  await writeProjectCatalog(root, 'wiki', built.entries, io)
+}
+
+/** Every Report under `docs/reports` as a catalog entry, or the reason it cannot be one. */
+export async function buildReportCatalog(
+  root: string,
+  io: IndexFs = defaultIndexFs,
+): Promise<ProjectCatalogBuild> {
   const entries: ProjectCatalogEntry[] = []
+  const invalid: ProjectCatalogIssue[] = []
   const walk = async (resource: string, categories: boolean): Promise<void> => {
     let paths: Dirent[]
     try {
@@ -303,8 +401,10 @@ export async function publishReportCatalog(
         entry,
         resource === 'docs/reports' ? undefined : basename(resource),
       )
-      if (parsed.errors.length)
-        throw new Error(`Invalid Report ${match[1]}: ${parsed.errors.join('; ')}`)
+      if (parsed.errors.length) {
+        invalid.push({ kind: 'reports', resource: entry, message: parsed.errors.join('; ') })
+        continue
+      }
       const title = String(
         parsed.metadata.title ?? /^#\s+(.+)$/m.exec(text)?.[1] ?? match[2],
       ).slice(0, 512)
@@ -326,5 +426,58 @@ export async function publishReportCatalog(
   }
   await walk('docs/reports', true)
   entries.sort((a, b) => b.id.localeCompare(a.id))
-  await writeProjectCatalog(root, 'reports', entries, io)
+  return validatedBuild('reports', entries, invalid)
+}
+
+export async function publishReportCatalog(
+  root: string,
+  io: IndexFs = defaultIndexFs,
+): Promise<void> {
+  const built = await buildReportCatalog(root, io)
+  if (built.invalid.length) throw new ProjectCatalogInvalidError(built.invalid)
+  await writeProjectCatalog(root, 'reports', built.entries, io)
+}
+
+/** How one published catalog differs from the catalog the source would publish now. */
+export interface ProjectCatalogDrift {
+  kind: ProjectCatalogKind
+  /** `unreadable`: the published catalog is missing or fails its schema. */
+  state: 'current' | 'stale' | 'unreadable'
+  missing: string[]
+  extra: string[]
+  changed: string[]
+}
+
+function entryMtime(entry: ProjectCatalogEntry): unknown {
+  return entry.summary.mtime ?? entry.summary.readmeMtime
+}
+
+/** Compare by ID, resource and document mtime; never writes. */
+export async function checkPublishedCatalog(
+  root: string,
+  kind: ProjectCatalogKind,
+  built: ProjectCatalogBuild,
+  io: IndexFs = defaultIndexFs,
+): Promise<ProjectCatalogDrift> {
+  const drift: ProjectCatalogDrift = { kind, state: 'current', missing: [], extra: [], changed: [] }
+  let published: ProjectCatalog
+  try {
+    const text = await io.readFile(join(resolveIndexPaths(root).dir, `${kind}.json`), 'utf8')
+    const parsed = ProjectCatalogSchema.safeParse(JSON.parse(String(text)))
+    if (!parsed.success || parsed.data.kind !== kind) return { ...drift, state: 'unreadable' }
+    published = parsed.data
+  } catch {
+    return { ...drift, state: 'unreadable' }
+  }
+  const before = new Map(published.entries.map((entry) => [entry.id, entry]))
+  for (const entry of built.entries) {
+    const old = before.get(entry.id)
+    if (!old) drift.missing.push(entry.id)
+    else if (old.resource !== entry.resource || entryMtime(old) !== entryMtime(entry))
+      drift.changed.push(entry.id)
+    before.delete(entry.id)
+  }
+  drift.extra.push(...before.keys())
+  if (drift.missing.length || drift.extra.length || drift.changed.length) drift.state = 'stale'
+  return drift
 }

@@ -2,7 +2,13 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { fetchWiki, fetchWikiPage, type WikiListItem, type WikiPageDetail } from '../lib/api'
+import {
+  ApiError,
+  fetchWiki,
+  fetchWikiPage,
+  type WikiListItem,
+  type WikiPageDetail,
+} from '../lib/api'
 import { renderWithQuery } from '../test/utils'
 import { WikiDocumentView, WikiShell } from './wiki-shell'
 
@@ -250,5 +256,16 @@ describe('WikiShell', () => {
     vi.mocked(fetchWiki).mockResolvedValueOnce({ pages: [] })
     renderWithQuery(<WikiShell project="project-b" selectedId={null} />)
     expect(await screen.findByText(/memon wiki create/)).toBeInTheDocument()
+  })
+
+  it('says a published-catalog miss is not refreshed when the source has the page', async () => {
+    vi.mocked(fetchWiki).mockResolvedValue({
+      pages: [summary('W0001', '2026-05-04T08:00:00+00:00')],
+    })
+    vi.mocked(fetchWikiPage).mockRejectedValue(new ApiError(404, 'Not refreshed', 'NOT_REFRESHED'))
+    renderWithQuery(<WikiShell project="project-a" selectedId="W0004" />)
+    expect(await screen.findByText('Not refreshed: W0004')).toBeInTheDocument()
+    expect(screen.queryByText(/not found/)).not.toBeInTheDocument()
+    expect(screen.getByRole('complementary', { name: 'Wiki page picker' })).toBeInTheDocument()
   })
 })

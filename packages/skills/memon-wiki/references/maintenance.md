@@ -34,7 +34,10 @@ or remove it. Repair references in Experiment, Wiki and Report documents before
 and outputs. It reports blockers and has
 no force bypass. Keep invalidity and superseding-method reasons with the evidence.
 
-After direct edits, run `memon refresh` at the project source. It publishes the
-ignored `.memon/index/{experiments,wiki,reports}.json` catalogs. Agents may read
-these lists directly; the website reads them without rediscovering folders.
-Missing or invalid catalogs need refresh, not a website restart.
+After any direct Wiki or Report change, follow the preflight Published index
+steps: `memon refresh` at the project source, then `memon refresh --check`. A
+refused refresh lists every document it cannot index (for example a manifest
+without `title`, or two folders with one ID); fix them all and rerun. Agents may
+read `.memon/index/{experiments,wiki,reports}.json` directly; the website reads
+only these catalogs, so an unpublished page shows "Not refreshed", and missing
+or invalid catalogs need a refresh, not a website restart.

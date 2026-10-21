@@ -2792,6 +2792,8 @@ export const BACKEND_ERROR_CODES = [
   'UNAUTHORIZED',
   'FORBIDDEN',
   'NOT_FOUND',
+  /** 404: the source has the document but its published catalog was not refreshed. */
+  'NOT_REFRESHED',
   'METHOD_NOT_ALLOWED',
   'CONFLICT',
   'PAYLOAD_TOO_LARGE',

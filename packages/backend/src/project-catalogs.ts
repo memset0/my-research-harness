@@ -8,6 +8,7 @@ import {
 import { isFileAccessError } from '@memon/file-protocol'
 import { join } from '@memon/file-protocol/paths'
 import { resolveContained } from './containment.js'
+import { missingOrThrow } from './missing-path.js'
 import { isRegisteredProject } from './registered-index.js'
 
 export class ProjectCatalogError extends Error {
@@ -38,4 +39,46 @@ export async function registeredCatalog(
     if (isFileAccessError(error)) throw error
     throw new ProjectCatalogError(kind, error)
   }
+}
+
+/** Identity rules per catalog; only IDs that match are worth a source check. */
+const DOCUMENT_ID: Record<ProjectCatalogKind, RegExp> = {
+  experiments: /^E\d{4}-[a-z0-9][a-z0-9-]*$/,
+  wiki: /^W\d{4}$/,
+  reports: /^R\d{4}$/,
+}
+const REPORT_NAME = /^R\d{4}-/
+
+/**
+ * After a catalog miss: does the source hold a document with this ID that was
+ * never refreshed into the catalog? A malformed ID, or a Project that is not
+ * catalog-backed, is answered without any I/O. Otherwise only the directories
+ * the ID can live in are listed (Wiki kind directories; Reports and their
+ * category directories; the Experiments directory) and no body is read.
+ */
+export async function hasUnrefreshedDocument(
+  project: ProjectConfig,
+  kind: ProjectCatalogKind,
+  id: string,
+): Promise<boolean> {
+  if (!DOCUMENT_ID[kind].test(id) || !(await isRegisteredProject(project))) return false
+  const list = async (relative: string) => {
+    const path = await resolveContained(project.root, relative, { allowMissing: true })
+    if (!path) return []
+    return (await missingOrThrow(projectFs.readdir(path, { withFileTypes: true }))) ?? []
+  }
+  const named = (name: string) => name.startsWith(`${id}-`)
+  if (kind === 'experiments') {
+    const entries = await list('docs/experiments')
+    return entries.some((entry) => entry.name === id || entry.name === `${id}.md`)
+  }
+  const top = kind === 'wiki' ? 'docs/wiki' : 'docs/reports'
+  const entries = await list(top)
+  if (kind === 'reports' && entries.some((entry) => named(entry.name))) return true
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith('.')) continue
+    if (kind === 'reports' && REPORT_NAME.test(entry.name)) continue
+    if ((await list(`${top}/${entry.name}`)).some((child) => named(child.name))) return true
+  }
+  return false
 }

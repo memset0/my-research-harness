@@ -72,7 +72,7 @@ import {
   indexedWikiPages,
 } from './indexed-documents.js'
 import { missingOrThrow } from './missing-path.js'
-import { registeredCatalog } from './project-catalogs.js'
+import { hasUnrefreshedDocument, registeredCatalog } from './project-catalogs.js'
 import { withAutomaticProjectFileContext } from './project-file-context.js'
 import { FilesystemProjectService, type InventoryListOptions } from './project-service.js'
 import {
@@ -88,6 +88,7 @@ export class BackendDocumentServiceError extends Error {
     public readonly code:
       | 'PROJECT_NOT_FOUND'
       | 'RESOURCE_NOT_FOUND'
+      | 'RESOURCE_NOT_REFRESHED'
       | 'INVALID_RESOURCE'
       | 'AMBIGUOUS_RESOURCE'
       /** The Project has no usable execution target for its git reads. */
@@ -303,6 +304,8 @@ export class FilesystemDocumentService implements BackendDocumentService {
           }))
         : await indexedReportInventory(project, this.policy, id)
     const matches = inventory.filter((item) => item.id === id)
+    if (matches.length === 0)
+      throw await missingDocument(project, kind === 'wiki' ? 'wiki' : 'reports', id)
     if (matches.length !== 1)
       throw new BackendDocumentServiceError(
         matches.length ? 'AMBIGUOUS_RESOURCE' : 'RESOURCE_NOT_FOUND',
@@ -328,6 +331,8 @@ export class FilesystemDocumentService implements BackendDocumentService {
   async getReport(projectName: string, id: string) {
     const project = this.requireProject(projectName)
     const reports = await withAutomaticProjectFileContext(() => this.discoverReports(project, id))
+    if (!reports.some((entry) => entry.id === id))
+      throw await missingDocument(project, 'reports', id)
     const entry = exactEntry(reports, id)
     return BackendReportResponseSchema.parse({
       ...reportSummary(project, entry),
@@ -589,7 +594,7 @@ export class FilesystemDocumentService implements BackendDocumentService {
     const catalog = await registeredCatalog(project, 'wiki')
     if (catalog) {
       const item = catalog.entries.find((item) => item.id === id)
-      if (!item) throw new BackendDocumentServiceError('RESOURCE_NOT_FOUND', 'Wiki page not found')
+      if (!item) throw await missingDocument(project, 'wiki', id, 'Wiki page not found')
       return item.summary as unknown as WikiSummary
     }
     const pages = await indexedWikiPages(project, this.policy, { assets: true })
@@ -1077,6 +1082,18 @@ async function _existsWithin(projectRoot: string, target: string): Promise<boole
 
 function notFound(): BackendDocumentServiceError {
   return new BackendDocumentServiceError('RESOURCE_NOT_FOUND', 'Document not found')
+}
+
+/** A catalog miss: "Not refreshed" when the source has the document, else not found. */
+async function missingDocument(
+  project: ProjectConfig,
+  kind: 'wiki' | 'reports',
+  id: string,
+  message = 'Document not found',
+): Promise<BackendDocumentServiceError> {
+  return (await hasUnrefreshedDocument(project, kind, id))
+    ? new BackendDocumentServiceError('RESOURCE_NOT_REFRESHED', 'Not refreshed')
+    : new BackendDocumentServiceError('RESOURCE_NOT_FOUND', message)
 }
 
 function exactEntry(entries: readonly DocumentEntry[], id: string): DocumentEntry {

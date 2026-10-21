@@ -18,6 +18,7 @@ import {
   type FullReport,
   fetchReport,
   fetchReports,
+  isNotRefreshed,
   type ProjectTarget,
   projectHost,
   projectName,
@@ -450,7 +451,13 @@ function SelectedItemPane({
     return (
       <div className="flex h-full flex-col">
         {onShowReports && <ClosedReportRailToolbar onShowReports={onShowReports} />}
-        <div className="p-4 text-sm text-destructive">error: {error.message}</div>
+        {isNotRefreshed(error) ? (
+          <div className="p-4 text-sm text-muted-foreground" data-not-refreshed="">
+            Not refreshed: {selectedId}
+          </div>
+        ) : (
+          <div className="p-4 text-sm text-destructive">error: {error.message}</div>
+        )}
       </div>
     )
   }
