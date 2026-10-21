@@ -4,7 +4,7 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { updateInstallation } from './update.js'
+import { childEnv, updateInstallation } from './update.js'
 
 // `memon update` is the only self-maintenance path a CLI node has, so these
 // cases pin its safety contract: never rewrite or discard local work, and
@@ -33,9 +33,13 @@ function git(cwd: string, ...args: string[]): string {
 
 /**
  * Throwaway stand-in for a published memon checkout: a pnpm workspace with
- * `@memon/core` and `@memon/cli`, each building through a script the test can
- * make succeed or fail. The built CLI answers `--version` and records its
- * `install-skills` argv, which is how the updater's delegation is observed.
+ * `@memon/core`, `@memon/skills` and `@memon/cli`, each building through a
+ * script the test can make succeed or fail. As in the real workspace, the CLI
+ * build needs the skills output, and the full skills `build` fails on a CLI
+ * node (its maintenance checks need tools outside the CLI closure), so only
+ * its output-only `build:dist` can produce it. The built CLI answers
+ * `--version` and records its `install-skills` argv, which is how the
+ * updater's delegation is observed.
  */
 async function seedCheckout(
   dir: string,
@@ -44,6 +48,7 @@ async function seedCheckout(
 ): Promise<void> {
   await fs.mkdir(join(dir, 'packages', 'file-protocol'), { recursive: true })
   await fs.mkdir(join(dir, 'packages', 'core'), { recursive: true })
+  await fs.mkdir(join(dir, 'packages', 'skills'), { recursive: true })
   await fs.mkdir(join(dir, 'packages', 'cli'), { recursive: true })
   await writeFile(join(dir, 'pnpm-workspace.yaml'), "packages:\n  - 'packages/*'\n")
   await writeFile(
@@ -66,6 +71,27 @@ async function seedCheckout(
     )
   }
   await writeFile(
+    join(dir, 'packages', 'skills', 'package.json'),
+    `${JSON.stringify(
+      {
+        name: '@memon/skills',
+        version: '0.0.0',
+        private: true,
+        scripts: { build: 'node checks.mjs && node build.mjs', 'build:dist': 'node build.mjs' },
+      },
+      null,
+      2,
+    )}\n`,
+  )
+  await writeFile(
+    join(dir, 'packages', 'skills', 'checks.mjs'),
+    "process.stderr.write('Command tsx not found\\n')\nprocess.exit(254)\n",
+  )
+  await writeFile(
+    join(dir, 'packages', 'skills', 'build.mjs'),
+    `import { mkdirSync, writeFileSync } from 'node:fs'\nmkdirSync('dist', { recursive: true })\nwriteFileSync('dist/index.d.ts', 'skills ${marker}\\n')\n`,
+  )
+  await writeFile(
     join(dir, 'packages', 'file-protocol', 'build.mjs'),
     "import { mkdirSync, writeFileSync } from 'node:fs'\nmkdirSync('dist', { recursive: true })\nwriteFileSync('dist/index.js', 'protocol\\n')\n",
   )
@@ -82,7 +108,11 @@ async function seedCheckout(
     join(dir, 'packages', 'cli', 'build.mjs'),
     options.failBuild || options.editDuringBuild
       ? failingBuild
-      : `import { mkdirSync, writeFileSync } from 'node:fs'
+      : `import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+if (!existsSync('../skills/dist/index.d.ts')) {
+  process.stderr.write("Cannot find module '@memon/skills'\\n")
+  process.exit(2)
+}
 mkdirSync('dist', { recursive: true })
 writeFileSync(
   'dist/index.js',
@@ -125,6 +155,7 @@ async function publishUpstream(
 
 /** Stand-in for the previously installed CLI build: answers `--version`. */
 const PREVIOUS_BUILD = "process.stdout.write('6.0.0-previous\\n')\n"
+const PREVIOUS_SKILLS = 'skills previous\n'
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'memon-update-test-'))
@@ -140,6 +171,12 @@ beforeEach(async () => {
   await fs.mkdir(join(install, 'packages', 'cli', 'dist'), { recursive: true })
   await writeFile(join(install, 'packages', 'cli', 'dist', 'index.js'), PREVIOUS_BUILD)
 })
+
+/** A node that also kept an earlier skills build output. */
+async function seedPreviousSkillsBuild(): Promise<void> {
+  await fs.mkdir(join(install, 'packages', 'skills', 'dist'), { recursive: true })
+  await writeFile(join(install, 'packages', 'skills', 'dist', 'index.d.ts'), PREVIOUS_SKILLS)
+}
 
 afterEach(async () => {
   await fs.rm(root, { recursive: true, force: true })
@@ -178,6 +215,10 @@ describe('memon update', () => {
       { projectRoot: skillsRoot, outcome: 'ok', report: { marker: 'v2', projectRoot: skillsRoot } },
     ])
     expect(result.steps.filter((step) => step.outcome === 'failed')).toEqual([])
+    // The node never built skills before: the update built their output.
+    expect(await readFile(join(install, 'packages', 'skills', 'dist', 'index.d.ts'), 'utf8')).toBe(
+      'skills v2\n',
+    )
   }, 180_000)
 
   it('refuses a dirty checkout and keeps the local edit', async () => {
@@ -220,6 +261,7 @@ describe('memon update', () => {
   })
 
   it('restores a usable previous installation when the new build fails', async () => {
+    await seedPreviousSkillsBuild()
     await publishUpstream('v2', { failBuild: true })
     const previous = git(install, 'rev-parse', 'HEAD').trim()
 
@@ -235,6 +277,9 @@ describe('memon update', () => {
     expect(await readFile(join(install, 'marker.txt'), 'utf8')).toBe('v1\n')
     expect(await readFile(join(install, 'packages', 'cli', 'dist', 'index.js'), 'utf8')).toBe(
       PREVIOUS_BUILD,
+    )
+    expect(await readFile(join(install, 'packages', 'skills', 'dist', 'index.d.ts'), 'utf8')).toBe(
+      PREVIOUS_SKILLS,
     )
   }, 180_000)
 
@@ -272,5 +317,35 @@ describe('memon update', () => {
     )
 
     expect(result).toMatchObject({ outcome: 'refused', reason: 'untrusted_remote' })
+  })
+})
+
+describe('memon update child environment', () => {
+  it('keeps operator package-manager configuration when run directly', () => {
+    const env = childEnv({
+      PATH: '/bin',
+      npm_config_store_dir: '/work/cache/pnpm-store',
+      npm_config_cache_dir: '/work/cache/pnpm',
+      npm_package_name: 'stray',
+      NODE_OPTIONS: '--inspect',
+    })
+
+    expect(env).toEqual({
+      PATH: '/bin',
+      npm_config_store_dir: '/work/cache/pnpm-store',
+      npm_config_cache_dir: '/work/cache/pnpm',
+    })
+  })
+
+  it('drops every inherited npm variable when launched from a package script', () => {
+    const env = childEnv({
+      PATH: '/bin',
+      npm_lifecycle_event: 'memon',
+      npm_config_store_dir: '/parent/store',
+      npm_config_user_agent: 'pnpm/10',
+      npm_execpath: '/parent/pnpm.cjs',
+    })
+
+    expect(env).toEqual({ PATH: '/bin' })
   })
 })

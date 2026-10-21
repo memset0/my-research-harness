@@ -9,8 +9,9 @@
 //     already configured in the checkout.
 //   * The pull is fast-forward only. A dirty tree or a diverged branch is an
 //     actionable refusal — user work is never reset, stashed, or merged away.
-//   * Only CLI-side work runs: dependency install, `@memon/core` +
-//     `@memon/cli` builds, and the existing `install-skills` installer. No Web
+//   * Only CLI-side work runs: dependency install, the `@memon/file-protocol`,
+//     `@memon/core`, `@memon/skills` (output only) and `@memon/cli` builds, and
+//     the existing `install-skills` installer. No Web
 //     build, no unit tests, no lint/typecheck suites, no service startup, and
 //     no central revision comparison.
 //   * If dependency install, build, or the new binary's self-check fails, the
@@ -117,13 +118,19 @@ function tail(text: string): string {
 
 /**
  * Child environment without the npm/pnpm lifecycle variables of the current
- * process: `memon update` may itself be launched through a package script, and
- * inherited `npm_config_*` would silently redirect the nested pnpm run.
+ * process. `memon update` may itself be launched through a package script
+ * (marked by `npm_lifecycle_event`); there the inherited `npm_config_*` is the
+ * parent run's configuration and would silently redirect the nested pnpm run,
+ * so every `npm_*` variable is dropped. Run directly, `npm_config_*` is the
+ * operator's own configuration (store, cache and state locations on a shared
+ * HOME) and is kept.
  */
-function childEnv(): NodeJS.ProcessEnv {
+export function childEnv(source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const fromPackageScript = source.npm_lifecycle_event !== undefined
   const env: NodeJS.ProcessEnv = {}
-  for (const [key, value] of Object.entries(process.env)) {
-    if (key.startsWith('npm_') || key === 'NODE_OPTIONS') continue
+  for (const [key, value] of Object.entries(source)) {
+    if (key === 'NODE_OPTIONS') continue
+    if (key.startsWith('npm_') && (fromPackageScript || !key.startsWith('npm_config_'))) continue
     env[key] = value
   }
   return env
@@ -201,7 +208,21 @@ async function findSourceCheckout(cwd: string): Promise<string | null> {
 const DIST_PATHS = [
   join('packages', 'file-protocol', 'dist'),
   join('packages', 'core', 'dist'),
+  join('packages', 'skills', 'dist'),
   join('packages', 'cli', 'dist'),
+] as const
+
+/**
+ * Package builds in dependency order. `@memon/skills` builds its output only:
+ * its full `build` also runs repository-maintenance checks that need
+ * development tools outside the CLI dependency closure, while the CLI build
+ * needs the skills type declarations.
+ */
+const BUILD_STEPS = [
+  { pkg: '@memon/file-protocol', script: 'build' },
+  { pkg: '@memon/core', script: 'build' },
+  { pkg: '@memon/skills', script: 'build:dist' },
+  { pkg: '@memon/cli', script: 'build' },
 ] as const
 
 /**
@@ -559,8 +580,8 @@ export async function updateInstallation(options: UpdateOptions): Promise<Update
       detail: 'installed the @memon/cli dependency closure only (no Web dependencies)',
     })
 
-    for (const pkg of ['@memon/file-protocol', '@memon/core', '@memon/cli'] as const) {
-      const built = await run('pnpm', ['--filter', pkg, 'build'], source)
+    for (const { pkg, script } of BUILD_STEPS) {
+      const built = await run('pnpm', ['--filter', pkg, 'run', script], source)
       if (!built.ok) {
         return rollback(
           'build',
@@ -572,7 +593,7 @@ export async function updateInstallation(options: UpdateOptions): Promise<Update
     result.steps.push({
       step: 'build',
       outcome: 'ok',
-      detail: 'built @memon/file-protocol, @memon/core and @memon/cli',
+      detail: 'built @memon/file-protocol, @memon/core, @memon/skills and @memon/cli',
     })
 
     const version = await run(process.execPath, [cliEntry, '--version'], source)
