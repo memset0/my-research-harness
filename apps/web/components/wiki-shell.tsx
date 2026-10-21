@@ -738,7 +738,13 @@ export function WikiDocumentView({
       <div>
         <ContentMetadata content={page} />
         <WikiDiagnosticsBlock diagnostics={page.diagnostics} />
-        <ContentPresentation content={page} project={project} kind="wiki" id={page.id} />
+        <ContentPresentation
+          content={page}
+          project={project}
+          kind="wiki"
+          id={page.id}
+          expandInUrl={sourceSurface === 'full-wiki'}
+        />
       </div>
     )
   }

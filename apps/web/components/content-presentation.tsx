@@ -3,7 +3,8 @@
 import type { ContentFields } from '@memon/core'
 import { useQuery } from '@tanstack/react-query'
 import { Clock, LayoutTemplate, type LucideIcon, Tag } from 'lucide-react'
-import { useState } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { useCallback, useState } from 'react'
 import { type ProjectTarget, projectHost, projectName } from '../lib/api'
 import { queryKeys } from '../lib/query-keys'
 import { ReportHtmlEmbed, ReportHtmlZoomProvider } from './report-html-embed'
@@ -192,16 +193,42 @@ export function ServiceAvailability({
   )
 }
 
+/**
+ * The expanded HTML view of a full page, kept in the `expanded=1` query
+ * parameter so a reload restores it. The URL is replaced, never pushed, and
+ * other parameters are preserved.
+ */
+function useExpandedInUrl(): { expanded: boolean; setExpanded: (expanded: boolean) => void } {
+  const router = useRouter()
+  const pathname = usePathname() ?? ''
+  const searchParams = useSearchParams()
+  const expanded = searchParams?.get('expanded') === '1'
+  const setExpanded = useCallback(
+    (next: boolean) => {
+      const params = new URLSearchParams(searchParams?.toString() ?? '')
+      if (next) params.set('expanded', '1')
+      else params.delete('expanded')
+      const query = params.toString()
+      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false })
+    },
+    [pathname, router, searchParams],
+  )
+  return { expanded, setExpanded }
+}
+
 export function ContentPresentation({
   content,
   project,
   kind,
   id,
+  expandInUrl = false,
 }: {
   content: ContentFields
   project: ProjectTarget
   kind: 'wiki' | 'report'
   id: string
+  /** Keep the expanded HTML view in the page URL (full pages only). */
+  expandInUrl?: boolean
 }) {
   if (content.contentError)
     return (
@@ -219,8 +246,19 @@ export function ContentPresentation({
     (content.contentEntry ?? 'index.html').replace(/^\.\//, '')
   return (
     <ReportHtmlZoomProvider>
-      <ReportHtmlEmbed src={url} title={`${id} HTML`} />
+      {expandInUrl ? (
+        <UrlExpandedEmbed src={url} title={`${id} HTML`} />
+      ) : (
+        <ReportHtmlEmbed src={url} title={`${id} HTML`} />
+      )}
     </ReportHtmlZoomProvider>
+  )
+}
+
+function UrlExpandedEmbed({ src, title }: { src: string; title: string }) {
+  const { expanded, setExpanded } = useExpandedInUrl()
+  return (
+    <ReportHtmlEmbed src={src} title={title} expanded={expanded} onExpandedChange={setExpanded} />
   )
 }
 function LiveContent({

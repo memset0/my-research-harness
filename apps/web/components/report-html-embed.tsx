@@ -14,6 +14,7 @@ import {
 import {
   createContext,
   type ReactNode,
+  useCallback,
   useContext,
   useEffect,
   useId,
@@ -71,6 +72,12 @@ export interface ReportHtmlEmbedProps {
    * keeps the responsive viewport-relative height used by Report embeds.
    */
   height?: number | 'auto'
+  /**
+   * Controlled expanded state (e.g. kept in the page URL). Omitted, the
+   * embed keeps its own local state.
+   */
+  expanded?: boolean
+  onExpandedChange?: (expanded: boolean) => void
 }
 
 /**
@@ -81,7 +88,14 @@ export interface ReportHtmlEmbedProps {
  * approved unsandboxed Report trust model while making 4xx/5xx asset failures
  * visible to the user instead of silently rendering a JSON error page.
  */
-export function ReportHtmlEmbed({ src, srcDoc, title, height }: ReportHtmlEmbedProps) {
+export function ReportHtmlEmbed({
+  src,
+  srcDoc,
+  title,
+  height,
+  expanded,
+  onExpandedChange,
+}: ReportHtmlEmbedProps) {
   const inline = typeof srcDoc === 'string'
   const documentId = inline ? 'srcdoc' : (src ?? '')
   const sharedZoom = useContext(ReportHtmlZoomContext)
@@ -94,7 +108,18 @@ export function ReportHtmlEmbed({ src, srcDoc, title, height }: ReportHtmlEmbedP
   const [phase, setPhase] = useState<EmbedPhase>('checking')
   const [error, setError] = useState<string | null>(null)
   const [updateAvailable, setUpdateAvailable] = useState(false)
-  const [isExpanded, setIsExpanded] = useState(false)
+  const [localExpanded, setLocalExpanded] = useState(false)
+  const isExpanded = expanded ?? localExpanded
+  const isExpandedRef = useRef(isExpanded)
+  isExpandedRef.current = isExpanded
+  const setIsExpanded = useCallback(
+    (next: boolean | ((value: boolean) => boolean)) => {
+      const value = typeof next === 'function' ? next(isExpandedRef.current) : next
+      if (onExpandedChange) onExpandedChange(value)
+      else setLocalExpanded(value)
+    },
+    [onExpandedChange],
+  )
   const [autoHeightPx, setAutoHeightPx] = useState<number | null>(null)
   const [hasApproachedViewport, setHasApproachedViewport] = useState(
     () => typeof IntersectionObserver === 'undefined',
@@ -289,7 +314,7 @@ export function ReportHtmlEmbed({ src, srcDoc, title, height }: ReportHtmlEmbedP
       }
       window.removeEventListener('keydown', exitOnEscape, true)
     }
-  }, [isExpanded])
+  }, [isExpanded, setIsExpanded])
 
   // `height="auto"` sizes the frame to its document. The document is
   // same-origin (a Report asset or an inline `srcdoc`), so it can be measured

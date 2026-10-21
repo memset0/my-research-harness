@@ -684,6 +684,7 @@ export function RenderedItem({
           project={project}
           kind="report"
           id={sourceReportId ?? ''}
+          expandInUrl={sourceSurface === 'full-report'}
         />
       </div>
     )

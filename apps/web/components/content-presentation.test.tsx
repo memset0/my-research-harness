@@ -11,11 +11,24 @@ import {
 } from './content-presentation'
 
 vi.mock('./session-provider', () => ({ useIsOwner: () => true }))
+const embedProps: Array<{ expanded?: boolean; onExpandedChange?: (value: boolean) => void }> = []
 vi.mock('./report-html-embed', () => ({
   ReportHtmlZoomProvider: ({ children }: { children: React.ReactNode }) => children,
-  ReportHtmlEmbed: ({ src, title }: { src: string; title: string }) => (
-    <iframe src={src} title={title} />
-  ),
+  ReportHtmlEmbed: (props: {
+    src: string
+    title: string
+    expanded?: boolean
+    onExpandedChange?: (value: boolean) => void
+  }) => {
+    embedProps.push(props)
+    return <iframe src={props.src} title={props.title} />
+  },
+}))
+const navigation = { search: '', replace: vi.fn() }
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/h/source-a/p/project-a/reports/R0006',
+  useRouter: () => ({ replace: navigation.replace }),
+  useSearchParams: () => new URLSearchParams(navigation.search),
 }))
 afterEach(() => vi.unstubAllGlobals())
 const project = ProjectRefSchema.parse({ host: 'source-a', project: 'project-a' })
@@ -147,5 +160,48 @@ describe('content presentation', () => {
     expect(
       within(screen.getByRole('combobox', { name: 'Freshness' })).getByText('STALE'),
     ).toBeTruthy()
+  })
+
+  it('keeps the expanded HTML view of a full page in the URL', () => {
+    navigation.search = 'tab=notes&expanded=1'
+    navigation.replace.mockClear()
+    embedProps.length = 0
+    wrap(
+      <ContentPresentation
+        project={project}
+        kind="report"
+        id="R0006"
+        content={{ presentation: 'html' }}
+        expandInUrl
+      />,
+    )
+    const props = embedProps.at(-1)!
+    expect(props.expanded).toBe(true)
+    props.onExpandedChange?.(false)
+    expect(navigation.replace).toHaveBeenLastCalledWith(
+      '/h/source-a/p/project-a/reports/R0006?tab=notes',
+      { scroll: false },
+    )
+    navigation.search = ''
+    props.onExpandedChange?.(true)
+    expect(navigation.replace).toHaveBeenLastCalledWith(
+      '/h/source-a/p/project-a/reports/R0006?tab=notes&expanded=1',
+      { scroll: false },
+    )
+  })
+
+  it('leaves side and embedded views out of the URL', () => {
+    navigation.search = 'expanded=1'
+    embedProps.length = 0
+    wrap(
+      <ContentPresentation
+        project={project}
+        kind="wiki"
+        id="W0004"
+        content={{ presentation: 'html' }}
+      />,
+    )
+    expect(embedProps.at(-1)?.expanded).toBeUndefined()
+    expect(embedProps.at(-1)?.onExpandedChange).toBeUndefined()
   })
 })
