@@ -6,7 +6,8 @@ manifest.json as described by the shared
 Include a concise `description` in the manifest and keep it accurate when updating
 the report. No README adapter or duplicated Markdown narrative is required.
 
-Include the shared maintenance fields plus `as_of` and `source_commits`; show the
+Include the shared maintenance fields plus `as_of` and `source_commits` (full
+40-character hashes from `git rev-parse`, never abbreviated); show the
 evidence horizon where useful in the report itself. Preserve real measurement
 qualifications. A nearby correction can update this Report; continuous latest-data
 monitoring normally belongs in Wiki. The agent owns any regeneration script.

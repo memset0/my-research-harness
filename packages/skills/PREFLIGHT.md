@@ -33,7 +33,10 @@ publish automatically; files you create, edit, move or delete directly do not.
    unsure whether the index is current, `refresh --check` compares it with the
    files without writing.
 3. A refused refresh publishes nothing and lists every document it cannot
-   index. Fix all of them, rerun, and report any you cannot fix. A published
+   index. Fix all of them, rerun, and report any you cannot fix. The most
+   common cause is a `source_commits` value that is not a full 40-character
+   commit hash ("source_commits must map repository names to full commit
+   hashes"); replace it with `git rev-parse <revision>` output. A published
    refresh can still exit 1 for content diagnostics; report those too.
 4. `.memon/index/` is derived and ignored by Git. Never commit or hand-edit it;
    `refresh` rebuilds it from the files. A website page that says "Not refreshed"

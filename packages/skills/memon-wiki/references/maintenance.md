@@ -15,7 +15,9 @@ Metadata: `title`, `description` (include for HTML; optional for other forms),
 optional `category`, `created_at`, `updated_at`,
 `freshness: CURRENT|STALE` and optional `stale_reason`. Record times with the
 writer's local offset. Reports also record `as_of` (evidence cutoff) and
-`source_commits` (repository name → full SHA). Use analyzed revisions, not the
+`source_commits` (repository name → full 40-character hash from
+`git rev-parse <revision>`; an abbreviated hash makes `memon refresh` refuse the
+document). Use analyzed revisions, not the
 publication commit; explain dirty/unavailable provenance instead of inventing it.
 Formatting edits do not advance the evidence cutoff. Additional fields are allowed.
 When retiring Wiki into a Report, set created_at to the content's last-effective

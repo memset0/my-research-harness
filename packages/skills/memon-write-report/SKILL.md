@@ -31,4 +31,6 @@ startup; memon supplies access. Return the link, evidence horizon and useful lim
 
 After writing, moving or updating a Report, run `memon refresh` (preflight,
 Published index) before returning the link. If the refresh is refused, fix every
-listed document, including other Reports, and rerun.
+listed document, including other Reports, and rerun. Record every
+`source_commits` value as a full 40-character hash (`git rev-parse <revision>`);
+an abbreviated hash is the most common reason a Report is refused.
