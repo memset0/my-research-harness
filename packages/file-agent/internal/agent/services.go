@@ -56,6 +56,17 @@ func (s *Server) serveService(w http.ResponseWriter, r *http.Request) {
 		respondError(w, err)
 		return
 	}
+	// Authorized applications may stream for longer than ordinary file requests.
+	// Keep admission bounded, but let cancellation/connection close end the stream.
+	controller := http.NewResponseController(w)
+	if err := controller.SetWriteDeadline(time.Time{}); err != nil {
+		respondError(w, fail("SOURCE_UNAVAILABLE"))
+		return
+	}
+	if err := controller.SetReadDeadline(time.Time{}); err != nil {
+		respondError(w, fail("SOURCE_UNAVAILABLE"))
+		return
+	}
 	target := &url.URL{Scheme: "http", Host: "127.0.0.1:" + strconv.Itoa(port)}
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	proxy.FlushInterval = -1
