@@ -4,6 +4,7 @@
 Defines project Reports under `docs/reports/`, both legacy single-file reports and opt-in directory bundles (including framework-agnostic static HTML visualization bundles), and the list, read and optimistic-locked write APIs that serve them from a polling-backed cache. It serves the dashboard's Reports pages and agents writing reports with the `memon-write-report` skill. The files are the source of truth; long-lived knowledge can move into the Wiki through `memon wiki migrate-report`, and the reading UI is specified by `report-workspace`.
 
 ## Requirements
+
 ### Requirement: GET /api/reports?project=NAME lists all reports
 
 `GET /api/reports?project=<name>` SHALL return `{ reports: ReportSummary[] }` sorted by `id` descending. `ReportSummary` SHALL include `id`, `slug`, `path` (absolute), `mtime`, and `title` (the first H1 heading of the file body, or null if absent). The response SHALL NOT include the file content (use `GET /api/reports/<id>` for that). The response SHALL be served from the runtime cache populated at warmup; no `fs.readFile` per request on the hot path.
@@ -75,10 +76,16 @@ The runtime SHALL maintain an in-memory cache of all reports for every configure
 - **THEN** the cache's content for that entry refreshes within the polling window and an SSE invalidation fires
 
 ### Requirement: Reports support legacy files and opt-in directory bundles
+Reports SHALL support legacy files and folders under docs/reports/, optionally inside one category directory. Folders SHALL accept README.md frontmatter or manifest.json with type html or service, with manifest precedence. Existing files and links SHALL remain valid. New authoring SHALL favor a folder for every presentation without requiring explicit HTML permission. Assets SHALL remain contained within their bundle and preserve MIME types and binary bytes.
 
-Reports SHALL be discovered in either legacy file form `docs/reports/R<NNNN>-<slug>.md` or directory form `docs/reports/R<NNNN>-<slug>/README.md`. Existing files remain valid and SHALL NOT be migrated. The report-writing skill SHALL select directory form only when the user explicitly requests HTML.
+#### Scenario: Classified HTML report
+- **WHEN** docs/reports/analysis/R0001-summary contains manifest.json and index.html
+- **THEN** the Report list and detail discover it without a README adapter
+- **AND** its static assets resolve within that folder
 
-Directory report assets SHALL be served only from within that report directory with correct MIME types. A Markdown image whose relative target ends in `.html` SHALL render as an unsandboxed same-origin iframe. A normal Markdown link to the same target SHALL remain a link. Local and CDN JavaScript/CSS are allowed by the v1 trust model.
+#### Scenario: Legacy report
+- **WHEN** a legacy Report file or README bundle is opened
+- **THEN** existing Markdown and HTML embed behavior remains available
 
 #### Scenario: HTML image embeds and HTML link does not
 - **GIVEN** a directory Report README containing `![Chart](./chart.html)` and `[Open chart](./chart.html)`
@@ -97,34 +104,11 @@ Directory report assets SHALL be served only from within that report directory w
 - **AND** HTML, CSS, JavaScript, JSON, and YAML remain UTF-8 text responses
 
 ### Requirement: HTML Report bundles are framework-agnostic static visualization containers
+An HTML Report SHALL render agent-authored static output without a build server, dependency installation or read-time generation. The entry SHALL default to index.html and be overridable by a contained relative manifest entry. Content authors SHALL choose their framework, layout, asset and data organization. Existing views/ layouts SHALL remain valid without requiring new documents to use them. Dynamic applications SHALL use the separate service manifest and forwarding contract.
 
-An opt-in directory Report SHALL be usable as a static visualization container
-independent of the technology used to author it. A view MAY be plain
-HTML/CSS/JavaScript or checked-in compiled output from any frontend framework,
-but opening the Report through memon's existing Report asset route SHALL NOT
-require a package install, framework development server, Python/Node backend, or
-build step at read time.
-
-For a newly delegated visualization, the canonical write namespace SHALL be
-`views/<slug>/`, where `<slug>` is lowercase kebab-case. The namespace SHALL
-contain a stable `index.html` entry and every static file produced by that
-delegate. Substantial normalized evidence SHALL be stored separately in
-writer-owned root `data/*.json` rather than embedded as a large literal in HTML
-or JavaScript. A delegated view SHALL treat root `data/` as read-only and load
-it through a relative URL such as `../../data/metrics.json`. View-local JSON MAY
-hold presentation configuration, but SHALL NOT duplicate or redefine the
-normalized evidence source.
-
-Every Report-owned URL used by the view SHALL be relative to the view or Report
-bundle and resolve within the Report directory. Carefully reviewed third-party
-HTTPS CDN JavaScript/CSS remains allowed under the existing v1 trust model. An
-absolute filesystem path, hard-coded memon origin, or dependency on a runtime
-build server SHALL NOT be required to render the view.
-
-This contract SHALL NOT require or consult a Report manifest, framework
-metadata, declared iframe dimensions, or automatic-height metadata. Existing
-directory Reports with HTML/assets outside `views/` and existing standalone
-Markdown Reports remain valid without migration.
+#### Scenario: Arbitrary static build
+- **WHEN** an agent writes index.html and relative CSS, JavaScript and JSON assets
+- **THEN** memon serves the output without adding a Markdown adapter or changing its layout
 
 #### Scenario: Framework build output is served as ordinary static assets
 
@@ -161,4 +145,3 @@ Markdown Reports remain valid without migration.
 - **THEN** `chart.html` is still served and embedded
 - **AND** no file is moved, rewritten, or reported invalid solely because it
   predates the delegated-view namespace
-

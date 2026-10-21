@@ -6,8 +6,15 @@ Defines the on-disk wiki page model under `docs/wiki/`, its discovery and diagno
 ## Requirements
 
 ### Requirement: Wiki pages live under `docs/wiki/<kind>/W<NNNN>-<slug>`
+Wiki SHALL discover legacy standalone Markdown and folders under docs/wiki/<category>/W<NNNN>-<slug>. Folders SHALL accept README.md or manifest.json, with manifest precedence. IDs and slugs SHALL remain unique and old files SHALL remain readable without migration. Arbitrary category directory names SHALL be allowed. Manifest titles and identity SHALL be validated without requiring Markdown sections or legacy per-kind statuses.
 
-A wiki page SHALL be discovered at `<projectRoot>/docs/wiki/<kind>/W<NNNN>-<slug>.md` (single-file form) or `<projectRoot>/docs/wiki/<kind>/W<NNNN>-<slug>/README.md` (bundle form). `<slug>` SHALL match `^[a-z0-9][a-z0-9-]*$` and SHALL be unique across every kind directory in the project; the `W<NNNN>` prefix SHALL equal the frontmatter `id` (`WIKI_ID_MISMATCH` otherwise). The slug is the primary human address: the dashboard, CLI, and links SHALL accept a bare slug everywhere an id is accepted, and renaming a slug SHALL be an explicit `move`. Discovery SHALL be exactly two levels deep; files directly under `docs/wiki/`, entries not matching the naming pattern, and entries deeper than the bundle `README.md` SHALL be ignored. A `<kind>` directory whose name is not in the shipped canonical Wiki kind registry SHALL still be discovered with `kind` equal to the directory name and SHALL produce the `WIKI_UNKNOWN_KIND` diagnostic.
+#### Scenario: Three presentation forms
+- **WHEN** a category contains a Markdown folder, HTML manifest folder and service manifest folder
+- **THEN** all three are listed and addressable by their W identity
+
+#### Scenario: Existing file
+- **WHEN** an existing standalone Wiki file is opened after upgrade
+- **THEN** it remains readable at its previous route
 
 #### Scenario: Both forms discovered
 - **GIVEN** `docs/wiki/finding/W0003-vsa-debt.md` and `docs/wiki/showcase/W0004-kernel-map/README.md`
@@ -22,7 +29,7 @@ A wiki page SHALL be discovered at `<projectRoot>/docs/wiki/<kind>/W<NNNN>-<slug
 #### Scenario: Unknown kind is tolerated
 - **GIVEN** `docs/wiki/retro/W0005-sprint-3.md`
 - **WHEN** the project's wiki is listed
-- **THEN** the page appears with `kind: "retro"` and a `WIKI_UNKNOWN_KIND` diagnostic
+- **THEN** the page appears with `kind: "retro"` without an unknown-category diagnostic
 
 #### Scenario: Duplicate slug is an error
 - **GIVEN** `docs/wiki/note/W0006-alpha.md` and `docs/wiki/finding/W0007-alpha.md`
@@ -58,54 +65,58 @@ In every Markdown surface the dashboard renders, a link whose destination is `@<
 - **THEN** neither reference reports `WIKI_LINK_UNRESOLVED` and the Run README is never opened
 
 ### Requirement: Page frontmatter carries identity, kind, status, and sources
+Markdown pages SHALL accept identity, kind/category, title, explicit-offset timestamps and optional maintenance metadata. Legacy kind-specific status, sources and date SHALL be optional; supplied values SHALL remain validated. Unknown metadata SHALL survive writes. New CLI pages SHALL default to README folder bundles and a title without fabricated status or prescribed body sections. Arbitrary safe category directories SHALL be accepted.
 
-Every page SHALL start with YAML frontmatter. `id` SHALL match `^W\d{4}$` and be unique in the project; `kind` SHALL equal the enclosing directory name; `title` SHALL be a non-empty string; `created_at` and `updated_at` SHALL be ISO8601 timestamps with an explicit offset. Status/date/source policies SHALL derive from the validated shipped Wiki kind registry. The existing defaults SHALL remain: `status` required and restricted per kind: `finding` `TENTATIVE|VERIFIED|RETRACTED`; `bottleneck` `OPEN|MITIGATED|RESOLVED`; `question` `OPEN|ANSWERED|DROPPED`; `decision` `PROPOSED|ACCEPTED|SUPERSEDED`; `showcase` `DRAFT|READY|OUTDATED`; `harness-feedback` `PROPOSED|ACCEPTED|SHIPPED|REJECTED`; `meeting`, `roadmap`, `note`, `initiative`, and `catalog` SHALL NOT require `status`. `meeting` SHALL require `date` in `YYYY-MM-DD` form. `finding` SHALL require a non-empty `sources` list. `description` (a one-to-three-sentence plain-text summary of the page, no Markdown), `tags` (string list), `sources` (string list), `legacy_id` (`^R\d{4}$`), `entry` (bundle pages only; relative path to an HTML document inside the bundle),  Keys outside this schema SHALL be preserved verbatim by every write path.
-
-Violations SHALL be reported as diagnostics (`WIKI_ID_INVALID`, `WIKI_ID_DUPLICATE`, `WIKI_KIND_MISMATCH`, `WIKI_TITLE_MISSING`, `WIKI_STATUS_MISSING`, `WIKI_STATUS_INVALID`, `WIKI_DATE_MISSING`, `WIKI_SOURCES_REQUIRED`, `WIKI_TIMESTAMP_INVALID`, `WIKI_LANGUAGE_INVALID`) with severity `error`; the page SHALL remain readable and listed. A page MAY declare `language: en` or `language: zh`, the language its content is written in; an absent field SHALL mean `en`, and page summaries and details SHALL expose the effective `language`.
+#### Scenario: Agent creates a small current page
+- **WHEN** an agent creates a Wiki page in a topic category
+- **THEN** the CLI writes a README bundle with explicit-offset times and an editable title, without boilerplate sections or inferred research status
 
 #### Scenario: Valid finding
-- **GIVEN** a `finding` page with `status: VERIFIED` and `sources: [E0017-fused-attention]`
-- **WHEN** the page is validated
-- **THEN** no diagnostics are produced
+- **GIVEN** a finding declares status VERIFIED and valid evidence sources
+- **WHEN** its metadata is validated
+- **THEN** no metadata diagnostic is produced
 
 #### Scenario: Wrong status vocabulary
-- **GIVEN** a `bottleneck` page with `status: VERIFIED`
-- **WHEN** the page is validated
-- **THEN** a `WIKI_STATUS_INVALID` error diagnostic is produced and the page is still listed
+- **GIVEN** a legacy bottleneck page explicitly declares status VERIFIED
+- **WHEN** it is validated
+- **THEN** it remains readable with WIKI_STATUS_INVALID
 
 #### Scenario: Custom keys survive a write
-- **GIVEN** a page whose frontmatter contains `owner: alice`
-- **WHEN** the page is rewritten through the API or CLI
-- **THEN** `owner: alice` is still present unchanged
+- **GIVEN** a page has additional author metadata
+- **WHEN** it is rewritten through a supported writer
+- **THEN** those fields remain intact
 
 #### Scenario: Chinese page
-- **GIVEN** a page with `language: zh`
-- **WHEN** the wiki is listed
-- **THEN** its summary carries `language: zh` and no diagnostic is produced
+- **GIVEN** a page declares language zh
+- **WHEN** it is listed
+- **THEN** its effective language is zh
 
 #### Scenario: Unknown language
-- **GIVEN** a page with `language: fr`
-- **WHEN** the page is validated
-- **THEN** a `WIKI_LANGUAGE_INVALID` error diagnostic is produced and the page is listed with `language: en`
+- **GIVEN** a Markdown page declares language fr
+- **WHEN** it is validated
+- **THEN** WIKI_LANGUAGE_INVALID is reported while the effective language remains en
 
 ### Requirement: Recommended sections are advisory
+Wiki authoring SHALL use free-form prose. Missing legacy kind-specific headings, maintenance-rule lists or literal evidence tokens SHALL NOT produce diagnostics. Kinds remain labels for compatible reads, not templates that require boilerplate.
 
-For each canonical kind the system SHALL derive recommended H2 sections from the shipped registry, initially: `meeting` Attendees, Notes, Decisions, Action items; `finding` Claim, Evidence, Limits; `bottleneck` Problem, Impact, Status, Candidates; `question` Question, Context, Answer; `decision` Decision, Rationale, Consequences; `showcase` What to show, How to reproduce, Assets; `harness-feedback` Motivation, Proposal, Status; `note`, `roadmap`, `initiative`, and `catalog` none. Required H2 structure SHALL NOT be inferred from suggestions. A missing recommended section SHALL produce a `WIKI_MISSING_SECTION` diagnostic with severity `warn`. Additional or reordered sections SHALL NOT produce diagnostics. Section headings SHALL be matched by their English text on every page regardless of its `language`; there are no translated heading forms.
+#### Scenario: Concise finding
+- **WHEN** a finding is expressed in a short paragraph without prescribed H2 headings
+- **THEN** it is readable without missing-section or missing-evidence-token warnings
 
 #### Scenario: Finding without Limits
-- **GIVEN** a `finding` page whose body has `## Claim` and `## Evidence` only
+- **GIVEN** a finding has only Claim and Evidence headings
 - **WHEN** the page is linted
-- **THEN** exactly one `WIKI_MISSING_SECTION` warning naming `Limits` is produced
+- **THEN** no missing-section warning is produced
 
 #### Scenario: Chinese page keeps English headings
-- **GIVEN** a `language: zh` `finding` page whose body has `## Claim`, `## Evidence` and `## Limits` with Chinese prose beneath them
+- **GIVEN** a Chinese page uses English headings with Chinese prose
 - **WHEN** the page is linted
-- **THEN** no `WIKI_MISSING_SECTION` diagnostic is produced
+- **THEN** no section-format diagnostic is produced
 
 #### Scenario: Chinese finding headings
-- **GIVEN** a `language: zh` `finding` page whose body has `## 结论`, `## 证据` and `## 局限` instead of the English headings
+- **GIVEN** a Chinese page uses Chinese headings
 - **WHEN** the page is linted
-- **THEN** three `WIKI_MISSING_SECTION` warnings name `Claim`, `Evidence` and `Limits`
+- **THEN** no English-heading requirement is imposed
 
 ### Requirement: Sources resolve to project artifacts and drive staleness
 
@@ -367,3 +378,49 @@ A single-page read (`GET /api/wiki/<id>`) and the projection returned after a pa
 #### Scenario: Single page review
 - **WHEN** `W0004` is requested from a wiki of 30 pages
 - **THEN** git review is derived for `W0004` alone and its `review` field is the same as the list reports for it
+
+### Requirement: Explicit content freshness takes precedence
+An explicit CURRENT or STALE declaration SHALL take precedence over legacy source timestamp hints and SHALL be exposed with its reason. A source update SHALL NOT silently invalidate evidence or rewrite a declared freshness state.
+
+#### Scenario: Current page with newer source
+- **WHEN** a page explicitly declares CURRENT and a cited experiment receives an unrelated update
+- **THEN** the declared freshness remains CURRENT
+
+### Requirement: Wiki deletion requires repaired inbound references
+The CLI SHALL provide `memon wiki delete <id>` after a user retirement decision. It SHALL resolve actual inbound references only in documents under `docs/wiki/`, `docs/reports/` and `docs/experiments/` (including Experiment details), including supported mentions, Markdown paths and web routes, metadata sources and HTML links. It SHALL report each blocking source and location/field, exclude the target's own internal links and code examples, and distinguish other projects' identities. External links to bundle assets SHALL block deletion or require asset handoff. No force option or automatic reference rewriting SHALL be provided.
+
+Deletion SHALL hold the common project writer lock, revalidate document fingerprints, enforce realpath containment and fail closed on source errors or concurrent changes. It SHALL remove only the target document and exclusively owned bundle assets and refresh the inventory. A refusal SHALL leave all research files intact. Scanning SHALL exclude unrelated project files, Run directories, project configuration, nested repositories, dependency trees, and Experiment runtime/cache/output trees before following their links. Wiki and Report categories or assets named `cache` or `data` SHALL remain in scope. Supported document text and manifests within the three roots SHALL retain reference, containment and concurrent-change checks.
+
+#### Scenario: Inbound links remain
+- **WHEN** another document or manifest still references the target Wiki or its asset
+- **THEN** deletion reports the source and location and deletes nothing
+- **AND** the agent repairs the references before retrying
+
+#### Scenario: References repaired
+- **WHEN** the target has no inbound references and the locked source fingerprint remains unchanged
+- **THEN** the CLI deletes the target bundle and refreshes navigation without creating a Report or alias
+
+#### Scenario: Model caches and unrelated files are outside reference scope
+- **WHEN** an Experiment cache contains an external model symlink or a Run or unrelated handoff mentions the Wiki
+- **THEN** the deletion scan does not traverse those trees or read those files
+- **AND** no-reference deletion succeeds without changing them
+
+#### Scenario: Legitimate document categories remain checked
+- **WHEN** a Wiki category named cache or a Report asset document contains an inbound reference
+- **THEN** it blocks deletion just like an Experiment README, metadata or details document
+
+#### Scenario: Stable legacy document alias
+- **WHEN** an in-project document symlink and its content remain unchanged
+- **THEN** deletion accepts that alias while checking its references
+- **AND** a changed link target or referent content causes a conflict before removal
+
+#### Scenario: Ambiguous or unreachable source
+- **WHEN** the scan cannot establish complete safe reference coverage or sees a concurrent source change
+- **THEN** deletion fails closed with a readable error and preserves the document
+
+### Requirement: Deleted Wiki identities are not reused
+Creation and deletion SHALL advance an optional `wiki` high-water mark in the tracked `.memon/id-watermarks.json` file under the common writer lock. Allocation SHALL exceed both existing Wiki IDs and this persisted high-water mark. Refreshing or deleting the disposable index SHALL NOT permit reuse of a removed ID. The strict project declaration SHALL remain unchanged so older readers of the same source remain compatible.
+
+#### Scenario: Delete the highest numbered page
+- **WHEN** the highest Wiki ID is removed and the derived index is rebuilt
+- **THEN** the next page receives a strictly higher ID
