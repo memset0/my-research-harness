@@ -95,9 +95,9 @@ An explicit CURRENT or STALE declaration SHALL take precedence over legacy sourc
 - **THEN** the declared freshness remains CURRENT
 
 ### Requirement: Wiki deletion requires repaired inbound references
-The CLI SHALL provide `memon wiki delete <id>` after a user retirement decision. It SHALL resolve actual inbound references in project Wiki, Reports, Experiments, details and other project documents, including supported mentions, Markdown paths and web routes, metadata sources and HTML links. It SHALL report each blocking source and location/field, exclude the target's own internal links and code examples, and distinguish other projects' identities. External links to bundle assets SHALL block deletion or require asset handoff. No force option or automatic reference rewriting SHALL be provided.
+The CLI SHALL provide `memon wiki delete <id>` after a user retirement decision. It SHALL resolve actual inbound references only in documents under `docs/wiki/`, `docs/reports/` and `docs/experiments/` (including Experiment details), including supported mentions, Markdown paths and web routes, metadata sources and HTML links. It SHALL report each blocking source and location/field, exclude the target's own internal links and code examples, and distinguish other projects' identities. External links to bundle assets SHALL block deletion or require asset handoff. No force option or automatic reference rewriting SHALL be provided.
 
-Deletion SHALL hold the common project writer lock, revalidate document fingerprints, enforce realpath containment and fail closed on source errors or concurrent changes. It SHALL remove only the target document and exclusively owned bundle assets and refresh the inventory. A refusal SHALL leave all research files intact. Scanning SHALL avoid large binary and raw execution output trees.
+Deletion SHALL hold the common project writer lock, revalidate document fingerprints, enforce realpath containment and fail closed on source errors or concurrent changes. It SHALL remove only the target document and exclusively owned bundle assets and refresh the inventory. A refusal SHALL leave all research files intact. Scanning SHALL exclude unrelated project files, Run directories, project configuration, nested repositories, dependency trees, and Experiment runtime/cache/output trees before following their links. Wiki and Report categories or assets named `cache` or `data` SHALL remain in scope. Supported document text and manifests within the three roots SHALL retain reference, containment and concurrent-change checks.
 
 #### Scenario: Inbound links remain
 - **WHEN** another document or manifest still references the target Wiki or its asset
@@ -107,6 +107,15 @@ Deletion SHALL hold the common project writer lock, revalidate document fingerpr
 #### Scenario: References repaired
 - **WHEN** the target has no inbound references and the locked source fingerprint remains unchanged
 - **THEN** the CLI deletes the target bundle and refreshes navigation without creating a Report or alias
+
+#### Scenario: Model caches and unrelated files are outside reference scope
+- **WHEN** an Experiment cache contains an external model symlink or a Run or unrelated handoff mentions the Wiki
+- **THEN** the deletion scan does not traverse those trees or read those files
+- **AND** no-reference deletion succeeds without changing them
+
+#### Scenario: Legitimate document categories remain checked
+- **WHEN** a Wiki category named cache or a Report asset document contains an inbound reference
+- **THEN** it blocks deletion just like an Experiment README, metadata or details document
 
 #### Scenario: Ambiguous or unreachable source
 - **WHEN** the scan cannot establish complete safe reference coverage or sees a concurrent source change

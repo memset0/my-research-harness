@@ -290,11 +290,12 @@ export function registerToolsCommands(program: Command): void {
       await runWikiMove({ ...wikiGlobals(opts), page, target, status: opts.status })
     })
 
-  wikiCommand(
-    wiki,
-    'delete <page>',
-    'delete an unreferenced Wiki page and its owned assets',
-  ).action(async (page: string, opts: WikiLocalOptions) => {
-    await runWikiDelete({ ...wikiGlobals(opts), page })
-  })
+  wikiCommand(wiki, 'delete <page>', 'delete an unreferenced Wiki page and its owned assets')
+    .addHelpText(
+      'after',
+      '\nReference checks cover docs/experiments, docs/wiki and docs/reports only; Experiment caches and execution outputs are excluded.',
+    )
+    .action(async (page: string, opts: WikiLocalOptions) => {
+      await runWikiDelete({ ...wikiGlobals(opts), page })
+    })
 }

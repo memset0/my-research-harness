@@ -17,7 +17,8 @@ it('reports a source and line, then deletes only after that link is repaired', a
       )
     ).exitCode,
   ).toBe(0)
-  await fs.writeFile(p.path('README.md'), 'See @W0001.\n')
+  await fs.mkdir(p.path('docs/reports'), { recursive: true })
+  await fs.writeFile(p.path('docs/reports/R0001-review.md'), 'See @W0001.\n')
   const blocked = await captureCli(() => runWikiDelete({ ...options, page: 'W0001' }))
   expect(blocked.exitCode).not.toBe(0)
   expect(JSON.parse(blocked.stderr)).toMatchObject({
@@ -25,12 +26,13 @@ it('reports a source and line, then deletes only after that link is repaired', a
       code: 'WIKI_REFERENCED',
       details: {
         references: expect.arrayContaining([
-          expect.objectContaining({ source: 'README.md', line: 1 }),
+          expect.objectContaining({ source: 'docs/reports/R0001-review.md', line: 1 }),
         ]),
       },
     },
   })
-  await fs.writeFile(p.path('README.md'), 'The explanation moved to a Report.\n')
+  await fs.mkdir(p.path('docs/reports'), { recursive: true })
+  await fs.writeFile(p.path('docs/reports/R0001-review.md'), 'The explanation moved to a Report.\n')
   const deleted = await captureCli(() => runWikiDelete({ ...options, page: 'W0001' }))
   expect(deleted.exitCode, deleted.stderr).toBe(0)
   expect(JSON.parse(deleted.stdout)).toMatchObject({
@@ -137,7 +139,8 @@ it('does not treat an unreachable deployment mapping as a confirmed other projec
     p.path('config.yml'),
     `projects:\n  - name: registered\n    root: ${JSON.stringify(p.path('unreachable'))}\n`,
   )
-  await fs.writeFile(p.path('README.md'), '[Page](/p/registered/wiki/W0001)\n')
+  await fs.mkdir(p.path('docs/reports'), { recursive: true })
+  await fs.writeFile(p.path('docs/reports/R0001-review.md'), '[Page](/p/registered/wiki/W0001)\n')
   const result = await captureCli(() => runWikiDelete({ ...options, page: 'W0001' }))
   expect(result.exitCode).not.toBe(0)
   expect(result.stderr).toContain('WIKI_REFERENCE_AMBIGUOUS')

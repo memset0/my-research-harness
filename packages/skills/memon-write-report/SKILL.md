@@ -17,6 +17,8 @@ component syntax, external Skill or duplicate Markdown narrative. New Reports
 use a bundle `docs/reports/[<category>/]R<NNNN>-<slug>/`; preserve existing working paths.
 For HTML read [html-report-bundle.md](references/html-report-bundle.md).
 
+For retired Wiki material, use its last-effective time as creation time and an
+actual historical source revision; label a nearby revision as approximate.
 Nearby corrections and extensions can update the same Report. Preserve creation
 time, update the modification time, and advance the evidence cutoff only when
 the evidence changes. Mark stale material explicitly with a reason; stale does

@@ -76,7 +76,9 @@ const TEXT_EXTENSIONS = new Set([
   '.css',
   '.svg',
 ])
-const OMIT_DIRECTORIES = new Set([
+const EXPERIMENT_OUTPUT_DIRECTORIES = new Set([
+  'cache',
+  'caches',
   'node_modules',
   'logs',
   'outputs',
@@ -149,14 +151,27 @@ async function scanProject(root: string, target: WikiDeleteTarget): Promise<Scan
       ...wikiDeleteReferences(bytes.toString('utf8'), relative(root, path), target),
     )
   }
-  async function walk(directory: string): Promise<void> {
+  async function walk(directory: string, experiment: boolean): Promise<void> {
     const real = await contained(root, directory)
     if (seen.has(real)) return
     seen.add(real)
     result.fingerprints.push(await fingerprint(root, directory))
     const entries = await fs.readdir(directory, { withFileTypes: true })
     for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-      if (entry.name.startsWith('.')) continue
+      if (
+        entry.name.startsWith('.') ||
+        entry.name === 'node_modules' ||
+        entry.name === '__pycache__'
+      )
+        continue
+      // Runtime trees are not articles. Exclude them before resolving links,
+      // while retaining identically named Wiki/Report categories and assets.
+      if (
+        experiment &&
+        !relative(root, directory).split(sep).includes('details') &&
+        EXPERIMENT_OUTPUT_DIRECTORIES.has(entry.name)
+      )
+        continue
       const path = join(directory, entry.name)
       if (target.ownedPaths.some((owned) => within(owned, path))) continue
       if (entry.isSymbolicLink()) {
@@ -174,37 +189,26 @@ async function scanProject(root: string, target: WikiDeleteTarget): Promise<Scan
           })
           continue
         }
-        if (OMIT_DIRECTORIES.has(entry.name)) continue
         await contained(root, path)
       }
       const stat = await fs.stat(path)
       if (stat.isDirectory()) {
-        if (OMIT_DIRECTORIES.has(entry.name)) continue
         // Nested repositories are separate projects, not this project's articles.
         if (await optionalStat(join(path, '.git'))) continue
-        await walk(path)
+        await walk(path, experiment)
       } else if (stat.isFile() && TEXT_EXTENSIONS.has(extname(entry.name).toLowerCase())) {
         await readDocument(path)
       }
     }
   }
-  await walk(root)
-  const snapshot = parseSnapshot(
-    JSON.parse(await fs.readFile(resolveIndexPaths(root).snapshot, 'utf8')),
-  )
-  if (!snapshot.ok)
-    throw new WikiDeleteError('BAD_STATE', 'inventory changed during reference scan')
-  for (const run of Object.keys(snapshot.value.runs)) {
-    const directory = resolve(root, run)
-    const real = await contained(root, directory)
-    if (target.ownedPaths.some((owned) => within(owned, real)))
-      result.blockers.push({ source: run, line: 1, field: 'symlink', reference: real })
-    result.fingerprints.push(await fingerprint(root, directory))
-    for (const file of ['README.md', 'run.json'])
-      if (await optionalStat(join(directory, file))) await readDocument(join(directory, file))
+  // Only these three document trees define inbound-reference coverage. Do not
+  // enumerate project code, configuration, Run inventories or raw outputs.
+  // Fingerprint their parent as well so a newly added document root conflicts.
+  result.fingerprints.push(await fingerprint(root, join(root, 'docs')))
+  for (const name of ['experiments', 'wiki', 'reports']) {
+    const directory = join(root, 'docs', name)
+    if (await optionalStat(directory)) await walk(directory, name === 'experiments')
   }
-  if (await optionalStat(join(root, '.memon/project.yml')))
-    await readDocument(join(root, '.memon/project.yml'))
   return result
 }
 

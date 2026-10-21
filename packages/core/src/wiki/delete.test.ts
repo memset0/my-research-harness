@@ -24,11 +24,14 @@ async function fixture(files: Record<string, string> = {}) {
 
 describe('guarded Wiki deletion', () => {
   it.each([
-    ['README.md', 'See @W0001.'],
+    ['docs/experiments/E0001-study/README.md', 'See @W0001.'],
     ['docs/reports/R0001-review.md', 'See [reference](../wiki/note/W0001-alpha/README.md).'],
     ['docs/experiments/E0001-study/details/analysis.md', 'W0001'],
     ['docs/reports/R0001-review/manifest.json', '{"sources":["W0001"]}'],
-    ['docs/notes/report.html', '<a href="../wiki/note/W0001-alpha/chart.svg">Chart</a>'],
+    [
+      'docs/reports/R0002-notes/report.html',
+      '<a href="../../wiki/note/W0001-alpha/chart.svg">Chart</a>',
+    ],
   ])('blocks a real reference in %s and preserves every target byte', async (location, text) => {
     const p = await fixture({ [location]: text })
     await expect(
@@ -68,7 +71,7 @@ describe('guarded Wiki deletion', () => {
     const p = await fixture({
       [source]: page.replace('kind: note', 'kind: note\nlegacy_id: R0003'),
       'docs/reports/analysis/R0003-original/README.md': '# Original Report\n',
-      'README.md': 'See R0003.\n',
+      'docs/reports/R0004-other.md': 'See R0003.\n',
     })
     const result = await deleteWikiPage({ projectRoot: p.root, page: 'W0001' })
     expect(result.id).toBe('W0001')
@@ -77,24 +80,76 @@ describe('guarded Wiki deletion', () => {
     ).toBe('# Original Report\n')
   })
 
-  it('checks registered legacy Run documents without traversing raw output trees', async () => {
+  it('ignores Run metadata and unrelated files outside the three document roots', async () => {
     const p = await createTempProject({
       wiki: { 'note/W0001-alpha/README.md': page },
       runs: {
         'logs/trial-261020-120000':
           '---\nid: trial-261020-120000\nstatus: FINISHED\ncreated_at: 2026-10-20T12:00:00+08:00\n---\nSee @W0001.\n',
       },
-      files: { 'logs/raw-output/unknown.json': 'not JSON and not a registered research document' },
+      files: {
+        'logs/raw-output/unknown.json': 'not JSON and not a registered research document',
+        'README.md': 'See @W0001.',
+        'docs/handoff.md': 'See @W0001.',
+      },
     })
     await rebuildIndex(p.root, { role: 'cli' })
+    const read = vi.spyOn(fs, 'readFile')
+    const result = await deleteWikiPage({ projectRoot: p.root, page: 'W0001' })
+    expect(result.id).toBe('W0001')
+    expect(read.mock.calls.some(([path]) => String(path).includes('/logs/'))).toBe(false)
+  })
+
+  it('does not follow Experiment model cache links or traverse generated output trees', async () => {
+    const p = await fixture(),
+      other = await createTempProject({ files: { 'config.json': '{"reference":"W0001"}' } })
+    for (const name of ['cache', 'outputs', 'checkpoints']) {
+      const directory = p.path(`docs/experiments/E0001-study/${name}`)
+      await fs.mkdir(directory, { recursive: true })
+      await fs.symlink(other.root, `${directory}/model`)
+    }
+    const realpath = vi.spyOn(fs, 'realpath')
+    const readdir = vi.spyOn(fs, 'readdir')
+    expect((await deleteWikiPage({ projectRoot: p.root, page: 'W0001' })).id).toBe('W0001')
+    for (const spy of [realpath, readdir])
+      expect(
+        spy.mock.calls.some(([path]) => /\/(cache|outputs|checkpoints)(\/|$)/.test(String(path))),
+      ).toBe(false)
+    expect(await fs.readFile(other.path('config.json'), 'utf8')).toBe('{"reference":"W0001"}')
+  })
+
+  it.each([
+    ['docs/wiki/cache/W0002-related.md', 'See @W0001.'],
+    ['docs/experiments/E0001-study/details/cache/notes.md', 'See @W0001.'],
+    ['docs/reports/cache/R0001-related/README.md', 'See @W0001.'],
+    [
+      'docs/reports/R0001-related/data/view.html',
+      '<a href="../../../wiki/note/W0001-alpha/README.md">Source</a>',
+    ],
+    ['docs/experiments/E0001-study/experiment.json', '{"sources":["W0001"]}'],
+  ])('checks ordinary document references in %s', async (location, content) => {
+    const p = await fixture({ [location]: content })
     await expect(deleteWikiPage({ projectRoot: p.root, page: 'W0001' })).rejects.toMatchObject({
       code: 'WIKI_REFERENCED',
       details: {
-        references: expect.arrayContaining([
-          expect.objectContaining({ source: 'logs/trial-261020-120000/README.md' }),
-        ]),
+        references: expect.arrayContaining([expect.objectContaining({ source: location })]),
       },
     })
+    expect(await fs.readFile(p.path(source), 'utf8')).toBe(page)
+  })
+
+  it('refuses an escaping link inside Experiment details', async () => {
+    const p = await fixture(),
+      other = await createTempProject({ files: { 'article.md': 'External' } })
+    await fs.mkdir(p.path('docs/experiments/E0001-study/details'), { recursive: true })
+    await fs.symlink(
+      other.path('article.md'),
+      p.path('docs/experiments/E0001-study/details/linked.md'),
+    )
+    await expect(deleteWikiPage({ projectRoot: p.root, page: 'W0001' })).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    })
+    expect(await fs.readFile(p.path(source), 'utf8')).toBe(page)
   })
 
   it('refuses an escaping symlink without deleting external files', async () => {
@@ -110,23 +165,24 @@ describe('guarded Wiki deletion', () => {
 
   it('treats an external alias to a bundle asset as an inbound reference', async () => {
     const p = await fixture()
-    await fs.symlink('wiki/note/W0001-alpha/chart.svg', p.path('docs/plot.svg'))
+    await fs.mkdir(p.path('docs/reports'), { recursive: true })
+    await fs.symlink('../wiki/note/W0001-alpha/chart.svg', p.path('docs/reports/plot.svg'))
     await expect(deleteWikiPage({ projectRoot: p.root, page: 'W0001' })).rejects.toMatchObject({
       code: 'WIKI_REFERENCED',
       details: {
         references: expect.arrayContaining([
-          expect.objectContaining({ source: 'docs/plot.svg', field: 'symlink' }),
+          expect.objectContaining({ source: 'docs/reports/plot.svg', field: 'symlink' }),
         ]),
       },
     })
-    expect(await fs.readFile(p.path('docs/plot.svg'), 'utf8')).toBe('<svg/>')
+    expect(await fs.readFile(p.path('docs/reports/plot.svg'), 'utf8')).toBe('<svg/>')
   })
 
   it('fails closed when a source cannot be read', async () => {
-    const p = await fixture({ 'docs/handoff.md': 'No links' })
+    const p = await fixture({ 'docs/reports/R0002-check.md': 'No links' })
     const read = fs.readFile.bind(fs)
     vi.spyOn(fs, 'readFile').mockImplementation((async (path, ...rest) => {
-      if (String(path) === p.path('docs/handoff.md'))
+      if (String(path) === p.path('docs/reports/R0002-check.md'))
         throw Object.assign(new Error('unreachable source'), { code: 'EIO' })
       return Reflect.apply(read, fs, [path, ...rest])
     }) as typeof fs.readFile)
@@ -153,14 +209,14 @@ describe('guarded Wiki deletion', () => {
   })
 
   it('rejects a source edit with preserved mtime before deletion', async () => {
-    const p = await fixture({ 'docs/handoff.md': 'No links here.' })
-    const stat = await fs.stat(p.path('docs/handoff.md'))
+    const p = await fixture({ 'docs/reports/R0002-check.md': 'No links here.' })
+    const stat = await fs.stat(p.path('docs/reports/R0002-check.md'))
     const read = fs.readFile.bind(fs)
     let reads = 0
     vi.spyOn(fs, 'readFile').mockImplementation((async (path, ...rest) => {
-      if (String(path) === p.path('docs/handoff.md') && ++reads === 2) {
-        await fs.writeFile(p.path('docs/handoff.md'), 'See W0001 now.')
-        await fs.utimes(p.path('docs/handoff.md'), stat.atime, stat.mtime)
+      if (String(path) === p.path('docs/reports/R0002-check.md') && ++reads === 2) {
+        await fs.writeFile(p.path('docs/reports/R0002-check.md'), 'See W0001 now.')
+        await fs.utimes(p.path('docs/reports/R0002-check.md'), stat.atime, stat.mtime)
       }
       return Reflect.apply(read, fs, [path, ...rest])
     }) as typeof fs.readFile)

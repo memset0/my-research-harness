@@ -45,3 +45,11 @@ Skills SHALL distinguish maintained Wiki from time-scoped Report, allow freely a
 #### Scenario: Migration review
 - **WHEN** preparing a project migration
 - **THEN** a per-document plan exposes destination, rewrite scope, reasons and unresolved decisions before source data is moved
+
+### Requirement: Retired Reports retain their effective historical time
+When Wiki material becomes a historical Report, created_at SHALL record when its retained content was last effective and updated_at SHALL record the current retirement or maintenance time, both with explicit local offsets. The effective time SHALL be based on content and history rather than automatically copying the Wiki creation date. Source commits SHALL identify actual revisions relevant to that historical content; a nearby actual revision MAY be used with explicit approximate provenance when exact correspondence is unavailable.
+
+#### Scenario: Late retirement of an updated Wiki
+- **WHEN** a Wiki created early was substantively updated later and is retired now
+- **THEN** the Report records the appropriate last-effective historical time as created_at and now as updated_at
+- **AND** any approximation of the effective revision is labeled without fabricating a hash

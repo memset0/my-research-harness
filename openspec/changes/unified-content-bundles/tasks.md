@@ -19,3 +19,9 @@
 ## 4. Integration
 
 - [x] 4.1 Run focused regression tests, typecheck and OpenSpec validation; verify exact-build content rendering and all three service transports without running a full routine suite.
+
+## 5. Scoped retirement follow-up
+
+- [x] 5.1 Restrict deletion reference scanning to Experiment/Wiki/Report documents, exclude generated execution/cache trees without hiding legitimate content categories, and verify links, containment, concurrency and publication rollback.
+- [x] 5.2 Document the scan scope in CLI help and concise Skills, and record last-effective creation time plus actual or explicitly approximate revision for retired Reports.
+- [x] 5.3 Run focused Core/CLI/Skills checks, typecheck, validate the updated change and verify the built CLI on isolated fixtures.

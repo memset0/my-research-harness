@@ -18,6 +18,10 @@ writer's local offset. Reports also record `as_of` (evidence cutoff) and
 `source_commits` (repository name → full SHA). Use analyzed revisions, not the
 publication commit; explain dirty/unavailable provenance instead of inventing it.
 Formatting edits do not advance the evidence cutoff. Additional fields are allowed.
+When retiring Wiki into a Report, set created_at to the content's last-effective
+time (from the content and history), and updated_at to the current maintenance
+time. Record the relevant historical source commit; a nearby actual commit is
+acceptable if explicitly labeled approximate. Never invent a hash.
 
 Explicit freshness controls the reader's badge/filter. Age or unrelated Git changes
 do not change it. STALE means the content needs updating for current use; measurement
@@ -25,5 +29,7 @@ validity, confidence and service availability are separate. A monitor normally
 belongs in Wiki; a Report should not silently replace pinned evidence with "latest".
 
 For a user-authorized Wiki retirement, move useful time-scoped content to a Report
-or remove it. Repair references before `wiki delete`; it reports blockers and has
+or remove it. Repair references in Experiment, Wiki and Report documents before
+`wiki delete`; it checks these three trees, excluding Experiment runtime caches
+and outputs. It reports blockers and has
 no force bypass. Keep invalidity and superseding-method reasons with the evidence.

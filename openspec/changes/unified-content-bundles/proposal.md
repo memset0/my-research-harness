@@ -7,8 +7,9 @@ Agents can produce useful Markdown, static HTML and live applications, but the c
 - Discover Wiki and Report folders with either README frontmatter or an HTML/service manifest, retaining legacy documents.
 - Expose category, explicit freshness and report evidence time/revisions in navigation and detail views.
 - Forward agent-owned services through local HTTP, SSH tunnels or the independent File Agent; never start or stop the applications.
-- Add one guarded `wiki delete` command: user decides retirement; agents repair inbound references before deletion.
+- Add one guarded `wiki delete` command: user decides retirement; agents repair inbound references before deletion; checks cover Experiment/Wiki/Report documents without scanning execution caches or unrelated project trees.
 - Keep arbitrary static HTML and existing Markdown components usable without an adapter or required layout.
+- Preserve the last-effective time and source revision when retiring Wiki content into Reports, distinguishing those from the current maintenance timestamp.
 - Update concise authoring skills and prepare a per-document migration preview without applying bulk research-data changes.
 
 ## Capabilities
