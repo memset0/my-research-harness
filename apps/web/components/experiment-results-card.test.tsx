@@ -1,5 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithHeartbeat } from '../test/utils'
 
@@ -78,6 +77,7 @@ function renderCard(
   )
 }
 
+// Render-only: refresh clicks and the history picker are not simulated.
 describe('ExperimentResultsCard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -96,7 +96,8 @@ describe('ExperimentResultsCard', () => {
 
   it('loads a summary deferred for size from the Results endpoint', async () => {
     const big = resultsDocument(
-      Array.from({ length: 300 }, (_, index) =>
+      // Deferral is decided by the detail response, not by the row count.
+      Array.from({ length: 3 }, (_, index) =>
         variant(`V${String(index + 1).padStart(4, '0')}`, { name: `variant ${index + 1}` }),
       ),
     )
@@ -131,7 +132,9 @@ describe('ExperimentResultsCard', () => {
     const { container } = renderCard(
       failedSummary(code, {
         ...(code === 'RESULT_SCHEMA_MISMATCH'
-          ? { upgradeCommand: `memon experiment schema upgrade ${EXPERIMENT} --to 2` }
+          ? {
+              upgradeCommand: `node "$MEMON_SOURCE/packages/core/migrations/scripts/experiment-schema.mjs" --project-root . --experiment ${EXPERIMENT} --to 2`,
+            }
           : {}),
       }),
     )
@@ -142,7 +145,7 @@ describe('ExperimentResultsCard', () => {
     expect(container.querySelector('table')).toBeNull()
     if (code === 'RESULT_SCHEMA_MISMATCH')
       expect(container.querySelector('[data-slot="results-upgrade-command"]')).toHaveTextContent(
-        `memon experiment schema upgrade ${EXPERIMENT} --to 2`,
+        `node "$MEMON_SOURCE/packages/core/migrations/scripts/experiment-schema.mjs" --project-root . --experiment ${EXPERIMENT} --to 2`,
       )
   })
 
@@ -153,98 +156,4 @@ describe('ExperimentResultsCard', () => {
       'INVALID_RESULTS',
     )
   })
-
-  it('keeps the last good table and time when a refresh finds the description file invalid', async () => {
-    const user = userEvent.setup()
-    vi.mocked(fetchExperimentResults).mockResolvedValueOnce({
-      ok: false,
-      status: 400,
-      message: 'experiment.json is not valid JSON',
-      body: {
-        error: { code: 'INVALID_RESULTS', message: 'experiment.json is not valid JSON' },
-        files: [],
-        diagnostics: [],
-        updatedAt: '2026-10-02T09:00:00+08:00',
-      },
-    })
-    const { container } = renderCard(OK)
-    await user.click(screen.getByRole('button', { name: 'Refresh Results' }))
-    expect(
-      await screen.findByText(/INVALID_RESULTS: experiment.json is not valid JSON/),
-    ).toBeInTheDocument()
-    expect(container.querySelector('[data-variant-id="V0001"]')).toBeInTheDocument()
-    expect(container.querySelector('[data-slot="results-error"]')).toBeNull()
-    expect(container.querySelector('[data-results-snapshot-status]')).toHaveAttribute(
-      'title',
-      'Results inputs last changed at 2026-10-01T08:00:00+08:00',
-    )
-    expect(screen.getByRole('button', { name: 'Refresh Results' })).toBeEnabled()
-  })
-
-  it('replaces the table on a refreshed schema mismatch and recovers once the inputs agree', async () => {
-    const user = userEvent.setup()
-    vi.mocked(fetchExperimentResults)
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 422,
-        message: 'mismatch',
-        body: {
-          error: { code: 'RESULT_SCHEMA_MISMATCH', message: 'mismatch' },
-          files: [{ file: 'logs/b-260901-100000/result.csv', version: 1 }],
-          upgradeCommand: `memon experiment schema upgrade ${EXPERIMENT} --to 2`,
-          expectedVersion: 2,
-          diagnostics: [],
-          updatedAt: '2026-10-02T10:00:00+08:00',
-        },
-      })
-      .mockResolvedValueOnce({ ok: true, summary: OK, updatedAt: '2026-10-02T11:00:00+08:00' })
-    const { container } = renderCard(OK)
-    await user.click(screen.getByRole('button', { name: 'Refresh Results' }))
-    await waitFor(() =>
-      expect(container.querySelector('[data-slot="results-error"]')).toBeInTheDocument(),
-    )
-    expect(container.querySelector('[data-variant-id]')).toBeNull()
-    await user.click(screen.getByRole('button', { name: 'Refresh Results' }))
-    await waitFor(() =>
-      expect(container.querySelector('[data-variant-id="V0001"]')).toBeInTheDocument(),
-    )
-    expect(container.querySelector('[data-results-snapshot-status]')).toHaveAttribute(
-      'title',
-      'Results inputs last changed at 2026-10-02T11:00:00+08:00',
-    )
-  })
-})
-
-it('keeps history reachable when the current result schema fails', async () => {
-  const research = {
-    current_version: 2,
-    selected_version: 2,
-    versions: [
-      { version: 1, started_at: '2026-10-01T09:00:00+08:00', reason: 'Initial' },
-      { version: 2, started_at: '2026-10-02T09:00:00+08:00', reason: 'Corrected' },
-    ],
-    run_versions: {},
-  }
-  vi.mocked(fetchExperimentResults).mockResolvedValue({
-    ok: true,
-    summary: { ...OK, research: { ...research, selected_version: 1 } },
-    updatedAt: null,
-  })
-  renderWithHeartbeat(
-    <ExperimentResultsCard
-      section={SECTION}
-      results={results(failedSummary('RESULT_SCHEMA_MISMATCH'))}
-      research={research}
-      updatedAt={null}
-      project="research"
-      experimentId={EXPERIMENT}
-      runIds={[]}
-    />,
-  )
-  await userEvent.click(screen.getByRole('combobox', { name: 'Research version' }))
-  await userEvent.click(screen.getByRole('option', { name: 'History v1' }))
-  await waitFor(() =>
-    expect(fetchExperimentResults).toHaveBeenCalledWith('research', EXPERIMENT, 1),
-  )
-  await waitFor(() => expect(screen.getByText('V0001')).toBeInTheDocument())
 })

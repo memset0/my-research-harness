@@ -3,7 +3,13 @@ import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../../lib/server/runtime', () => ({ getRuntime: vi.fn() }))
-vi.mock('../../../lib/server/standalone-services', () => ({ standaloneServices: vi.fn() }))
+vi.mock('../../../lib/server/standalone-services', async (importOriginal) => ({
+  // Keep the real Project selection/viewer-scope filter; only the services are faked.
+  standaloneProjects: (
+    await importOriginal<typeof import('../../../lib/server/standalone-services')>()
+  ).standaloneProjects,
+  standaloneServices: vi.fn(),
+}))
 vi.mock('../../../lib/server/standalone-dto', () => ({
   standaloneRun: vi.fn((_config, run) => ({ ...run, path: `/root/${run.id}` })),
 }))

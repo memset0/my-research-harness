@@ -330,7 +330,7 @@ describe('backoff', () => {
     advance(300_000)
     release()
     expect(await pending).toBe('body')
-    advance(299_999)
+    advance(29_999)
     await read(automatic, 'slow.md')
     await flush()
     expect(io.calls('readFile', at('slow.md'))).toBe(1)
@@ -339,63 +339,39 @@ describe('backoff', () => {
     await flush()
     expect(io.calls('readFile', at('slow.md'))).toBe(2)
   })
-  it('doubles unchanged automatic intervals to the cap and resets on manual refresh', async () => {
-    io.files.set(at('doc.md'), 'body')
+
+  it('re-checks an expired observation before answering and manual refresh bypasses reuse', async () => {
+    io.files.set(at('doc.md'), 'v0')
     const reads = () => io.calls('readFile', at('doc.md'))
 
-    expect(await read(automatic, 'doc.md')).toBe('body')
+    expect(await read(automatic, 'doc.md')).toBe('v0')
     expect(reads()).toBe(1)
 
-    // No attention: maintenance range 300 s -> 600 s -> 900 s (cap).
-    for (const interval of [300_000, 600_000, 900_000, 900_000]) {
-      advance(interval - 1)
-      expect(await read(automatic, 'doc.md')).toBe('body')
-      await flush()
+    // Reuse is bounded at 30 s and does not grow while nothing changes.
+    for (const version of ['v1', 'v2', 'v3']) {
+      advance(29_999)
+      io.files.set(at('doc.md'), version)
+      expect(await read(automatic, 'doc.md')).not.toBe(version)
       const before = reads()
       advance(1)
-      // Due: answered from cache at once, verified in the background.
-      expect(await read(automatic, 'doc.md')).toBe('body')
-      await flush()
+      // Expired: the source is checked before the read answers.
+      expect(await read(automatic, 'doc.md')).toBe(version)
       expect(reads()).toBe(before + 1)
     }
 
-    // A manual refresh makes the key due immediately.
+    // A manual refresh bypasses reuse at once.
+    io.files.set(at('doc.md'), 'manual')
     const beforeManual = reads()
-    expect(await read(manual, 'doc.md')).toBe('body')
-    await flush()
+    expect(await read(manual, 'doc.md')).toBe('manual')
     expect(reads()).toBe(beforeManual + 1)
-    // The reset interval restarts at the active-file floor (5 s), and the
-    // unchanged verification doubled it once: next check after 10 s.
-    advance(9_999)
+    // The deadline restarts from that check.
+    advance(29_999)
     await read(automatic, 'doc.md')
     await flush()
     expect(reads()).toBe(beforeManual + 1)
     advance(1)
     await read(automatic, 'doc.md')
-    await flush()
     expect(reads()).toBe(beforeManual + 2)
-  })
-
-  it('restarts the interval at its floor when the observed content changes', async () => {
-    io.files.set(at('doc.md'), 'one')
-    const reads = () => io.calls('readFile', at('doc.md'))
-    await read(automatic, 'doc.md')
-    advance(300_000)
-    await read(automatic, 'doc.md')
-    await flush()
-    expect(reads()).toBe(2) // unchanged -> next interval 600 s
-
-    io.files.set(at('doc.md'), 'two')
-    advance(600_000)
-    expect(await read(automatic, 'doc.md')).toBe('one')
-    await flush()
-    expect(reads()).toBe(3)
-    expect(await read(automatic, 'doc.md')).toBe('two')
-    // Changed -> back to the 300 s floor instead of 1200 s.
-    advance(300_000)
-    await read(automatic, 'doc.md')
-    await flush()
-    expect(reads()).toBe(4)
   })
 
   it('replays a failure until due and backs off 15 s -> 5 min by a factor of 2', async () => {
@@ -426,23 +402,21 @@ describe('backoff', () => {
     expect(verified.error).toBeNull()
     expect(verified.oldestVerifiedAt).not.toBeNull()
 
-    // The next failure starts again at the 15 s floor, keeps serving the
-    // retained content, and does not advance the successful observation time.
+    // The next failure starts again at the 15 s floor. It replaces the
+    // retained content (an expired read checks the source before answering)
+    // but does not advance the successful observation time.
     io.failures.set(`readFile:${at('doc.md')}`, 'EIO')
-    advance(300_000)
-    expect(await read(automatic, 'doc.md')).toBe('body')
-    await flush()
+    advance(30_000)
+    await expect(read(automatic, 'doc.md')).rejects.toMatchObject({ code: 'EIO' })
     const failing = getProjectFileStatus(ROOT)
     expect(failing.error).toBe('EIO')
     expect(failing.oldestVerifiedAt).toBe(verified.oldestVerifiedAt)
     const before = reads()
     advance(14_999)
-    expect(await read(automatic, 'doc.md')).toBe('body')
-    await flush()
+    await expect(read(automatic, 'doc.md')).rejects.toMatchObject({ code: 'EIO' })
     expect(reads()).toBe(before)
     advance(1)
-    expect(await read(automatic, 'doc.md')).toBe('body')
-    await flush()
+    await expect(read(automatic, 'doc.md')).rejects.toMatchObject({ code: 'EIO' })
     expect(reads()).toBe(before + 1)
   })
 

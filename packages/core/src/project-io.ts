@@ -525,9 +525,11 @@ class ProjectIoWorker {
       // worker must not.
       child.ref()
       child.channel?.ref()
-      let sent: boolean
       try {
-        sent = child.send(message, (error) => {
+        // `false` only signals backpressure: Node still queues and delivers
+        // the message, so the reply arrives as usual. Only the callback's
+        // error means the message was lost.
+        child.send(message, (error) => {
           if (error) this.fail(id, error)
         })
       } catch (error) {
@@ -535,9 +537,7 @@ class ProjectIoWorker {
         // signal) is reported to the caller, which decides whether to run it
         // directly instead.
         this.settle(id, () => reject(error))
-        return
       }
-      if (!sent) this.fail(id, workerError('project I/O worker channel is full', 'EBUSY'))
     })
   }
 

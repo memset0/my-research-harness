@@ -3,7 +3,7 @@ import { FileAccessError, type FileMetadataSchema } from '@memon/file-protocol'
 import type { z } from 'zod'
 import { ProjectStats, type StatsFields } from '../project-io.js'
 import { agentAdapter, missingAgentPath } from './agent-adapters.js'
-import { getProjectFileAccessOptions } from './runtime.js'
+import { storeAccess } from './store-access.js'
 
 /** A bounded read lease retaining one opened regular file. */
 export class AgentReadHandle {
@@ -73,7 +73,7 @@ export class AgentReadHandle {
     const start = position ?? this.position
     if (!Number.isSafeInteger(start) || start < 0) throw new RangeError('invalid read position')
     if (length === 0) return { bytesRead: 0, buffer }
-    const bounded = Math.min(length, 1024 * 1024, getProjectFileAccessOptions().byteBurst)
+    const bounded = Math.min(length, 1024 * 1024, storeAccess().effectiveOptions().byteBurst)
     const bytes = await this.range(start, bounded)
     buffer.set(bytes, offset)
     if (position === null) this.position += bytes.length

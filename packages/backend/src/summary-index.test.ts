@@ -72,13 +72,16 @@ describe('summary index consumers', () => {
     const underLogs = (calls: unknown[][]) =>
       calls.map(([path]) => String(path)).filter((path) => path.includes(`${root}/logs/`))
     expect(underLogs(readFile.mock.calls)).toEqual([])
-    expect(underLogs(realpath.mock.calls)).toEqual([])
+    // FS11: each member's run.json is resolved through containment once.
+    expect(underLogs(realpath.mock.calls).sort()).toEqual(
+      members.map((member) => join(root, member, 'run.json')).sort(),
+    )
     expect(underLogs(stat.mock.calls).sort()).toEqual(
       members.map((member) => join(root, member, 'README.md')).sort(),
     )
   })
 
-  it('serves member facts within the list window and re-validates them on a manual refresh', async () => {
+  it('re-validates member facts on a re-open and on a manual refresh', async () => {
     const service = new FilesystemProjectService([project()], { readPolicy: CENTRAL_READ_POLICY })
     await service.getExperiment('p', 'E0001-m')
     await fs.writeFile(
@@ -91,14 +94,8 @@ describe('summary index consumers', () => {
           service.getExperiment('p', 'E0001-m'),
         ),
       ).deprecatedRuns
-    // Q1: members are list-class data, so a plain re-open inside the window
-    // takes no member stat and may still show the previous facts.
-    const stat = vi.spyOn(projectFs, 'stat')
-    expect(await detail('open')).toEqual([members[0]])
-    expect(
-      stat.mock.calls.map(([path]) => String(path)).filter((path) => path.includes('/logs/')),
-    ).toEqual([])
-    // An explicit refresh re-takes every member fingerprint for that request.
+    // No central reuse window: a plain re-open already sees the member edit.
+    expect(await detail('open')).toEqual([members[0], members[1]])
     expect(await detail('manual')).toEqual([members[0], members[1]])
   })
 
@@ -130,23 +127,6 @@ describe('summary index consumers', () => {
     const service = new FilesystemProjectService([project()])
     const run = BackendRunResponseSchema.parse(await service.getRun('p', members[3]!))
     expect(run.frontMatter.experiment).toBe('E0001-m')
-  })
-
-  it('reuses list observations inside the central window until invalidated', async () => {
-    const service = new FilesystemProjectService([project('windowed')], {
-      readPolicy: CENTRAL_READ_POLICY,
-    })
-    const title = async () =>
-      BackendExperimentListResponseSchema.parse(await service.listExperiments('windowed'))
-        .experiments[0]!.frontMatter.title
-    expect(await title()).toBe('A')
-    await fs.writeFile(
-      join(root, 'docs', 'experiments', 'E0001-m', 'README.md'),
-      experimentReadme('Changed'),
-    )
-    expect(await title()).toBe('A')
-    invalidateProjectReadIndex('windowed')
-    expect(await title()).toBe('Changed')
   })
 })
 

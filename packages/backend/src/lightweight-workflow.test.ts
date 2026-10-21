@@ -126,10 +126,14 @@ describe('FS11 browsing and execution records', () => {
     )
     expect(result.experiments[0]).toMatchObject({ displayStatus: 'RUNNING', runningRunCount: 1 })
   })
-  it('fails with a repair message if the registered inventory is missing', async () => {
+  it('fails with a repair message if a published catalog or the inventory is missing', async () => {
     const { p, service } = await fixture()
+    await fs.rm(p.path('.memon/index/experiments.json'))
+    await expect(service.listExperiments('project-a')).rejects.toThrow(
+      /PROJECT_CATALOG_UNAVAILABLE/,
+    )
     await fs.rm(p.path('.memon/index/snapshot.json'))
-    await expect(service.listExperiments('project-a')).rejects.toThrow(/REGISTERED_INDEX_MISSING/)
+    await expect(service.listRuns('project-a')).rejects.toThrow(/REGISTERED_INDEX_MISSING/)
   })
 })
 

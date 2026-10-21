@@ -208,7 +208,7 @@ describe('FilesystemProjectService safe reads', () => {
 
     const beforeRun = core.getFileOperationMetrics()
     await core.withProjectFileContext(
-      { root: fixtureRoot, storageGroup, reason: 'manual', attentionId: 'detail-tab' },
+      { root: fixtureRoot, storageGroup, reason: 'open', attentionId: 'detail-tab' },
       () => service.getRun('project-a', 'foo-260501-100000'),
     )
     const afterRun = core.getFileOperationMetrics()
@@ -217,7 +217,7 @@ describe('FilesystemProjectService safe reads', () => {
 
     const beforeExperiment = core.getFileOperationMetrics()
     await core.withProjectFileContext(
-      { root: fixtureRoot, storageGroup, reason: 'manual', attentionId: 'detail-tab' },
+      { root: fixtureRoot, storageGroup, reason: 'open', attentionId: 'detail-tab' },
       () => service.getExperiment('project-a', 'E0001-vpred-convergence'),
     )
     const afterExperiment = core.getFileOperationMetrics()

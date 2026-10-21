@@ -84,16 +84,16 @@ describe('GET /api/projects role composition', () => {
     })
   })
 
-  it('fails a central viewer closed instead of expanding a name-only scope', async () => {
+  it('does not expand a central viewer name-only scope to Host-qualified Projects', async () => {
     vi.mocked(getRuntime).mockResolvedValue({
       config: { central: { hosts: [] }, projects: [] },
     } as never)
 
+    // Host-less Projects are listable by name in central mode; a name-only
+    // scope never reaches the Host-qualified aggregation.
     const response = await GET(request('viewer', 'shared-project'))
-    expect(response.status).toBe(403)
-    expect(await response.json()).toEqual({
-      error: { code: 'FORBIDDEN', message: 'Host-qualified viewer scope is required' },
-    })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ projects: [] })
     expect(getCentralFleet).not.toHaveBeenCalled()
     expect(aggregateCentralProjects).not.toHaveBeenCalled()
   })

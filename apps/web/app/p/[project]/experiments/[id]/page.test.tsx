@@ -8,20 +8,28 @@ vi.mock('next/navigation', () => ({
   }),
 }))
 vi.mock('../../../../../lib/server/runtime', () => ({ getRuntime: vi.fn() }))
+vi.mock('../../../../../lib/server/standalone-services', () => ({ standaloneServices: vi.fn() }))
+vi.mock('@memon/core', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@memon/core')>()),
+  BackendRunResponseSchema: { parse: (value: unknown) => value },
+}))
 vi.mock('../../../../../components/experiment-detail', () => ({
   ExperimentDetail: () => null,
 }))
 
+import { BackendProjectServiceError } from '@memon/backend'
 import { getRuntime } from '../../../../../lib/server/runtime'
+import { standaloneServices } from '../../../../../lib/server/standalone-services'
 import ExperimentPage, { generateMetadata } from './page'
 
 const RUN_ID = 'secret-sweep-260101-120000'
 
+/** A runtime whose only Run lives in `project`; every lookup is Project-scoped. */
 function runtimeWith(project: string) {
   const run = {
     id: RUN_ID,
     project,
-    path: `/root/${project}/logs/${RUN_ID}`,
+    resource: `logs/${RUN_ID}/run.json`,
     mtime: 1,
     readmeMtime: 1,
     hasReadme: true,
@@ -33,9 +41,22 @@ function runtimeWith(project: string) {
     parseErrors: [],
     parseWarnings: [],
   }
+  vi.mocked(standaloneServices).mockReturnValue({
+    projects: {
+      getRun: vi.fn(async (name: string, id: string) => {
+        if (name !== project || id !== RUN_ID)
+          throw new BackendProjectServiceError('RESOURCE_NOT_FOUND', 'Run not found')
+        return run
+      }),
+    },
+  } as never)
   return {
-    index: { get: vi.fn((id: string) => (id === RUN_ID ? run : undefined)) },
-    pokeById: vi.fn(),
+    config: {
+      projects: [
+        { name: 'project-a', root: '/root/project-a' },
+        { name: 'project-b', root: '/root/project-b' },
+      ],
+    },
   }
 }
 

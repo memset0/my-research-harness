@@ -123,7 +123,13 @@ describe('BackendFilesystemMonitor', () => {
   it('uses a silent initial snapshot then publishes external set/delete changes for every family', async () => {
     const root = join(temp, 'project-a')
     await fs.cp(resolve(process.cwd(), '../../mock/project-a'), root, { recursive: true })
-    const project = { name: 'project-a', root, include: [], exclude: [] } satisfies ProjectConfig
+    const project = {
+      name: 'project-a',
+      root,
+      storage: 'local',
+      include: [],
+      exclude: [],
+    } satisfies ProjectConfig
     const eventStream = new BackendEventStream({ instanceEpoch: EPOCH })
     const serialized: string[] = []
     const unsubscribe = eventStream.subscribe((frame) => {

@@ -2,6 +2,7 @@ import 'server-only'
 
 import {
   BackendMutationError,
+  BackendProjectServiceError,
   type BackendSlurmService,
   CENTRAL_READ_POLICY,
   createBackendSlurmService,
@@ -156,7 +157,11 @@ export function withStandaloneProject<T>(
   const matches = config.projects.filter(
     (project) => project.host === undefined && project.name === name,
   )
-  if (matches.length !== 1) throw new Error('Project selector is unknown or ambiguous')
+  if (matches.length !== 1)
+    throw new BackendProjectServiceError(
+      'PROJECT_NOT_FOUND',
+      'Project selector is unknown or ambiguous',
+    )
   const project = matches[0]!
   const parent = getProjectFileContext()
   const scope = standaloneRequestContext()

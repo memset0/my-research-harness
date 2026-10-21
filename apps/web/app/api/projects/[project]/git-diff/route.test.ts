@@ -1,8 +1,11 @@
 // @vitest-environment node
 
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { paramsFor } from '@memon/test-utils'
 import { NextRequest } from 'next/server'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../../../../lib/server/runtime', () => ({
   getRuntime: vi.fn(),
@@ -27,13 +30,28 @@ function req(name: string, query: string, headers: Record<string, string> = {}):
   })
 }
 
+let rootA = ''
+let rootB = ''
+
+beforeAll(async () => {
+  // Git reads resolve the Project's real root before touching the filesystem.
+  rootA = await mkdtemp(join(tmpdir(), 'memon-git-diff-a-'))
+  rootB = await mkdtemp(join(tmpdir(), 'memon-git-diff-b-'))
+})
+
+afterAll(async () => {
+  await rm(rootA, { recursive: true, force: true })
+  await rm(rootB, { recursive: true, force: true })
+})
+
 beforeEach(() => {
-  vi.clearAllMocks()
+  // Reset (not clear): queued mockResolvedValueOnce values must not leak between cases.
+  vi.resetAllMocks()
   vi.mocked(getRuntime).mockResolvedValue({
     config: {
       projects: [
-        { name: 'project-a', root: '/tmp/a', exclude: [], execution: { kind: 'local' } },
-        { name: 'project-b', root: '/tmp/b', exclude: [], execution: { kind: 'local' } },
+        { name: 'project-a', root: rootA, exclude: [], execution: { kind: 'local' } },
+        { name: 'project-b', root: rootB, exclude: [], execution: { kind: 'local' } },
       ],
     },
   } as unknown as Awaited<ReturnType<typeof getRuntime>>)
@@ -56,10 +74,10 @@ describe('GET /api/projects/[project]/git-diff', () => {
       oldContent: 'old\n',
       newContent: 'new\n',
     })
-    expect(readGitFileContents).toHaveBeenNthCalledWith(1, '/tmp/a', 'index', 'app.ts', {
+    expect(readGitFileContents).toHaveBeenNthCalledWith(1, rootA, 'index', 'app.ts', {
       exec: undefined,
     })
-    expect(readGitFileContents).toHaveBeenNthCalledWith(2, '/tmp/a', 'working', 'app.ts', {
+    expect(readGitFileContents).toHaveBeenNthCalledWith(2, rootA, 'working', 'app.ts', {
       exec: undefined,
     })
   })
@@ -217,10 +235,10 @@ describe('GET /api/projects/[project]/git-diff', () => {
         oldContent: 'parent\n',
         newContent: 'commit\n',
       })
-      expect(readGitFileContents).toHaveBeenNthCalledWith(1, '/tmp/a', 'abc1234^', 'app.ts', {
+      expect(readGitFileContents).toHaveBeenNthCalledWith(1, rootA, 'abc1234^', 'app.ts', {
         exec: undefined,
       })
-      expect(readGitFileContents).toHaveBeenNthCalledWith(2, '/tmp/a', 'abc1234', 'app.ts', {
+      expect(readGitFileContents).toHaveBeenNthCalledWith(2, rootA, 'abc1234', 'app.ts', {
         exec: undefined,
       })
     })
@@ -309,10 +327,10 @@ describe('GET /api/projects/[project]/git-diff', () => {
         oldContent: 'old\n',
         newContent: 'new\n',
       })
-      expect(readGitFileContents).toHaveBeenNthCalledWith(1, '/tmp/a', 'aaa', 'app.ts', {
+      expect(readGitFileContents).toHaveBeenNthCalledWith(1, rootA, 'aaa', 'app.ts', {
         exec: undefined,
       })
-      expect(readGitFileContents).toHaveBeenNthCalledWith(2, '/tmp/a', 'bbb', 'app.ts', {
+      expect(readGitFileContents).toHaveBeenNthCalledWith(2, rootA, 'bbb', 'app.ts', {
         exec: undefined,
       })
     })

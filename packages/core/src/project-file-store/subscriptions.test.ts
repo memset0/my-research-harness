@@ -91,11 +91,20 @@ describe('central conditional observations and logical interests', () => {
     expect(getStore().metricsSnapshot().cachedContentBytes).toBe(0)
     await vi.advanceTimersByTimeAsync(1100)
     second.renew()
-    await writeFile(path, 'other')
     await vi.advanceTimersByTimeAsync(1400)
     second.renew()
-    await vi.advanceTimersByTimeAsync(1000)
-    await vi.waitFor(() => expect(active).toHaveBeenCalledTimes(2))
+    // Changed only after the first lease expired, so a check still in flight
+    // cannot deliver it to the expired interest.
+    await writeFile(path, 'other')
+    // Checks run real I/O, so keep the renewed lease alive until one lands.
+    await vi.waitFor(
+      async () => {
+        second.renew()
+        await vi.advanceTimersByTimeAsync(500)
+        expect(active).toHaveBeenCalledTimes(2)
+      },
+      { timeout: 5000 },
+    )
     expect(expired).toHaveBeenCalledTimes(1)
     expect(getStore().metricsSnapshot().cachedContentBytes).toBe(0)
     second.cancel()

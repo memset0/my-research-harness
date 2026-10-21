@@ -4,28 +4,12 @@ import { FileAccessError, type FileAdapter, isFileAccessError } from '@memon/fil
 import { FileAgentClient } from '@memon/file-protocol/client'
 import { isFileURI, parseFileURI } from '@memon/file-protocol/paths'
 import { projectSourceGroup } from '../config/source-group.js'
-import { getProjectFileContext, type ProjectFileContext } from '../project-file-context.js'
+import { getProjectFileContext } from '../project-file-context.js'
 import type { FileAgentConfig, ProjectConfig } from '../types.js'
+import { type Registration, registrations } from './agent-registry.js'
 import type { FileOperationName } from './contract.js'
-import { getProjectFileAccessOptions, getStore } from './runtime.js'
 import { budgetedSourceOperation, sourceBudgets } from './source-budget-runtime.js'
-
-const REGISTRY = Symbol.for('memon.file-agent-adapters.v1')
-interface Registration {
-  root: string
-  group: string
-  identity: string
-  client: Promise<FileAdapter> | null
-  connection: FileAgentConfig
-  credentialDigest?: string
-  credentialCheck?: Promise<void>
-  contexts?: WeakMap<ProjectFileContext, Promise<void>>
-}
-function registrations(): Map<string, Registration> {
-  const carrier = globalThis as unknown as { [REGISTRY]?: Map<string, Registration> }
-  carrier[REGISTRY] ??= new Map()
-  return carrier[REGISTRY]
-}
+import { storeAccess } from './store-access.js'
 
 /** Operator-only connection state; credentials are never included in project DTOs. */
 export function configureFileAgentAdapters(
@@ -107,9 +91,9 @@ async function refreshCredentials(registration: Registration): Promise<void> {
     certificate,
     key,
     onResponse: (operation, size, conditional) =>
-      getStore().recordTransport(registration.group, operation, size, conditional),
-    concurrency: () => getProjectFileAccessOptions().concurrency,
-    maxResponseBytes: Math.ceil(getProjectFileAccessOptions().maxReadBytes * 1.5) + 65536,
+      storeAccess().recordTransport(registration.group, operation, size, conditional),
+    concurrency: () => storeAccess().effectiveOptions().concurrency,
+    maxResponseBytes: Math.ceil(storeAccess().effectiveOptions().maxReadBytes * 1.5) + 65536,
   })
   const adapter = budgetedAdapter(registration, client)
   // A replacement credential must be authorized at the source before any cached projection is eligible.
@@ -124,7 +108,7 @@ async function refreshCredentials(registration: Registration): Promise<void> {
   )
   registration.credentialDigest = digest
   registration.client = Promise.resolve(adapter)
-  getStore().noteAuthority(registration.root, client.authorityIdentity!)
+  storeAccess().noteAuthority(registration.root, client.authorityIdentity!)
 }
 
 export function isAgentPath(path: string): boolean {
@@ -176,24 +160,24 @@ function budgetedAdapter(registration: Registration, client: FileAdapter): FileA
     authorityIdentity: client.authorityIdentity,
     read: (target, options) =>
       run(
-        getProjectFileAccessOptions().maxReadBytes,
+        storeAccess().effectiveOptions().maxReadBytes,
         () => client.read(target, options),
         (value) =>
           value.outcome === 'present'
             ? Buffer.from(value.content, 'base64').length
             : value.outcome === 'unchanged'
-              ? getProjectFileAccessOptions().maxReadBytes
+              ? storeAccess().effectiveOptions().maxReadBytes
               : 0,
       ),
     list: (target, options) =>
       run(
-        getProjectFileAccessOptions().maxReadBytes,
+        storeAccess().effectiveOptions().maxReadBytes,
         () => client.list(target, options),
         (value) =>
           value.outcome === 'present'
             ? Buffer.byteLength(JSON.stringify(value.entries))
             : value.outcome === 'unchanged'
-              ? getProjectFileAccessOptions().maxReadBytes
+              ? storeAccess().effectiveOptions().maxReadBytes
               : 0,
         'readdir',
       ),
@@ -239,7 +223,7 @@ function budgetedAdapter(registration: Registration, client: FileAdapter): FileA
       run(
         (input.operation === 'rename' && input.fileChecks?.length) ||
           (input.operation !== 'mkdir' && input.precondition.kind === 'match')
-          ? getProjectFileAccessOptions().maxReadBytes
+          ? storeAccess().effectiveOptions().maxReadBytes
           : input.operation === 'replace'
             ? Buffer.from(input.content, 'base64').length
             : 0,
@@ -247,17 +231,13 @@ function budgetedAdapter(registration: Registration, client: FileAdapter): FileA
         () =>
           (input.operation === 'rename' && input.fileChecks?.length) ||
           (input.operation !== 'mkdir' && input.precondition.kind === 'match')
-            ? getProjectFileAccessOptions().maxReadBytes
+            ? storeAccess().effectiveOptions().maxReadBytes
             : input.operation === 'replace'
               ? Buffer.from(input.content, 'base64').length
               : 0,
         'write',
       ),
   }
-}
-
-export function agentSourceIdentity(root: string): string | undefined {
-  return registrations().get(root)?.identity
 }
 
 /** Run before a central domain cache can answer without touching project files. */

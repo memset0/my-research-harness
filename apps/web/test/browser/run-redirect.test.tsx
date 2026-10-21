@@ -1,14 +1,14 @@
 // @vitest-environment node
 //
 // `/p/<project>/r/<run>` redirects to the exp-detail route with
-// `?run=<run>`. FS v7: the parent comes from Experiment `runs[]`
-// declarations only, and two Run directories sharing a base name are
-// distinct resources addressed by their project-relative paths.
+// `?run=<run>`. The parent comes from the Run detail served by the shared
+// standalone Project service (directory ownership in FS11); two Run
+// directories sharing a base name are distinct resources addressed by their
+// project-relative paths.
 //
 // The page is a server component; `permanentRedirect` (which throws a
-// NEXT_REDIRECT error in real life) and `getRuntime` are mocked. The mocked
-// runtime delegates parent derivation to the real
-// `declaredParentExperimentId` helper.
+// NEXT_REDIRECT error in real life), `getRuntime` and the standalone
+// services are mocked.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -20,43 +20,32 @@ vi.mock('next/navigation', () => ({
   }),
 }))
 
-vi.mock('../../lib/server/runtime', async (importActual) => {
-  const actual = await importActual<typeof import('../../lib/server/runtime')>()
-  return { declaredParentExperimentId: actual.declaredParentExperimentId, getRuntime: vi.fn() }
-})
+vi.mock('../../lib/server/runtime', () => ({ getRuntime: vi.fn() }))
+vi.mock('../../lib/server/standalone-services', () => ({ standaloneServices: vi.fn() }))
+vi.mock('@memon/core', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@memon/core')>()),
+  BackendRunResponseSchema: { parse: (value: unknown) => value },
+}))
 
-import type { Experiment, Run } from '@memon/core'
 import { permanentRedirect } from 'next/navigation'
 import LegacyRunRedirect from '../../app/p/[project]/r/[id]/page'
-import { declaredParentExperimentId, getRuntime } from '../../lib/server/runtime'
+import { getRuntime } from '../../lib/server/runtime'
+import { standaloneServices } from '../../lib/server/standalone-services'
 
-const ROOT = '/srv/project-a'
 const RUN_ID = 'train-260501-100000'
+const getRun = vi.fn()
 
-function run(path: string, project = 'project-a'): Run {
-  return {
-    id: path.split('/').at(-1)!,
-    path: `${ROOT}/${path}`,
-    project,
-    frontMatter: { experiment: 'E0009-stale-legacy-field' },
-  } as unknown as Run
-}
-
-function experiment(id: string, runs: string[]): Experiment {
-  return { id, project: 'project-a', frontMatter: { runs } } as unknown as Experiment
-}
-
-function mockRuntime(runs: Run[], experiments: Experiment[], project = 'project-a') {
+/** Run resource id → owning Experiment (null: the Run has no parent). */
+function mockRuns(parents: Record<string, string | null>, project = 'project-a') {
   vi.mocked(getRuntime).mockResolvedValue({
-    config: { projects: [{ name: project, root: ROOT }] },
-    index: {
-      list: vi.fn(({ project: name }: { project: string }) =>
-        runs.filter((candidate) => candidate.project === name),
-      ),
-    },
-    withDeclaredParent: (target: Run) =>
-      declaredParentExperimentId(experiments, ROOT, target, runs),
+    config: { projects: [{ name: project, root: '/srv/project-a' }] },
   } as never)
+  vi.mocked(standaloneServices).mockReturnValue({ projects: { getRun } } as never)
+  getRun.mockImplementation(async (name: string, id: string) => {
+    if (name !== project || !(id in parents)) throw new Error('Run not found')
+    const experiment = parents[id]
+    return { id, project: name, frontMatter: experiment ? { experiment } : {} }
+  })
 }
 
 async function redirectFor(id: string, project = 'project-a'): Promise<string> {
@@ -69,23 +58,22 @@ describe('LegacyRunRedirect — /r/<run> → /e/<exp>?run=<run>', () => {
     vi.clearAllMocks()
   })
 
-  it('redirects a declared run to its declaring experiment', async () => {
-    mockRuntime([run(`logs/${RUN_ID}`)], [experiment('E0001-train', [`logs/${RUN_ID}`])])
+  it('redirects a Run to its owning experiment', async () => {
+    mockRuns({ [RUN_ID]: 'E0001-train' })
     expect(await redirectFor(RUN_ID)).toBe(`/p/project-a/e/E0001-train?run=${RUN_ID}`)
+    expect(getRun).toHaveBeenCalledWith('project-a', RUN_ID)
   })
 
-  it('ignores a legacy Run-side experiment field when nothing declares the run', async () => {
-    mockRuntime([run(`logs/${RUN_ID}`)], [experiment('E0001-train', [])])
+  it('redirects to the project list when the Run has no owning experiment', async () => {
+    mockRuns({ [RUN_ID]: null })
     expect(await redirectFor(RUN_ID)).toBe('/p/project-a')
   })
 
   it('keeps same-basename runs under different paths distinct', async () => {
-    const runs = [run(`logs/a/${RUN_ID}`), run(`outputs/b/${RUN_ID}`)]
-    const experiments = [
-      experiment('E0001-alpha', [`logs/a/${RUN_ID}`]),
-      experiment('E0002-beta', [`outputs/b/${RUN_ID}`]),
-    ]
-    mockRuntime(runs, experiments)
+    mockRuns({
+      [`logs/a/${RUN_ID}`]: 'E0001-alpha',
+      [`outputs/b/${RUN_ID}`]: 'E0002-beta',
+    })
     expect(await redirectFor(`logs/a/${RUN_ID}`)).toBe(
       `/p/project-a/e/E0001-alpha?run=${encodeURIComponent(`logs/a/${RUN_ID}`)}`,
     )
@@ -96,25 +84,13 @@ describe('LegacyRunRedirect — /r/<run> → /e/<exp>?run=<run>', () => {
     expect(await redirectFor(RUN_ID)).toBe('/p/project-a')
   })
 
-  it('does not resolve a legacy bare-id declaration when the base name is ambiguous', async () => {
-    mockRuntime(
-      [run(`logs/a/${RUN_ID}`), run(`outputs/b/${RUN_ID}`)],
-      [experiment('E0001-alpha', [RUN_ID])],
-    )
-    expect(await redirectFor(`logs/a/${RUN_ID}`)).toBe('/p/project-a')
-  })
-
   it('redirects to project list when the run is unknown', async () => {
-    mockRuntime([], [])
+    mockRuns({})
     expect(await redirectFor('nonexistent-260501-100000')).toBe('/p/project-a')
   })
 
   it('encodes special characters in the redirect URL', async () => {
-    mockRuntime(
-      [run(`logs/${RUN_ID}`, 'proj/with/slash')],
-      [experiment('E0001-with-dash', [`logs/${RUN_ID}`])],
-      'proj/with/slash',
-    )
+    mockRuns({ [RUN_ID]: 'E0001-with-dash' }, 'proj/with/slash')
     expect(await redirectFor(RUN_ID, 'proj/with/slash')).toContain('proj%2Fwith%2Fslash')
   })
 })

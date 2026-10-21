@@ -202,7 +202,9 @@ describe('Experiment compatibility display projection', () => {
       (section) => section.heading === 'Results',
     )
     expect(results?.body).toContain('RESULT_SCHEMA_MISMATCH')
-    expect(results?.body).toContain('memon experiment schema upgrade E0001-example --to 1')
+    expect(results?.body).toContain(
+      'node "$MEMON_SOURCE/packages/core/migrations/scripts/experiment-schema.mjs" --project-root . --experiment E0001-example --to 1',
+    )
     expect(results?.body).not.toContain('| Variant |')
   })
 

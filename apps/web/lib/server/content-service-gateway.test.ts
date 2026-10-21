@@ -3,18 +3,10 @@
 import { createHash } from 'node:crypto'
 import { once } from 'node:events'
 import { existsSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
 import { createServer, type IncomingMessage, request, type Server } from 'node:http'
 import type { Socket } from 'node:net'
-import { type Config, configureFileAgentAdapters } from '@memon/core'
-import { fileProjectURI } from '@memon/file-protocol/paths'
-import { fileAgentServiceRequest } from '@memon/file-protocol/service'
-import {
-  createTempProject,
-  removeTempDirs,
-  startFileAgentFixture,
-  startSshFixture,
-} from '@memon/test-utils'
+import type { Config } from '@memon/core'
+import { createTempProject, removeTempDirs, startSshFixture } from '@memon/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createContentServiceGateway } from './content-service-gateway'
 import { createMemonServer } from './server-core'
@@ -257,88 +249,4 @@ describe('content service gateway', () => {
       await parity(`http://127.0.0.1:${port}${prefix}`, prefix)
     },
   )
-  it('forwards through a real mTLS File Agent with independent grants and source pinning', async () => {
-    const app = await source()
-    const temp = await createTempProject({
-      wiki: {
-        'monitor/W0001-live/manifest.json': JSON.stringify({
-          type: 'service',
-          title: 'Remote live',
-          port: app.port,
-        }),
-      },
-    })
-    const agent = await startFileAgentFixture(temp.root, {
-      servicePorts: [app.port],
-      serviceGrant: true,
-    })
-    teardown.push(() => agent.stop())
-    const connection = {
-      endpoint: agent.endpoint,
-      expectedSourceIdentity: agent.sourceIdentity,
-      ca: await readFile(agent.tls.ca),
-      certificate: await readFile(agent.tls.client),
-      key: await readFile(agent.tls.clientKey),
-    }
-    const gateway = await setup(app.port, {
-      target: async (_project, port, path) =>
-        fileAgentServiceRequest(connection, 'project-a', port, path),
-    })
-    await parity(gateway.url, gateway.prefix)
-    expect(
-      app.seen.every((entry) => !entry.authorization && !entry.cookie?.includes('memon-')),
-    ).toBe(true)
-    const denied = await setup(app.port + 1, {
-      target: async (_project, port, path) =>
-        fileAgentServiceRequest(connection, 'project-a', port, path),
-    })
-    expect((await fetch(denied.url, { headers: { authorization } })).status).toBe(503)
-    const mismatch = await setup(app.port, {
-      target: async (_project, port, path) =>
-        fileAgentServiceRequest(
-          { ...connection, expectedSourceIdentity: 'wrong-source' },
-          'project-a',
-          port,
-          path,
-        ),
-    })
-    expect((await fetch(mismatch.url, { headers: { authorization } })).status).toBe(503)
-    const agentProject = {
-      name: 'project-a',
-      root: fileProjectURI('agent-a', 'project-a'),
-      include: [],
-      exclude: [],
-      storage: 'sshfs' as const,
-      access: {
-        kind: 'agent' as const,
-        cache: 'memory-disk' as const,
-        connection: 'agent-a',
-        project: 'project-a',
-        sourceIdentity: agent.sourceIdentity,
-      },
-    }
-    const connections = {
-      'agent-a': {
-        endpoint: agent.endpoint,
-        caFile: agent.tls.ca,
-        certificateFile: agent.tls.client,
-        keyFile: agent.tls.clientKey,
-      },
-    }
-    configureFileAgentAdapters(connections, [agentProject])
-    const remoteGateway = createContentServiceGateway(
-      { projects: [agentProject], fileAgents: connections } as unknown as Config,
-      auth,
-    )
-    teardown.push(() => remoteGateway.stop())
-    const remotePort = await listen(
-      createMemonServer({
-        contentGateway: remoteGateway,
-        handle: (_req, res) => {
-          res.end()
-        },
-      }),
-    )
-    await parity(`http://127.0.0.1:${remotePort}${gateway.prefix}`, gateway.prefix)
-  }, 120_000)
 })

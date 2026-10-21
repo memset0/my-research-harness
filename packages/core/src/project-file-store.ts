@@ -48,7 +48,9 @@
 // `state`, `scheduler`, `persistence`, `mount-guard`, `reporting` (freshness
 // status and metrics snapshots), `store`
 // (`ProjectFileStore`), `runtime` (process-global singleton and public
-// functions) and `fs-facade` (`projectFs`). This file only re-exports the
+// functions), `store-access` (the store view lower modules use, installed by
+// `runtime`), `agent-registry` (File Agent registrations) and `fs-facade`
+// (`projectFs`). This file only re-exports the
 // public surface so every existing import path keeps working.
 
 export * from './project-file-store/index.js'

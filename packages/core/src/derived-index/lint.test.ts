@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { DEFAULT_RUN_DIRS } from '../discovery/run-dirs.js'
 import { lintExperimentDocument } from '../experiments/documents.js'
 import { buildExperimentRecord, parseExperimentReadme } from '../experiments/parse.js'
 import { lintProjectDeclaration } from '../project-declaration/lint.js'
@@ -90,9 +91,9 @@ describe('project declaration lint', () => {
     expect(await lintProjectDeclaration(root)).toEqual({
       present: false,
       declaration: null,
-      effective: { patterns: ['logs/*', 'outputs/*', 'experiments/*'], source: 'default' },
+      effective: { patterns: [...DEFAULT_RUN_DIRS], source: 'default' },
       layout: {
-        runDirs: ['logs/*', 'outputs/*', 'experiments/*'],
+        runDirs: [...DEFAULT_RUN_DIRS],
         include: [],
         exclude: [],
         github: [],

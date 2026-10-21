@@ -183,9 +183,6 @@ describe('FilesystemDocumentService', () => {
       BackendReportResponseSchema.parse(await service.getReport('research', 'R0001')).content,
     ).toBe('# Updated report\n')
 
-    // Standalone Digest methods are retired.
-    expect('putDigest' in service).toBe(false)
-
     const readme = BackendReadmeResponseSchema.parse(
       await service.getReadme('research', 'logs/run-one/README.md'),
     )

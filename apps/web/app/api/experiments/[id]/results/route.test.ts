@@ -193,7 +193,7 @@ describe('GET /api/experiments/:id/results', () => {
     expect(body).toMatchObject({
       error: { code: 'RESULT_SCHEMA_MISMATCH' },
       files: [{ file: `${RUN}/result.csv`, version: 2 }],
-      upgradeCommand: `memon experiment schema upgrade ${EXPERIMENT_ID} --to 1`,
+      upgradeCommand: `node "$MEMON_SOURCE/packages/core/migrations/scripts/experiment-schema.mjs" --project-root . --experiment ${EXPERIMENT_ID} --to 1`,
     })
     expect(JSON.stringify(body)).not.toContain('V0001')
   })

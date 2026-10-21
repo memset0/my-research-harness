@@ -108,7 +108,7 @@ describe('direct central resource priority', () => {
     const runtime = directCentralRuntime(config)
     const beforeCollection = getFileOperationMetrics()
     const collection = await runtime.dispatch({
-      request: new Request('http://central.test/api/hypotheses?host=local&project=research', {
+      request: new Request('http://central.test/api/experiments?host=local&project=research', {
         headers: { [REASON_HEADER]: 'manual' },
       }),
       actor: { role: 'owner' },
@@ -135,7 +135,7 @@ describe('direct central resource priority', () => {
 describe('direct central conditional lists', () => {
   it('passes a backend 304 through with the validator and freshness headers', async () => {
     const runtime = directCentralRuntime(config)
-    const url = 'http://central.test/api/hypotheses?host=local&project=research'
+    const url = 'http://central.test/api/experiments?host=local&project=research'
     const first = await runtime.dispatch({ request: new Request(url), actor: { role: 'owner' } })
     expect(first.status).toBe(200)
     const etag = first.headers.get('etag')

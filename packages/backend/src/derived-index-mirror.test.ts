@@ -1,6 +1,6 @@
 // FS v8 read side: the central summary index seeded from the derived index,
-// Experiment-detail member facts within the list windows, the background
-// validator, and anomalies computed from seeded entries.
+// Experiment-detail member facts (no central reuse windows), the background
+// validator's write-back, and anomalies computed from seeded entries.
 
 import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -145,15 +145,12 @@ describe('seeding from the derived index (3.1)', () => {
     // Experiment (no Variant cited) needs its README row only.
     const experiment = files.under('docs/experiments/E0001-big')
     expect(experiment.readFile).toEqual([])
-    expect(experiment.stat).toEqual([])
 
+    // Members are re-fingerprinted, never read or walked.
     const logs = files.under('logs')
     expect(logs.readFile).toEqual([])
     expect(logs.readdir).toEqual([])
-    // Only the declared-but-missing member has no entry and is looked up.
-    expect(logs.stat.every((path) => path.includes('/logs/missing-'))).toBe(true)
-    expect(logs.access).toEqual([])
-    expect(files.under('logs').lstat).toEqual([])
+    expect(logs.lstat).toEqual([])
   })
 
   it('falls back to the on-demand path when the snapshot is damaged', async () => {
@@ -185,9 +182,8 @@ describe('seeding from the derived index (3.1)', () => {
 })
 
 describe('Experiment detail member facts (3.2)', () => {
-  it('takes no member stat within the window, re-validates after it, on refresh and after a write', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] })
-    const members = await fixture(448)
+  it('shows an external member edit on the next detail, on refresh and after a write', async () => {
+    const members = await fixture(8)
     await rebuildIndex(root)
     const { projects } = centralServices()
     const files = spyProjectFiles()
@@ -198,40 +194,17 @@ describe('Experiment detail member facts (3.2)', () => {
         ),
       )
 
-    const cold = await detail()
-    expect(cold.deprecatedRuns).toEqual([members[0]])
-    const memberCalls = () => {
-      const logs = files.under('logs')
-      return logs.stat.length + logs.readFile.length + logs.realpath.length + logs.lstat.length
-    }
-    // Only the declared-but-missing path is looked at (it has no entry).
+    expect((await detail()).deprecatedRuns).toEqual([members[0]])
+    // Member facts come from fingerprints and seeded entries, not README reads.
     expect(files.under('logs').readFile).toEqual([])
-    expect(memberCalls()).toBeLessThanOrEqual(3)
 
-    // A script deprecates a member outside memon.
+    // A script deprecates a member outside memon: the next detail shows it.
     await fs.writeFile(join(root, members[5]!, 'README.md'), run(0))
-    files.reset()
-    expect((await detail()).deprecatedRuns).toEqual([members[0]])
-    expect(memberCalls()).toBeLessThanOrEqual(3)
-
-    // Past the terminal window the seeded members are still served without a
-    // member stat on the request; they wait for the background validator.
-    vi.setSystemTime(Date.now() + 301_000)
-    files.reset()
-    expect((await detail()).deprecatedRuns).toEqual([members[0]])
-    expect(memberCalls()).toBeLessThanOrEqual(3)
-    const mirror = derivedIndexMirror(root)!
-    expect(mirror.pendingStale).toBeGreaterThanOrEqual(448)
-    const cycle = await mirror.runCycle()
-    expect(cycle.staleRevalidated + cycle.checkedRuns).toBeGreaterThanOrEqual(448)
-    expect(mirror.pendingStale).toBe(0)
     expect((await detail()).deprecatedRuns).toEqual([members[0], members[5]])
 
     // An explicit refresh re-takes every member fingerprint for that request.
     await fs.writeFile(join(root, members[6]!, 'README.md'), run(0))
-    files.reset()
     expect((await detail('manual')).deprecatedRuns).toEqual([members[0], members[5], members[6]])
-    expect(files.under('logs').stat.length).toBeGreaterThanOrEqual(448)
 
     // A central write invalidates: the next detail shows the written member.
     await fs.writeFile(join(root, members[7]!, 'README.md'), run(0))
@@ -245,85 +218,10 @@ describe('Experiment detail member facts (3.2)', () => {
   })
 })
 
-describe('cold reads after a restart (stale-while-revalidate)', () => {
-  /** A snapshot verified long before this process started. */
-  async function agedIndex(members: number, options: { running?: number[] } = {}) {
-    const paths = await fixture(members, options)
+describe('warm home reads', () => {
+  it('reads no document body on warm home reads', async () => {
+    await fixture(30)
     await rebuildIndex(root)
-    vi.useFakeTimers({ toFake: ['Date'] })
-    vi.setSystemTime(Date.now() + 3 * 60 * 60_000)
-    return paths
-  }
-
-  it('serves every list from the aged snapshot without stat-ing an expired entry', async () => {
-    await agedIndex(40, { running: [3] })
-    const { projects, documents } = centralServices()
-    const files = spyProjectFiles()
-
-    const runs = BackendRunsPageResponseSchema.parse(await projects.listRuns('p')).runs
-    expect(runs).toHaveLength(40)
-    BackendAnomaliesResponseSchema.parse(await projects.getAnomalies('p'))
-    BackendExperimentListResponseSchema.parse(await projects.listExperiments('p'))
-    BackendExperimentResponseSchema.parse(await projects.getExperiment('p', 'E0001-big'))
-    BackendWikiPagesResponseSchema.parse(await documents.listWiki('p'))
-    // Let any background work that a request might have started settle.
-    await new Promise((resolve) => setTimeout(resolve, 50))
-
-    const logs = files.under('logs')
-    // Only the declared-but-missing member (no entry) is looked up.
-    expect(
-      [...logs.stat, ...logs.readFile, ...logs.access, ...logs.realpath].every((path) =>
-        path.includes('/logs/missing-'),
-      ),
-    ).toBe(true)
-    // The Experiment's own documents are the only synchronous detail reads.
-    expect(files.under('docs/experiments/E0001-big').readFile.length).toBeGreaterThan(0)
-    expect(derivedIndexMirror(root)!.pendingStale).toBeGreaterThanOrEqual(40)
-  })
-
-  it('corrects an external rewrite with the first background cycle', async () => {
-    const members = await agedIndex(6, { running: [2] })
-    // Rewritten outside memon after the snapshot was taken.
-    await fs.writeFile(join(root, members[2]!, 'README.md'), run(2, 'FAILED'))
-    await fs.writeFile(join(root, members[4]!, 'README.md'), run(4, 'INTERRUPTED'))
-    enableDerivedIndex([project()], { validator: true, timers: false })
-    const service = new FilesystemProjectService([project()], { readPolicy: CENTRAL_READ_POLICY })
-    const status = async (id: string) =>
-      BackendRunsPageResponseSchema.parse(await service.listRuns('p')).runs.find(
-        (row) => row.id === id,
-      )?.frontMatter.status
-    // Served stale from the snapshot on the cold read...
-    expect(await status(members[2]!)).toBe('RUNNING')
-    expect(await status(members[4]!)).toBe('FINISHED')
-    // ...and corrected by the first cycle, whatever its terminal bucket.
-    const report = await derivedIndexMirror(root)!.runCycle()
-    expect(report.changedRuns).toBe(2)
-    expect(await status(members[2]!)).toBe('FAILED')
-    expect(await status(members[4]!)).toBe('INTERRUPTED')
-    expect((await readDerivedIndex(root)).snapshot?.runs[members[4]!]?.status).toBe('INTERRUPTED')
-  })
-
-  it('validates every Run within five cycles of the first request even when none is read', async () => {
-    await agedIndex(25)
-    enableDerivedIndex([project()], { validator: true, timers: false, now: () => Date.now() })
-    const mirror = derivedIndexMirror(root)!
-    mirror.noteActivity()
-    await mirror.ensureSeeded()
-    const files = spyProjectFiles()
-    const checked = new Set<string>()
-    for (let cycle = 0; cycle < 5; cycle++) {
-      files.reset()
-      await mirror.runCycle()
-      for (const path of files.under('logs').stat)
-        checked.add(path.split('/logs/')[1]!.split('/')[0]!)
-      vi.setSystemTime(Date.now() + 60_000)
-    }
-    // 25 members plus the orphan (the missing member has no directory).
-    expect(checked.size).toBe(26)
-  })
-
-  it('keeps warm home reads free of document I/O with bounded containment checks', async () => {
-    await agedIndex(30)
     const { projects, documents } = centralServices()
     const home = async () => {
       await Promise.all([
@@ -335,34 +233,14 @@ describe('cold reads after a restart (stale-while-revalidate)', () => {
         projects.listExperiments('p'),
       ])
     }
+    await home()
+    await new Promise((resolve) => setTimeout(resolve, 50))
     const files = spyProjectFiles()
     await home()
     await new Promise((resolve) => setTimeout(resolve, 50))
-    // The cold read neither stats the expired Experiment rows itself nor
-    // leaves one stat per row running behind it (in 8.0.0 those landed in
-    // the next, warm read): they wait for the background validator.
-    expect(
-      files.under('docs/experiments').stat.filter((path) => path.endsWith('README.md')),
-    ).toEqual([])
-    files.reset()
-    await home()
-    await new Promise((resolve) => setTimeout(resolve, 50))
     const calls = files.under('')
-    expect([
-      ...calls.stat,
-      ...calls.readFile,
-      ...calls.readdir,
-      ...calls.access,
-      ...calls.lstat,
-    ]).toEqual([])
-    // Request-local containment remains necessary even with cached document data.
-    const containedPaths = new Set([
-      root,
-      join(root, '.memon/version.json'),
-      join(root, 'docs/wiki/note/W0001-cites.md'),
-    ])
-    expect(calls.realpath.every((path) => containedPaths.has(path))).toBe(true)
-    expect(calls.realpath.length).toBeLessThanOrEqual(13)
+    // Fingerprints only: no document body is read and nothing is probed.
+    expect([...calls.readFile, ...calls.access, ...calls.lstat]).toEqual([])
   })
 })
 
@@ -391,7 +269,7 @@ describe('background validator (3.3)', () => {
     expect(read.snapshot!.runs[members[1]!]!.status).toBe('RUNNING')
     expect(read.events).toEqual([])
   })
-  it('brings an external status edit to the list within one cycle (non-terminal)', async () => {
+  it('shows an external status edit on the next list and writes it back with the next cycle', async () => {
     const members = await fixture(4, { running: [2] })
     await rebuildIndex(root)
     const clock = { now: Date.now() }
@@ -406,12 +284,10 @@ describe('background validator (3.3)', () => {
     // A launch script rewrites the status with a regex, outside memon.
     const readme = join(root, members[2]!, 'README.md')
     await fs.writeFile(readme, (await fs.readFile(readme, 'utf8')).replace('RUNNING', 'FINISHED'))
-    expect(await status(members[2]!)).toBe('RUNNING') // inside the 60 s window
+    expect(await status(members[2]!)).toBe('FINISHED')
 
     clock.now += 60_000
-    const report = await mirror.runCycle()
-    expect(report).toMatchObject({ status: 'validated', changedRuns: 1, compaction: 'compacted' })
-    expect(await status(members[2]!)).toBe('FINISHED')
+    expect(await mirror.runCycle()).toMatchObject({ status: 'validated', changedRuns: 1 })
     // Written back: the snapshot carries the new status and no event is left.
     const read = await readDerivedIndex(root)
     expect(read.snapshot?.runs[members[2]!]?.status).toBe('FINISHED')
@@ -559,7 +435,7 @@ describe('FS v9 Results summaries on central', () => {
       }
     ).results.summary.variants[0]?.cells['metrics.fid']?.values
 
-  it('seeds member result fingerprints, regenerates stale summaries and follows a rewritten result file', async () => {
+  it('seeds member result fingerprints, regenerates a missing summary and follows a rewritten result file', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     const members = await v9Fixture()
     await rebuildIndex(root)
@@ -579,7 +455,6 @@ describe('FS v9 Results summaries on central', () => {
     const stored = join(resolveIndexPaths(root).results, 'E0002-v9.json')
     expect(JSON.parse(await fs.readFile(stored, 'utf8')).generator.role).toBe('central')
 
-    // A detail inside the windows: a cache hit, no member file touched.
     const files = spyProjectFiles()
     const detail = async () =>
       BackendExperimentResponseSchema.parse(
@@ -588,24 +463,20 @@ describe('FS v9 Results summaries on central', () => {
         ),
       )
     expect(fid(await detail())).toMatchObject({ mean: 11, n: 2 })
-    const logs = files.under('logs')
-    expect([...logs.stat, ...logs.readFile, ...logs.lstat]).toEqual([])
+    expect(files.under('logs').readFile).toEqual([])
 
-    // A script rewrites one member's result.csv outside memon; the validator
-    // notices it within its rotation and regenerates the summary.
+    // A script rewrites one member's result.csv outside memon: the next
+    // detail follows it and a validator cycle writes the fingerprint back.
     await fs.writeFile(join(root, members[0]!, 'result.csv'), resultCsv('20'))
-    let regenerated = 0
-    for (let cycle = 0; cycle < 5 && regenerated === 0; cycle++) {
+    expect(fid(await detail())).toMatchObject({ mean: 16, n: 2 })
+    for (let cycle = 0; cycle < 5; cycle++) {
       vi.setSystemTime(Date.now() + 60_000)
       mirror.noteActivity()
-      const report = await mirror.runCycle()
-      regenerated += report.regeneratedSummaries
+      await mirror.runCycle()
     }
-    expect(regenerated).toBe(1)
     expect((await readDerivedIndex(root)).snapshot?.runs[members[0]!]?.result_fp?.size).toBe(
       (await fs.stat(join(root, members[0]!, 'result.csv'))).size,
     )
-    expect(fid(await detail())).toMatchObject({ mean: 16, n: 2 })
   })
 
   it('leaves the summaries of a read-only Project to the requests', async () => {

@@ -1,7 +1,10 @@
 // @vitest-environment node
 
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { NextRequest } from 'next/server'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../../../../../lib/server/runtime', () => ({
   getRuntime: vi.fn(),
@@ -49,13 +52,27 @@ function req(
   })
 }
 
+let rootA = ''
+let rootB = ''
+
+beforeAll(async () => {
+  // Git writes take the Project's common writer lock, which resolves the real root.
+  rootA = await mkdtemp(join(tmpdir(), 'memon-commit-marks-a-'))
+  rootB = await mkdtemp(join(tmpdir(), 'memon-commit-marks-b-'))
+})
+
+afterAll(async () => {
+  await rm(rootA, { recursive: true, force: true })
+  await rm(rootB, { recursive: true, force: true })
+})
+
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(getRuntime).mockResolvedValue({
     config: {
       projects: [
-        { name: 'project-a', root: '/tmp/a', exclude: [], execution: { kind: 'local' } },
-        { name: 'project-b', root: '/tmp/b', exclude: [], execution: { kind: 'local' } },
+        { name: 'project-a', root: rootA, exclude: [], execution: { kind: 'local' } },
+        { name: 'project-b', root: rootB, exclude: [], execution: { kind: 'local' } },
       ],
     },
   } as unknown as Awaited<ReturnType<typeof getRuntime>>)
@@ -80,13 +97,13 @@ describe('PUT /api/projects/[project]/commit-marks/[sha]', () => {
     )
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ mark: MARK })
-    expect(setCommitMark).toHaveBeenCalledWith('/tmp/a', 'abc1234', {
+    expect(setCommitMark).toHaveBeenCalledWith(rootA, 'abc1234', {
       status: 'verified',
       note: 'ok',
     })
   })
 
-  it('200 for owner with missing optional note (passed as undefined)', async () => {
+  it('200 for owner with missing optional note (omitted)', async () => {
     const res = await PUT(
       req(
         'project-a',
@@ -100,9 +117,8 @@ describe('PUT /api/projects/[project]/commit-marks/[sha]', () => {
       paramsFor('project-a', 'abc1234'),
     )
     expect(res.status).toBe(200)
-    expect(setCommitMark).toHaveBeenCalledWith('/tmp/a', 'abc1234', {
+    expect(setCommitMark).toHaveBeenCalledWith(rootA, 'abc1234', {
       status: 'suspicious',
-      note: undefined,
     })
   })
 
@@ -217,9 +233,7 @@ describe('DELETE /api/projects/[project]/commit-marks/[sha]', () => {
     )
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ deleted: true })
-    expect(deleteCommitMark).toHaveBeenCalledWith('/tmp/a', 'abc1234', {
-      submodule: undefined,
-    })
+    expect(deleteCommitMark).toHaveBeenCalledWith(rootA, 'abc1234', {})
   })
 
   it('403 viewer in scope', async () => {

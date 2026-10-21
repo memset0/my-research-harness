@@ -1,4 +1,4 @@
-import { writeFile } from 'node:fs/promises'
+import { chmod, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { makeTempDir, removeTempDirs } from '@memon/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -8,7 +8,10 @@ import { projectSourceGroup } from './source-group.js'
 afterEach(removeTempDirs)
 async function load(projects: string, extra = '') {
   const directory = await makeTempDir('memon-file-access-config-')
-  await writeFile(join(directory, 'config.yml'), `projects:\n${projects}\n${extra}`)
+  const path = join(directory, 'config.yml')
+  // Host-qualified and central configs must be owner-only.
+  await writeFile(path, `projects:\n${projects}\n${extra}`, { mode: 0o600 })
+  await chmod(path, 0o600)
   return loadConfig({ cwd: directory })
 }
 const dump = 'file_cache:\n  dump_path: ./cache/files.dump\n'

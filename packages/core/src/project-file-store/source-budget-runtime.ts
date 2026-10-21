@@ -2,10 +2,10 @@ import { getProjectFileContext } from '../project-file-context.js'
 import { type SourceBudgetPool, sourceBudgetTiming } from './budgets.js'
 import { monotonic } from './clock.js'
 import type { FileOperationName } from './contract.js'
-import { getStore } from './runtime.js'
+import { storeAccess } from './store-access.js'
 
 export function sourceBudgets(): SourceBudgetPool {
-  return getStore().budgets
+  return storeAccess().budgets
 }
 export async function budgetedSourceOperation<T>(
   group: string,

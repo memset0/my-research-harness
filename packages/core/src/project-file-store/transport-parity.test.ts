@@ -1,19 +1,14 @@
+// Native modes only: unit tests do not build or run the Go file agent, whose
+// own Go tests cover the source kernel.
+
 import { readFile, rename, writeFile } from 'node:fs/promises'
 import { join as nativeJoin } from 'node:path'
-import { FileAgentClient } from '@memon/file-protocol/client'
-import { fileProjectURI, join } from '@memon/file-protocol/paths'
-import {
-  createTempProject,
-  makeTempDir,
-  removeTempDirs,
-  startFileAgentFixture,
-} from '@memon/test-utils'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { join } from '@memon/file-protocol/paths'
+import { createTempProject, makeTempDir, removeTempDirs } from '@memon/test-utils'
+import { afterAll, describe, expect, it, vi } from 'vitest'
 import { readMountTable } from '../mount-table.js'
 import { configureProjectFileCache, getProjectFileCache } from '../project-file-cache.js'
 import type { ProjectFileContext } from '../project-file-context.js'
-import type { ProjectConfig } from '../types.js'
-import { configureFileAgentAdapters } from './agent-adapters.js'
 import { readProjectFile } from './conditional.js'
 import { projectFs, withProjectFileContext } from './index.js'
 import { getStore } from './runtime.js'
@@ -22,43 +17,25 @@ vi.mock('../mount-table.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../mount-table.js')>()),
   readMountTable: vi.fn(async () => []),
 }))
-let agent: Awaited<ReturnType<typeof startFileAgentFixture>>
-let source: Awaited<ReturnType<typeof createTempProject>>
-beforeAll(async () => {
-  source = await createTempProject({ files: { 'note.txt': 'first' } })
-  agent = await startFileAgentFixture(source.root)
-  const client = new FileAgentClient({
-    endpoint: agent.endpoint,
-    ca: await readFile(agent.tls.ca),
-    certificate: await readFile(agent.tls.client),
-    key: await readFile(agent.tls.clientKey),
-    expectedSourceIdentity: agent.sourceIdentity,
-  })
-  await vi.waitFor(() => client.stat({ project: 'project-a', path: '' }), { timeout: 10000 })
-}, 40000)
 afterAll(async () => {
   await configureProjectFileCache(undefined)
-  await agent?.stop()
   await removeTempDirs()
 })
 const freshStore = () => {
   delete (globalThis as Record<symbol, unknown>)[Symbol.for('memon.project-file-store.v2')]
 }
 
-describe('four transport/cache modes through one file boundary', () => {
+describe('native transport/cache modes through one file boundary', () => {
   it.each([
     'none',
     'memory',
     'sshfs',
-    'agent',
   ] as const)('preserves conditional semantics and cache restart policy for %s', async (mode) => {
     await configureProjectFileCache(undefined)
     freshStore()
-    const native =
-      mode === 'agent' ? source : await createTempProject({ files: { 'note.txt': 'first' } })
-    if (mode === 'agent') await writeFile(nativeJoin(source.root, 'note.txt'), 'first')
-    const root = mode === 'agent' ? fileProjectURI('agent-a', 'project-a') : native.root
-    const tiered = mode === 'sshfs' || mode === 'agent'
+    const native = await createTempProject({ files: { 'note.txt': 'first' } })
+    const root = native.root
+    const tiered = mode === 'sshfs'
     // SSHFS exercises the real worker and memory cache with a simulated mount identity.
     // It does not claim a real network mount or test SSH transport.
     vi.mocked(readMountTable).mockResolvedValue(
@@ -66,32 +43,6 @@ describe('four transport/cache modes through one file boundary', () => {
         ? [{ mountPoint: root, fsType: 'fuse.sshfs', source: 'cluster-a:/srv/project-a' }]
         : [],
     )
-    if (mode === 'agent') {
-      const project: ProjectConfig = {
-        name: 'project-a',
-        root,
-        include: [],
-        exclude: [],
-        access: {
-          kind: 'agent',
-          cache: 'memory-disk',
-          connection: 'agent-a',
-          project: 'project-a',
-          sourceIdentity: agent.sourceIdentity,
-        },
-      }
-      configureFileAgentAdapters(
-        {
-          'agent-a': {
-            endpoint: agent.endpoint,
-            caFile: agent.tls.ca,
-            certificateFile: agent.tls.client,
-            keyFile: agent.tls.clientKey,
-          },
-        },
-        [project],
-      )
-    }
     const context: ProjectFileContext = {
       root,
       storage: mode === 'none' ? 'local' : 'sshfs',
@@ -156,22 +107,5 @@ describe('four transport/cache modes through one file boundary', () => {
     expect(current.outcome).toBe('present')
     if (current.outcome === 'present')
       expect(Buffer.from(current.content, 'base64').toString()).toBe('other')
-  })
-  it('keeps agent outage distinct from missing while a cached answer retains its original check time', async () => {
-    const root = fileProjectURI('agent-a', 'project-a'),
-      path = join(root, 'note.txt')
-    const context: ProjectFileContext = {
-      root,
-      cachePolicy: 'memory-disk',
-      storage: 'sshfs',
-      reason: 'open',
-    }
-    const before = await readProjectFile(context, path, { policy: 'revalidate' })
-    await agent.stop()
-    expect(await readProjectFile(context, path, { policy: 'cached' })).toEqual(before)
-    await expect(readProjectFile(context, path, { policy: 'revalidate' })).rejects.toMatchObject({
-      code: 'SOURCE_UNAVAILABLE',
-    })
-    expect(getStore().observationTime(root, path, 'readFile')).toBe(before.checkedAt)
   })
 })

@@ -543,7 +543,7 @@ describe('Results summary freshness', () => {
     expect(await service.getExperimentResults('p', 'E0001-agg')).toEqual(before)
   })
 
-  it('serves central member facts within the window and re-takes them for the snapshot', async () => {
+  it('shows a member result edit on central re-open, snapshot and refresh', async () => {
     const runs = await aggregationFixture()
     const service = new FilesystemProjectService([project()], { readPolicy: CENTRAL_READ_POLICY })
     const detail = async (reason: 'open' | 'manual' = 'open') =>
@@ -560,16 +560,11 @@ describe('Results summary freshness', () => {
       join(root, runs[4]!, 'result.csv'),
       resultCsv(1, [['metrics.eval.fid', '', '8']]),
     )
-    const stat = vi.spyOn(projectFs, 'stat')
-    // Within the member window: the description file is fingerprinted again,
-    // no member file is touched, the previous value may still show.
-    expect(fid((await detail()).documents!.results.summary)).toBe(9)
-    const memberStats = stat.mock.calls
-      .map(([path]) => String(path))
-      .filter((path) => path.includes('/logs/'))
-    expect(memberStats).toEqual([])
-    expect(stat.mock.calls.map(([path]) => String(path))).toContain(
-      join(root, 'docs/experiments/E0001-agg/experiment.json'),
+    // No central member window: a plain re-open already follows the edit.
+    expect(fid((await detail()).documents!.results.summary)).toBe(8)
+    await fs.writeFile(
+      join(root, runs[4]!, 'result.csv'),
+      resultCsv(1, [['metrics.eval.fid', '', '8.5']]),
     )
 
     // The snapshot (Refresh) re-takes every member fingerprint.
@@ -578,7 +573,7 @@ describe('Results summary freshness', () => {
         service.getExperimentResults('p', 'E0001-agg'),
       ),
     )
-    expect(fid(snapshot.summary)).toBe(8)
+    expect(fid(snapshot.summary)).toBe(8.5)
     // ... and so does an explicit refresh of the detail.
     await fs.writeFile(
       join(root, runs[4]!, 'result.csv'),

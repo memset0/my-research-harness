@@ -8,9 +8,10 @@ import {
   type ProjectFileContext,
 } from '../project-file-context.js'
 import type { FileAccessOptions } from '../types.js'
-import { agentSourceIdentity } from './agent-adapters.js'
+import { agentSourceIdentity } from './agent-registry.js'
 import type { FileOperationMetrics, ProjectFileStatus } from './contract.js'
 import { ProjectFileStore } from './store.js'
+import { installStoreAccess } from './store-access.js'
 
 // ---------------------------------------------------------------------------
 // Process-global singleton (survives duplicated Next.js server bundles)
@@ -31,6 +32,10 @@ export function getStore(): ProjectFileStore {
   }
   return store
 }
+
+// Modules below the store reach it through this accessor instead of importing
+// the runtime.
+installStoreAccess(getStore)
 
 // ---------------------------------------------------------------------------
 // Public functions

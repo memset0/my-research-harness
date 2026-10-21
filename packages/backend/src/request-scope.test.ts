@@ -49,7 +49,9 @@ describe('request-scoped Project root real path', () => {
     await withRequestScope(() => resolveRunPath(root, runs[0]!))
     await resolveRunPath(root, runs[0]!)
     await resolveRunPath(root, runs[1]!)
-    expect(rootRealpaths(realpath, root)).toBe(4)
+    // One per scoped request; unscoped calls resolve the root for the Run
+    // directory and again for its run.json containment check.
+    expect(rootRealpaths(realpath, root)).toBe(6)
   })
 
   it('still rejects a symlink escaping the root inside a scope', async () => {

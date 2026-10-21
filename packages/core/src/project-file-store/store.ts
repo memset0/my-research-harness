@@ -55,6 +55,8 @@ const MAX_CACHED_CONTENT_BYTES = 128 * 1024 * 1024
 const MAX_CACHE_ENTRIES = 50_000
 const MAX_ATTENTION_KEYS = 4_096
 const ATTENTION_SWEEP_INTERVAL_MS = 1_000
+/** Longest reuse of a completed observation before the source is re-checked. */
+const MAX_REUSE_MS = 30_000
 
 export class ProjectFileStore {
   readonly epoch = randomBytes(8).toString('hex')
@@ -211,9 +213,14 @@ export class ProjectFileStore {
     return entry
   }
 
-  /** Demand reads share one short freshness budget; no dump or second TTL class. */
-  private intervalRange(_entry: StoreEntry): [number, number] {
-    return [30_000, 30_000]
+  /**
+   * Check interval range for one key. Demand reads share one short freshness
+   * budget: a completed observation is reused for at most 30 s. A key with an
+   * active subscription is checked from 1 s, doubling up to that bound.
+   */
+  private intervalRange(entry: StoreEntry): [number, number] {
+    if (this.logicalInterests.has(entry.key)) return [1000, MAX_REUSE_MS]
+    return [MAX_REUSE_MS, MAX_REUSE_MS]
   }
 
   private touchAttention(context: ProjectFileContext, entry: StoreEntry): void {
@@ -305,7 +312,7 @@ export class ProjectFileStore {
       this.metrics.recordCacheHit(entry.group.name, operation, origin)
       if (
         entry.completedAtMono !== null &&
-        now - entry.completedAtMono < 30_000 &&
+        now - entry.completedAtMono < MAX_REUSE_MS &&
         now < entry.dueAtMono &&
         !entry.refreshRequested
       )

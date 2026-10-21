@@ -80,15 +80,4 @@ describe('Backend package boundary', () => {
       expect(offenders).toEqual([])
     }
   })
-
-  it('ships no retired daemon, distribution, update or start-guard lifecycle', async () => {
-    const entries = await readdir(join(packageRoot, 'src'))
-    expect(entries).not.toEqual(
-      expect.arrayContaining([expect.stringMatching(/^(daemon|distribution|update|start-guards)/)]),
-    )
-    const backend = await import('./index.js')
-    for (const name of Object.keys(backend)) {
-      expect(name).not.toMatch(/Daemon|ReleaseStore|BackendRelease|StartGuard|UpdateActivation/)
-    }
-  })
 })

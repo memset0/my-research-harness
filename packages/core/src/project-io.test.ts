@@ -1,5 +1,5 @@
 // The isolated project I/O pool, driven through a fake `fork()` so worker
-// start-up, crashes, a full IPC channel and shutdown are deterministic. No
+// start-up, crashes, IPC backpressure and shutdown are deterministic. No
 // child process is ever spawned here.
 
 import { EventEmitter } from 'node:events'
@@ -24,7 +24,7 @@ const fake = vi.hoisted(() => {
 class FakeChild extends EventEmitter {
   connected = true
   readonly sent: Record<string, unknown>[] = []
-  /** What `send()` returns (false = the channel is full). */
+  /** What `send()` returns (false = backpressure; the message is still delivered). */
   sendResult = true
   /** Thrown synchronously by `send()` (a payload that cannot be cloned). */
   sendThrows: Error | null = null
@@ -195,7 +195,7 @@ describe('project I/O worker pool', () => {
     expect((await retry)[0]).toBe(2)
   })
 
-  it('reports a full IPC channel as EBUSY', async () => {
+  it('treats IPC backpressure as delivery and resolves with the reply', async () => {
     const pool = getProjectIo()
     const warm = pool.access('g', '/data', 4)
     await flush()
@@ -203,11 +203,10 @@ describe('project I/O worker pool', () => {
     child.reply(child.lastId(), null)
     await warm
     child.sendResult = false
-    await expect(pool.readFile('g', '/data/x')).rejects.toMatchObject({
-      code: 'EBUSY',
-      syscall: 'projectIo',
-      message: 'project I/O worker channel is full',
-    })
+    const reading = pool.readFile('g', '/data/x')
+    await flush()
+    child.reply(child.lastId(), new Uint8Array([7]))
+    expect((await reading)[0]).toBe(7)
   })
 
   it('rejects with the asynchronous send error reported by the channel', async () => {

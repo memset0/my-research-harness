@@ -58,7 +58,7 @@ it('keeps minimal authoring optional while preserving legacy standalone creation
   expect(create.exitCode, create.stderr).toBe(0)
   const text = await fs.readFile(p.path('docs/wiki/finding/W0001-finding/README.md'), 'utf8')
   expect(text).not.toMatch(/^status:|^sources:|^## /m)
-  expect(text).toMatch(/created_at: .*\+\d\d:\d\d/)
+  expect(text).toMatch(/created_at: .*[+-]\d\d:\d\d/)
   const legacy = await captureCli(() =>
     runWikiCreate({ ...options, kind: 'note', slug: 'legacy', title: 'Legacy', bundle: false }),
   )

@@ -127,10 +127,9 @@ describe('conditional list reads', () => {
     expect(viewer.status).toBe(403)
   })
 
-  it('makes the Journal count and hypotheses conditional', async () => {
+  it('makes the Journal count, anomaly and wiki lists conditional', async () => {
     for (const path of [
       '/api/backend/v1/journal?project=p&countOnly=1',
-      '/api/backend/v1/hypotheses?project=p',
       '/api/backend/v1/anomalies?project=p',
       '/api/backend/v1/wiki?project=p',
     ]) {

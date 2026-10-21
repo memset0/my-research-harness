@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { BackendMutationError } from '@memon/backend'
+import { BackendMutationError, BackendProjectServiceError } from '@memon/backend'
 import { NextResponse } from 'next/server'
 import type { Runtime } from './runtime'
 import {
@@ -69,6 +69,21 @@ export async function mutateStandaloneWarning(
 }
 
 export function standaloneWarningError(error: unknown): NextResponse | null {
+  if (error instanceof BackendProjectServiceError) {
+    if (error.code === 'RESOURCE_NOT_FOUND' || error.code === 'PROJECT_NOT_FOUND') {
+      return NextResponse.json(
+        { error: { code: 'NOT_FOUND', message: error.message } },
+        { status: 404 },
+      )
+    }
+    if (error.code === 'INVALID_RESOURCE') {
+      return NextResponse.json(
+        { error: { code: 'BAD_REQUEST', message: error.message } },
+        { status: 400 },
+      )
+    }
+    return null
+  }
   if (!(error instanceof BackendMutationError)) return null
   if (error.code === 'CONFLICT') {
     return NextResponse.json(

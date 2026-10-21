@@ -5,7 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const childProcessMocks = vi.hoisted(() => ({ spawn: vi.fn() }))
 
-vi.mock('node:child_process', () => ({ spawn: childProcessMocks.spawn }))
+vi.mock('node:child_process', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:child_process')>()),
+  spawn: childProcessMocks.spawn,
+}))
 
 import { runServe } from './serve.js'
 
