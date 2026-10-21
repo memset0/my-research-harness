@@ -4,14 +4,14 @@ import { BodyTranslation } from './body-translation'
 
 // Per-project wiki surface.
 //
-// Desktop: rail (flat card list, newest edit first) | reading surface |
-// sticky outline column. Activating Edit swaps the outline column for Monaco.
+// Desktop: reading surface | sticky outline column | rail (flat card list,
+// newest edit first). Activating Edit swaps the outline column for Monaco.
 // Mobile: reading surface only, with a FAB that opens the same card list in a
 // right-side Sheet and a full-viewport bottom Sheet for editing.
 
 import type { WikiDiagnostic } from '@memon/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, List, PanelLeftClose, PanelLeftOpen, Pencil, X } from 'lucide-react'
+import { ChevronDown, List, PanelRightClose, PanelRightOpen, Pencil, X } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -157,10 +157,32 @@ export function WikiShell({
 
   return (
     <div className="flex h-[calc(100svh-3rem)] overflow-hidden">
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {selectedId === null ? (
+          <WikiLandingState
+            pageCount={pages.length}
+            isLoading={isLoading}
+            error={error}
+            onShowRail={railOpen ? undefined : () => setRailOpen(true)}
+          />
+        ) : (
+          <WikiSelectedPane
+            project={project}
+            selectedId={selectedId}
+            page={detail.data}
+            isLoading={detail.isLoading}
+            error={(detail.error as Error | null) ?? null}
+            pages={pages}
+            pagesLoading={isLoading}
+            onShowRail={railOpen ? undefined : () => setRailOpen(true)}
+          />
+        )}
+      </main>
+
       {railOpen && (
         <aside
           aria-label="Wiki page picker"
-          className="hidden w-80 shrink-0 flex-col border-r md:flex"
+          className="hidden w-80 shrink-0 flex-col border-l md:flex"
           data-wiki-rail=""
         >
           <div className="flex items-center justify-between border-b px-3 py-2 text-xs uppercase tracking-wide text-muted-foreground">
@@ -185,28 +207,6 @@ export function WikiShell({
         </aside>
       )}
 
-      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        {selectedId === null ? (
-          <WikiLandingState
-            pageCount={pages.length}
-            isLoading={isLoading}
-            error={error}
-            onShowRail={railOpen ? undefined : () => setRailOpen(true)}
-          />
-        ) : (
-          <WikiSelectedPane
-            project={project}
-            selectedId={selectedId}
-            page={detail.data}
-            isLoading={detail.isLoading}
-            error={(detail.error as Error | null) ?? null}
-            pages={pages}
-            pagesLoading={isLoading}
-            onShowRail={railOpen ? undefined : () => setRailOpen(true)}
-          />
-        )}
-      </main>
-
       <WikiMobileRail
         project={project}
         pages={visible}
@@ -229,7 +229,7 @@ function WikiRailToggleButton({
   onClick: () => void
 }) {
   const label = action === 'show' ? 'Show wiki pages' : 'Hide wiki pages'
-  const Icon = action === 'show' ? PanelLeftOpen : PanelLeftClose
+  const Icon = action === 'show' ? PanelRightOpen : PanelRightClose
   return (
     <Button
       type="button"
@@ -392,7 +392,7 @@ function WikiCardList({
 
 function ClosedRailToolbar({ onShowRail }: { onShowRail: () => void }) {
   return (
-    <div className="hidden shrink-0 items-center border-b px-3 py-2 md:flex">
+    <div className="hidden shrink-0 items-center justify-end border-b px-3 py-2 md:flex">
       <WikiRailToggleButton action="show" onClick={onShowRail} />
     </div>
   )
@@ -412,8 +412,8 @@ function WikiLandingState({
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-end gap-2 border-b px-4 py-2">
-        {onShowRail && <WikiRailToggleButton action="show" onClick={onShowRail} />}
         <WikiKindHelp />
+        {onShowRail && <WikiRailToggleButton action="show" onClick={onShowRail} />}
       </div>
       <div className="flex flex-1 items-center justify-center p-8">
         {isLoading ? (
@@ -496,7 +496,6 @@ function WikiSelectedPane({
     <div className="flex h-full min-h-0 flex-col">
       <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 border-b bg-background/95 px-4 py-2 backdrop-blur">
         <div className="flex min-w-0 items-center gap-2">
-          {onShowRail && <WikiRailToggleButton action="show" onClick={onShowRail} />}
           <div className="flex min-w-0 items-baseline gap-2 text-xs">
             <WikiIdentity
               key={onShowRail ? 'collapsed' : 'expanded'}
@@ -530,6 +529,7 @@ function WikiSelectedPane({
             {editing ? <X className="size-3.5" /> : <Pencil className="size-3.5" />}
             {editing ? 'Cancel' : 'Edit'}
           </Button>
+          {onShowRail && <WikiRailToggleButton action="show" onClick={onShowRail} />}
         </div>
       </div>
 

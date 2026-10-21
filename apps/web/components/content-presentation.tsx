@@ -2,6 +2,7 @@
 
 import type { ContentFields } from '@memon/core'
 import { useQuery } from '@tanstack/react-query'
+import { Clock, LayoutTemplate, type LucideIcon, Tag } from 'lucide-react'
 import { useState } from 'react'
 import { type ProjectTarget, projectHost, projectName } from '../lib/api'
 import { queryKeys } from '../lib/query-keys'
@@ -49,10 +50,17 @@ export function ContentFilters({
   const categories = [
     ...new Set(items.map((item) => item.category).filter((v): v is string => Boolean(v))),
   ].sort()
-  const select = (key: keyof ContentFilter, label: string, options: string[]) => (
+  // One compact row: the icon names the filter, the trigger shows only its
+  // value ("All" when unfiltered); the accessible name and tooltip keep the label.
+  const select = (key: keyof ContentFilter, label: string, Icon: LucideIcon, options: string[]) => (
     <Select value={value[key]} onValueChange={(next) => onChange({ ...value, [key]: next })}>
-      <SelectTrigger className="w-full" size="sm" aria-label={label}>
-        <SelectValue placeholder={label} />
+      <SelectTrigger className="w-full min-w-0" size="sm" aria-label={label} title={label}>
+        <span className="flex min-w-0 items-center gap-1">
+          <Icon aria-hidden className="text-muted-foreground" data-content-filter-icon={key} />
+          <SelectValue className="min-w-0 truncate" placeholder={label}>
+            {value[key] === 'all' ? 'All' : value[key]}
+          </SelectValue>
+        </span>
       </SelectTrigger>
       <SelectContent>
         <SelectItem value="all">All {label.toLowerCase()}</SelectItem>
@@ -65,10 +73,10 @@ export function ContentFilters({
     </Select>
   )
   return (
-    <div className="grid gap-2" data-content-filters>
-      {select('category', 'Categories', categories)}
-      {select('freshness', 'Freshness', ['CURRENT', 'STALE', 'UNDECLARED'])}
-      {select('presentation', 'Presentations', ['markdown', 'html', 'service'])}
+    <div className="grid grid-cols-3 gap-1.5" data-content-filters>
+      {select('category', 'Categories', Tag, categories)}
+      {select('freshness', 'Freshness', Clock, ['CURRENT', 'STALE', 'UNDECLARED'])}
+      {select('presentation', 'Presentations', LayoutTemplate, ['markdown', 'html', 'service'])}
     </div>
   )
 }

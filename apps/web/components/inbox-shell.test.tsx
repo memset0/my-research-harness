@@ -115,3 +115,17 @@ describe('InboxShell report editor — list invalidation', () => {
     await waitFor(() => expect(vi.mocked(fetchReports)).toHaveBeenCalledTimes(2))
   })
 })
+
+describe('InboxShell reports rail — placement', () => {
+  it('renders the desktop Report picker to the right of the reading pane', async () => {
+    vi.mocked(fetchReports).mockResolvedValue({ reports: [] })
+
+    renderWithQuery(<InboxShell kind="reports" project={PROJECT} selectedId={null} />)
+
+    const rail = await screen.findByRole('complementary', { name: 'Report picker' })
+    const reading = screen.getByRole('main')
+    expect(reading.compareDocumentPosition(rail) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(rail).toHaveClass('border-l')
+    expect(rail).not.toHaveClass('border-r')
+  })
+})

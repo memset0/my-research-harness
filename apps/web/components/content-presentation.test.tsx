@@ -1,8 +1,9 @@
 import { ProjectRefSchema } from '@memon/core'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  ContentFilters,
   ContentMetadata,
   ContentPresentation,
   contentUrl,
@@ -119,5 +120,32 @@ describe('content presentation', () => {
         { category: 'all', presentation: 'markdown', freshness: 'UNDECLARED' },
       ),
     ).toBe(true)
+  })
+
+  it('renders the three content filters as one icon row showing their values', () => {
+    const { container } = render(
+      <ContentFilters
+        items={[{ category: 'methods' }]}
+        value={{ category: 'all', freshness: 'STALE', presentation: 'all' }}
+        onChange={() => {}}
+      />,
+    )
+    const row = container.querySelector('[data-content-filters]')
+    expect(row).toHaveClass('grid', 'grid-cols-3')
+    for (const [name, key] of [
+      ['Categories', 'category'],
+      ['Freshness', 'freshness'],
+      ['Presentations', 'presentation'],
+    ] as const) {
+      const trigger = screen.getByRole('combobox', { name })
+      expect(trigger).toHaveAttribute('title', name)
+      expect(trigger.querySelector(`[data-content-filter-icon="${key}"]`)).not.toBeNull()
+    }
+    expect(
+      within(screen.getByRole('combobox', { name: 'Categories' })).getByText('All'),
+    ).toBeTruthy()
+    expect(
+      within(screen.getByRole('combobox', { name: 'Freshness' })).getByText('STALE'),
+    ).toBeTruthy()
   })
 })

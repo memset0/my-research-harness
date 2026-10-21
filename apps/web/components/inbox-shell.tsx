@@ -10,7 +10,7 @@ import { BodyTranslation } from './body-translation'
 
 import type { ContentFields } from '@memon/core'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, List, PanelLeftClose, PanelLeftOpen, Pencil, X } from 'lucide-react'
+import { ChevronDown, List, PanelRightClose, PanelRightOpen, Pencil, X } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -119,34 +119,7 @@ export function InboxShell({
 
   return (
     <div className="flex h-[calc(100svh-3rem)] overflow-hidden">
-      {/* Left rail — desktop only */}
-      {showDesktopRail && (
-        <aside
-          aria-label={'Report picker'}
-          className="hidden w-72 shrink-0 border-r md:flex md:flex-col"
-          data-inbox-rail={kind}
-        >
-          <RailHeader
-            kind={kind}
-            count={items.length}
-            onHideReports={kind === 'reports' ? () => setReportRailOpen(false) : undefined}
-          />
-          <div className="border-b p-2">{contentFilters}</div>
-          <div className="flex-1 overflow-y-auto">
-            <RailList
-              kind={kind}
-              project={project}
-              items={items}
-              selectedId={selectedId}
-              loading={itemsLoading}
-              error={itemsError}
-              onRetry={refetchItems}
-            />
-          </div>
-        </aside>
-      )}
-
-      {/* Right pane — rendered markdown + edit toggle.
+      {/* Reading pane — rendered markdown + edit toggle.
           overflow-x-hidden alongside overflow-y-auto is needed to defeat
           the CSS Overflow Module 3 "auto-x trap" (overflow-y: auto with
           overflow-x: visible computes overflow-x to auto, producing a
@@ -172,6 +145,33 @@ export function InboxShell({
           />
         )}
       </main>
+
+      {/* Right rail — desktop only */}
+      {showDesktopRail && (
+        <aside
+          aria-label={'Report picker'}
+          className="hidden w-72 shrink-0 border-l md:flex md:flex-col"
+          data-inbox-rail={kind}
+        >
+          <RailHeader
+            kind={kind}
+            count={items.length}
+            onHideReports={kind === 'reports' ? () => setReportRailOpen(false) : undefined}
+          />
+          <div className="border-b p-2">{contentFilters}</div>
+          <div className="flex-1 overflow-y-auto">
+            <RailList
+              kind={kind}
+              project={project}
+              items={items}
+              selectedId={selectedId}
+              loading={itemsLoading}
+              error={itemsError}
+              onRetry={refetchItems}
+            />
+          </div>
+        </aside>
+      )}
 
       {/* Mobile FAB → drawer with the rail */}
       <MobileRailDrawer
@@ -271,7 +271,7 @@ function ReportRailToggleButton({
   onClick: () => void
 }) {
   const label = action === 'show' ? 'Show reports' : 'Hide reports'
-  const Icon = action === 'show' ? PanelLeftOpen : PanelLeftClose
+  const Icon = action === 'show' ? PanelRightOpen : PanelRightClose
   return (
     <Button
       type="button"
@@ -406,7 +406,7 @@ function EmptyState({
 
 function ClosedReportRailToolbar({ onShowReports }: { onShowReports: () => void }) {
   return (
-    <div className="hidden shrink-0 items-center border-b px-3 py-2 md:flex">
+    <div className="hidden shrink-0 items-center justify-end border-b px-3 py-2 md:flex">
       <ReportRailToggleButton action="show" onClick={onShowReports} />
     </div>
   )
@@ -467,7 +467,6 @@ function SelectedItemPane({
     <div className="flex h-full flex-col">
       <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b bg-background/95 px-4 py-2 backdrop-blur">
         <div className="flex min-w-0 items-center gap-2">
-          {onShowReports && <ReportRailToggleButton action="show" onClick={onShowReports} />}
           <div className="flex min-w-0 items-baseline gap-2 text-xs">
             <SelectedArtifactIdentity
               key={onShowReports ? 'collapsed' : 'expanded'}
@@ -482,16 +481,19 @@ function SelectedItemPane({
             <TimestampLocal value={new Date(data.mtime).toISOString()} />
           </div>
         </div>
-        {editable ? (
-          <Button
-            size="sm"
-            variant={editing ? 'secondary' : 'outline'}
-            onClick={() => setEditing((v) => !v)}
-          >
-            {editing ? <X className="size-3.5" /> : <Pencil className="size-3.5" />}
-            {editing ? 'Cancel' : 'Edit'}
-          </Button>
-        ) : null}
+        <div className="flex shrink-0 items-center gap-2">
+          {editable ? (
+            <Button
+              size="sm"
+              variant={editing ? 'secondary' : 'outline'}
+              onClick={() => setEditing((v) => !v)}
+            >
+              {editing ? <X className="size-3.5" /> : <Pencil className="size-3.5" />}
+              {editing ? 'Cancel' : 'Edit'}
+            </Button>
+          ) : null}
+          {onShowReports && <ReportRailToggleButton action="show" onClick={onShowReports} />}
+        </div>
       </div>
       <div className={cn('flex flex-1 overflow-hidden', editing ? 'md:divide-x' : '')}>
         <div

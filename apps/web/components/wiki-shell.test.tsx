@@ -151,6 +151,12 @@ describe('WikiShell', () => {
     const { container } = renderWithQuery(<WikiShell project="project-a" selectedId="W0002" />)
 
     expect(await screen.findByTestId('wiki-markdown')).toHaveTextContent('Measured result.')
+    const rail = screen.getByRole('complementary', { name: 'Wiki page picker' })
+    expect(
+      screen.getByRole('main').compareDocumentPosition(rail) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(rail).toHaveClass('border-l')
+    expect(rail).not.toHaveClass('border-r')
     const cards = Array.from(container.querySelectorAll('[data-wiki-card]'))
     expect(cards[1]).toHaveAttribute('aria-current', 'page')
     const outline = container.querySelector('[data-wiki-outline]')
