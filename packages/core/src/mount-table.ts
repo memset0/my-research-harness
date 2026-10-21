@@ -1,12 +1,17 @@
 // mount-table — the OS-local mount table, shared by the project file store's
 // availability guard and the persistent cache's storage decisions.
 //
-// Every read here is local (`/proc/self/mountinfo`): it never touches the
+// Every read here is local (`/proc/self/mountinfo`, or the non-blocking macOS
+// `mount` listing): it never touches the
 // remote storage it describes, which is exactly why it can be consulted while
 // a mount is hung.
 
+import { execFile } from 'node:child_process'
 import { promises as nodeFs } from 'node:fs'
+import { promisify } from 'node:util'
 import { sep } from '@memon/file-protocol/paths'
+
+const execFileAsync = promisify(execFile)
 
 /** One line of the OS mount table, reduced to the fields we compare. */
 export interface MountIdentity {
@@ -38,6 +43,7 @@ export function sameMountIdentity(left: MountIdentity, right: MountIdentity): bo
  */
 export const NETWORK_FS_TYPES: Record<string, true> = {
   '9p': true,
+  afpfs: true,
   afs: true,
   ceph: true,
   cifs: true,
@@ -48,13 +54,16 @@ export const NETWORK_FS_TYPES: Record<string, true> = {
   fuseblk: true,
   glusterfs: true,
   lustre: true,
+  macfuse: true,
   ncpfs: true,
   nfs: true,
   nfs4: true,
+  osxfuse: true,
   smb2: true,
   smb3: true,
   smbfs: true,
   sshfs: true,
+  webdav: true,
 }
 
 export function isWithinPath(root: string, absolutePath: string): boolean {
@@ -72,18 +81,61 @@ function unescapeMountField(field: string): string {
     .replace(/\\134/g, '\\')
 }
 
+/** macOS `mount` (no arguments) lists via getmntinfo(MNT_NOWAIT): no remote I/O. */
+const DARWIN_MOUNT_COMMAND = '/sbin/mount'
+const DARWIN_MOUNT_TIMEOUT_MS = 5_000
+
 /**
- * Read the local mount table. Returns null when the platform has no
- * `/proc/self/mountinfo`, which disables mount-identity decisions rather than
- * guessing from a path shape.
+ * Read the local mount table: Linux `/proc/self/mountinfo`, or the macOS
+ * `mount` listing. Returns null when neither is available, which disables
+ * mount-identity decisions rather than guessing from a path shape.
  */
 export async function readMountTable(): Promise<MountIdentity[] | null> {
   let raw: string
   try {
     raw = await nodeFs.readFile('/proc/self/mountinfo', 'utf8')
   } catch {
-    return null
+    if (process.platform !== 'darwin') return null
+    try {
+      const { stdout } = await execFileAsync(DARWIN_MOUNT_COMMAND, [], {
+        timeout: DARWIN_MOUNT_TIMEOUT_MS,
+        encoding: 'utf8',
+      })
+      return parseDarwinMountOutput(stdout)
+    } catch {
+      return null
+    }
   }
+  return parseMountInfo(raw)
+}
+
+/**
+ * Parse macOS `mount` output, one `<source> on <mountpoint> (<fstype>, <flags>)`
+ * per line. Fields are not escaped, so split on the first ` on ` and the last
+ * ` (` to keep spaces inside the mount point.
+ */
+export function parseDarwinMountOutput(raw: string): MountIdentity[] {
+  const entries: MountIdentity[] = []
+  for (const line of raw.split('\n')) {
+    if (!line.endsWith(')')) continue
+    const on = line.indexOf(' on ')
+    const open = line.lastIndexOf(' (')
+    if (on <= 0 || open <= on + 4) continue
+    const fsType = line
+      .slice(open + 2, -1)
+      .split(',')[0]
+      ?.trim()
+    if (fsType === undefined || fsType.length === 0) continue
+    entries.push({
+      mountPoint: line.slice(on + 4, open),
+      fsType,
+      source: line.slice(0, on),
+    })
+  }
+  return entries
+}
+
+function parseMountInfo(raw: string): MountIdentity[] {
   const entries: MountIdentity[] = []
   for (const line of raw.split('\n')) {
     if (line.length === 0) continue

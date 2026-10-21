@@ -10,7 +10,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { promises as nodeFs } from 'node:fs'
 import type { FileHandle } from 'node:fs/promises'
 import { deserialize, serialize } from 'node:v8'
-import { dirname, join, parse, relative, resolve, sep } from '@memon/file-protocol/paths'
+import { basename, dirname, join, parse, relative, resolve, sep } from '@memon/file-protocol/paths'
 import { LRUCache } from 'lru-cache'
 import { z } from 'zod'
 import {
@@ -243,23 +243,35 @@ function normalizedDump(candidate: unknown): CacheDump | null {
   return normalized
 }
 
+/** A root-owned link in a directory only root can write is OS layout, not a redirect. */
+async function isSystemSymlink(linkUid: number, parent: string): Promise<boolean> {
+  if (linkUid !== 0) return false
+  const parentStat = await nodeFs.stat(parent)
+  return parentStat.uid === 0 && (parentStat.mode & 0o022) === 0
+}
+
 async function prepareLocalDumpPath(path: string): Promise<void> {
   const directory = dirname(path)
   const table = await readMountTable()
   if (table === null)
     throw new Error('memon: cannot verify local storage for the project file cache')
-  const dumpMount = containingMount(path, table)
-  if (dumpMount !== undefined && NETWORK_FS_TYPES[dumpMount.fsType] === true) {
+  const onNetwork = (candidate: string) => {
+    const mount = containingMount(candidate, table)
+    return mount !== undefined && NETWORK_FS_TYPES[mount.fsType] === true
+  }
+  if (onNetwork(path)) {
     throw new Error('memon: the project file cache dump must live on local disk')
   }
 
   // Check from the filesystem root downward so a symlink cannot redirect the
-  // directory creation or the snapshot writer onto network storage.
+  // directory creation or the snapshot writer onto network storage. Only an
+  // OS-layout link only root can replace (macOS `/var`, `/tmp`) is followed,
+  // and the walk continues on its real target.
   let checked = parse(directory).root
   for (const part of relative(checked, directory).split(sep).filter(Boolean)) {
+    const parent = checked
     checked = join(checked, part)
-    const mount = containingMount(checked, table)
-    if (mount !== undefined && NETWORK_FS_TYPES[mount.fsType] === true) {
+    if (onNetwork(checked)) {
       throw new Error('memon: the project file cache dump must live on local disk')
     }
     const entry = await nodeFs.lstat(checked).catch((error: NodeJS.ErrnoException) => {
@@ -267,11 +279,21 @@ async function prepareLocalDumpPath(path: string): Promise<void> {
       throw error
     })
     if (entry?.isSymbolicLink()) {
-      throw new Error('memon: the project file cache directory must not contain symlinks')
+      if (!(await isSystemSymlink(entry.uid, parent))) {
+        throw new Error('memon: the project file cache directory must not contain symlinks')
+      }
+      checked = await nodeFs.realpath(checked)
+      if (onNetwork(checked)) {
+        throw new Error('memon: the project file cache dump must live on local disk')
+      }
+      continue
     }
     if (entry !== null && !entry.isDirectory()) {
       throw new Error('memon: the project file cache parent must be a directory')
     }
+  }
+  if (onNetwork(join(checked, basename(path)))) {
+    throw new Error('memon: the project file cache dump must live on local disk')
   }
 
   await nodeFs.mkdir(directory, { recursive: true, mode: 0o700 })
