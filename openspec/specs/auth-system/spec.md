@@ -669,3 +669,31 @@ A server-rendered page under `/p/<project>/…` that resolves a resource by id (
 - **WHEN** an authorized user requests `/p/project-a/experiments/<id>`
 - **THEN** the page renders the Run detail
 - **AND** the dehydrated query uses the same key the client detail component reads, so no duplicate fetch is required on mount
+
+### Requirement: Document-scoped viewers reach only the shared document
+A viewer whose only grant for a `{host, project}` is document-scoped SHALL be authorized for a `read` route of that Project only when the route targets the shared document: its page route; its detail, backlinks and bundle-asset reads; content-gateway assets that resolve to those bundle reads; and, for an Experiment, its README, results, document assets under its own directory, Run details and Run files of Runs under its own run directory, and log reads under that directory. Every other route of that Project, including Project-wide lists, SHALL be denied with 403, and multi-Project routes SHALL not expose that Project. Paths in query parameters SHALL be normalized and rejected when they contain dot-segments. Requests authorized through a document grant SHALL carry that Project in the request's viewer scope only for that request, so handler-level scope checks admit it while multi-Project handlers never see it. Project-scoped grants keep their existing authorization. The server-injected session SHALL expose document grants so the UI can omit Project navigation for such viewers.
+
+#### Scenario: Shared Wiki page and its assets
+- **GIVEN** a viewer holding only a `wiki W0004` grant for `{host-a, project-x}`
+- **WHEN** it requests the W0004 page, `/api/wiki/W0004` and W0004 bundle assets
+- **THEN** each request is allowed
+
+#### Scenario: Other documents and lists are denied
+- **GIVEN** the same viewer
+- **WHEN** it requests `/api/wiki/W0001`, `/api/wiki?host=host-a&project=project-x` or `/api/experiments`
+- **THEN** each request receives 403
+
+#### Scenario: Experiment share covers its Runs only
+- **GIVEN** a viewer holding an `experiment E0001-x` grant
+- **WHEN** it reads a Run under `logs/E0001/` and its log
+- **THEN** the reads are allowed
+- **AND** a Run or log under `logs/E0002/` or a `resource` with `..` is denied
+
+### Requirement: Public pages are readable without identity
+A request without owner or viewer identity SHALL be authorized for a `read` route when the request targets a Report or Wiki document that the central share registry marks public for the selected Host-qualified Project, under exactly the rules for document-scoped viewers (the page, its detail, backlinks and bundle assets). Such requests SHALL proceed as a viewer limited to that document, with no cookie issued. Every other route SHALL keep its existing authentication: anonymous page requests are redirected to login and API requests receive 401. A request with viewer identity whose own grants do not cover a public document SHALL also be admitted to it.
+
+#### Scenario: Anonymous reader of a public page
+- **GIVEN** `R0005` of `{host-a, project-x}` is public
+- **WHEN** an anonymous browser opens its page and the page loads `/api/reports/R0005` and its assets
+- **THEN** each request is allowed
+- **AND** `/api/reports?host=host-a&project=project-x` and `R0004` still require authentication
