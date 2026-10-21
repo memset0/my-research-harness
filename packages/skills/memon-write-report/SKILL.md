@@ -13,8 +13,11 @@ Wiki links to useful Reports without duplicating their full contents.
 
 Choose a simple Markdown page when sufficient, or build an HTML artifact/website
 directly with the agent's preferred tools and layout. No mandatory template,
-component syntax, external Skill or duplicate Markdown narrative. New Reports
-use a bundle `docs/reports/[<category>/]R<NNNN>-<slug>/`; preserve existing working paths.
+component syntax, external Skill or duplicate Markdown narrative. Every new
+Report is a folder `docs/reports/[<category>/]R<NNNN>-<slug>/` holding
+`README.md` (Markdown) or `manifest.json` (HTML/service). Never create a new
+standalone `R<NNNN>-<slug>.md` file; existing standalone Reports stay readable
+and keep their paths.
 For HTML read [html-report-bundle.md](references/html-report-bundle.md).
 
 For retired Wiki material, use its last-effective time as creation time and an

@@ -10,7 +10,8 @@ Wiki explains what is current: protocols, ongoing comparisons, interpretations
 and navigation. Revise when knowledge or direction changes, not after every Run.
 
 Create a folder with `wiki create <category> <slug> --title "…"`, or author the
-folder directly. Keep the prose as small as the question allows. No required
+folder (`W<NNNN>-<slug>/README.md`) directly; never create a new standalone
+`W<NNNN>-<slug>.md` file. Keep the prose as small as the question allows. No required
 H2 template, inferred research status, duplicated narrative or review ledger.
 Use `show <W-id>` to inspect. After authoring or editing a folder directly, run
 `refresh` as described under Published index in the preflight.

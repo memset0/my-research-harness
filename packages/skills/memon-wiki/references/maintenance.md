@@ -8,7 +8,8 @@ create a Report for every Run or turn a short answer into an elaborate website.
 Each new item is a folder: `docs/wiki/<category>/W<NNNN>-<slug>/` or
 `docs/reports/[<category>/]R<NNNN>-<slug>/`. Markdown uses README.md frontmatter;
 HTML and services use manifest.json. A manifest takes precedence over README.
-Existing standalone documents remain readable. IDs stay unique across categories;
+Never create a new standalone `.md` Wiki page or Report: standalone files are
+legacy, stay readable and keep their paths, but every new item is a folder. IDs stay unique across categories;
 the CLI maintains `.memon/id-watermarks.json` so deleted IDs are not reused.
 
 Metadata: `title`, `description` (include for HTML; optional for other forms),
