@@ -9,7 +9,7 @@ Defines how the dashboard presents a project's wiki beside the existing Report s
 
 The dashboard SHALL expose the project's wiki at `/p/<project>/wiki` (landing, no page selected) and `/p/<project>/wiki/<W-id>` (one page selected), with Host-qualified central mirrors at `/h/<host>/p/<project>/wiki` and `/h/<host>/p/<project>/wiki/<W-id>`. The per-project AppBar SHALL render a `Wiki` tab immediately to the right of the `Code Review` tab (the last tab), carrying a count badge whose value is the number of wiki pages in the current project and which follows the existing badge loading-skeleton and SSE-invalidation behavior. The `Reports` tab and its routes SHALL remain available beside it.
 
-An id that does not match `^W\d{4}$` SHALL render the standard not-found response for the route. A page id that matches the shape but is absent from the project SHALL render a recoverable not-found state inside the wiki surface with the rail and filter still usable.
+An id that does not match `^W\d{4}$` SHALL render the standard not-found response for the route. A page id that matches the shape but is absent from the published Wiki catalog SHALL render a recoverable state inside the wiki surface with the rail and filter still usable: "Not refreshed" when the page exists at the source but was not yet refreshed into the catalog, otherwise not-found.
 
 #### Scenario: Wiki tab navigates to the landing route
 - **WHEN** the user activates the `Wiki` tab from any per-project view
@@ -31,6 +31,11 @@ An id that does not match `^W\d{4}$` SHALL render the standard not-found respons
 - **WHEN** the user opens `/p/<project>/wiki/W9999` and no such page exists
 - **THEN** the reading pane shows a not-found state
 - **AND** the rail and its filter remain available for choosing another page
+
+#### Scenario: Shaped page id written but not refreshed
+- **WHEN** the user opens `/p/<project>/wiki/W0004`, the source has `W0004` and the published catalog does not
+- **THEN** the reading pane shows "Not refreshed"
+- **AND** the rail and its filter remain available
 
 ### Requirement: Desktop wiki layout: page list, reading surface, outline
 
