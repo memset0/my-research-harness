@@ -20,4 +20,4 @@
 
 ## 5. Verification
 
-- [ ] 5.1 Run every package's full test suite in a disposable clone with the merged changes, `pnpm typecheck` and Biome; record counts and wall time before and after
+- [x] 5.1 Run every package's full test suite in a disposable clone with the merged changes, `pnpm typecheck` and Biome; record counts and wall time before and after
