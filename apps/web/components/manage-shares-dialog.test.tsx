@@ -7,7 +7,7 @@ const pathname = vi.fn(() => '/h/host-a/p/project-x/wiki/W0004')
 vi.mock('next/navigation', () => ({ usePathname: () => pathname() }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
-import { ManageSharesDialog, pageDocument, scopeLabel } from './manage-shares-dialog'
+import { copyUrlFor, ManageSharesDialog, pageDocument, scopeLabel } from './manage-shares-dialog'
 
 const PROJECT = { host: 'host-a', project: 'project-x' } as never
 const row = (id: string, scope: unknown) => ({
@@ -128,5 +128,24 @@ describe('ManageSharesDialog public pages', () => {
       await screen.findByRole('button', { name: 'Create link for Experiment E0001-pipeline' }),
     ).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Make public' })).not.toBeInTheDocument()
+  })
+})
+
+describe('copyUrlFor', () => {
+  const token = 'a'.repeat(24)
+  const current =
+    'http://127.0.0.1:3737/h/host-a/p/project-x/reports/R0006?expanded=1&share=old#top'
+
+  it('copies a whole-Project link for the page currently open', () => {
+    expect(copyUrlFor(row('shr_project1', { kind: 'project' }) as never, current)).toBe(
+      `https://memon.example.test/h/host-a/p/project-x/reports/R0006?expanded=1&share=${token}`,
+    )
+  })
+
+  it('keeps the record link for page-scoped and public records', () => {
+    const page = row('shr_wikipage', { kind: 'wiki', id: 'W0004' })
+    expect(copyUrlFor(page as never, current)).toBe(page.share_url)
+    const pub = { ...row('shr_public', { kind: 'project' }), public: true }
+    expect(copyUrlFor(pub as never, current)).toBe(pub.share_url)
   })
 })

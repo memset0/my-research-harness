@@ -5,7 +5,8 @@
 //
 // On an Experiment, Report or Wiki page a new link may open only that page
 // (the default) or the whole Project; elsewhere links are Project-scoped. A
-// link is the page's own URL with `?share=<token>`. Report and Wiki pages can
+// link is the page's own URL with `?share=<token>`; a listed whole-Project link
+// is copied for the page currently open. Report and Wiki pages can
 // also be made public (readable by anyone with the plain page URL). The list
 // shows every link of this Project with what it can reach, and copies or
 // revokes it.
@@ -68,6 +69,20 @@ export function scopeLabel(scope: ShareScopeDto): string {
 
 function rowLabel(row: ScopedShareRow): string {
   return row.public ? `Public · ${scopeLabel(row.scope)}` : scopeLabel(row.scope)
+}
+
+/**
+ * The URL to copy for a listed link: a whole-Project token link points at the
+ * page currently open (query kept, old `share` dropped, no fragment) on the
+ * link's own origin; other links copy their record URL.
+ */
+export function copyUrlFor(row: ScopedShareRow, current: string): string {
+  if (row.public || row.scope.kind !== 'project') return row.share_url
+  const url = new URL(current)
+  const target = new URL(`${url.pathname}${url.search}`, new URL(row.share_url).origin)
+  target.searchParams.delete('share')
+  target.searchParams.append('share', row.token)
+  return target.toString()
 }
 
 function sameScope(a: ShareScopeDto, b: ShareScopeDto): boolean {
@@ -174,7 +189,7 @@ export function ManageSharesDialog({ project }: Props) {
     : undefined
 
   const copyRowUrl = async (row: ScopedShareRow) => {
-    await copyToClipboard(row.share_url)
+    await copyToClipboard(copyUrlFor(row, window.location.href))
     toast.success(
       `Copied ${row.public ? 'page' : 'share'} URL${row.label ? ` (${row.label})` : ''}`,
     )
