@@ -13,6 +13,8 @@
 
 - [x] 3.1 Write the index procedure in `packages/skills/PREFLIGHT.md` and point to it from `memon-research`, `memon-wiki` (maintenance reference) and `memon-write-report` at their document-writing steps; verify the skills build check (`pnpm --filter @memon/skills build`) passes and the text covers every point of the spec
 
+- [x] 3.2 Keep `refresh --check` optional in the skills (no mandatory self-verification step) per owner feedback; verify by grepping the skills for `--check` and running the skills build check
+
 ## 4. Central
 
 - [x] 4.1 Add the rule-gated shallow probe and `RESOURCE_NOT_REFRESHED` → 404 `NOT_REFRESHED` mapping, used by Experiment, Wiki and Report detail lookups and the content gateway; verify with backend tests for hit, well-formed miss and malformed ID (no listing)
@@ -20,4 +22,4 @@
 
 ## 5. Verification
 
-- [ ] 5.1 Run the touched test files, `pnpm typecheck` and Biome on touched files; after deployment open an unpublished, a missing and a malformed ID on central and confirm the three responses
+- [x] 5.1 Run the touched test files, `pnpm typecheck` and Biome on touched files; after deployment open an unpublished, a missing and a malformed ID on central and confirm the three responses

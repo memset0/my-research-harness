@@ -29,7 +29,6 @@ Use native evidence, extract only useful fields, verify claims and inspect the
 rendered result and important interactions. Agents own regeneration and service
 startup; memon supplies access. Return the link, evidence horizon and useful limits.
 
-After writing, moving or updating a Report, run `memon refresh`, then
-`memon refresh --check` (preflight, Published index). Return the link only after
-the check passes and the Report's ID is in `.memon/index/reports.json`. If the
-refresh is refused, fix every listed document, including other Reports, and rerun.
+After writing, moving or updating a Report, run `memon refresh` (preflight,
+Published index) before returning the link. If the refresh is refused, fix every
+listed document, including other Reports, and rerun.

@@ -29,9 +29,9 @@ publish automatically; files you create, edit, move or delete directly do not.
    files, not on the dashboard host. When an Experiment's results or Run records
    changed, also run `refresh E0001 [E0002…]`; that targeted form recomputes
    those Experiments only and does not republish Wiki or Report catalogs.
-2. Verify with `refresh --check` (exit 0 means current) and confirm each new ID
-   with `show` or `.memon/index/{experiments,wiki,reports}.json` before calling
-   the work visible.
+2. A successful refresh is enough; no separate verification is required. When
+   unsure whether the index is current, `refresh --check` compares it with the
+   files without writing.
 3. A refused refresh publishes nothing and lists every document it cannot
    index. Fix all of them, rerun, and report any you cannot fix. A published
    refresh can still exit 1 for content diagnostics; report those too.

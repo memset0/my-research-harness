@@ -13,7 +13,7 @@ Create a folder with `wiki create <category> <slug> --title "…"`, or author th
 folder directly. Keep the prose as small as the question allows. No required
 H2 template, inferred research status, duplicated narrative or review ledger.
 Use `show <W-id>` to inspect. After authoring or editing a folder directly, run
-`refresh` and `refresh --check` as described under Published index in the preflight.
+`refresh` as described under Published index in the preflight.
 
 Choose README Markdown, a freely built HTML artifact, or a live application.
 Use the agent's own visual/web capabilities; components are optional conveniences.

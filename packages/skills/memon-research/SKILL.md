@@ -42,8 +42,8 @@ read [aggregation.md](aggregation.md). Optional names live on the Run.
 
 CLI writes refresh `run.json → result.csv → results.csv` and the Experiment catalog.
 After direct edits follow the preflight Published index steps: `refresh <E-id>`
-for changed results or records, plain `refresh` for the catalogs, then
-`refresh --check`. Read `.memon/index/experiments.json` for published inventory.
+for changed results or records and plain `refresh` for the catalogs. Read
+`.memon/index/experiments.json` for published inventory.
 Extract only useful fields; retain native evidence. `experiment.json` holds
 presentation columns/groups and optional aggregation settings, not a second plan.
 

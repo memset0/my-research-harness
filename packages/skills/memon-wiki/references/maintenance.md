@@ -35,8 +35,7 @@ and outputs. It reports blockers and has
 no force bypass. Keep invalidity and superseding-method reasons with the evidence.
 
 After any direct Wiki or Report change, follow the preflight Published index
-steps: `memon refresh` at the project source, then `memon refresh --check`. A
-refused refresh lists every document it cannot index (for example a manifest
+steps: run `memon refresh` at the project source. A refused refresh lists every document it cannot index (for example a manifest
 without `title`, or two folders with one ID); fix them all and rerun. Agents may
 read `.memon/index/{experiments,wiki,reports}.json` directly; the website reads
 only these catalogs, so an unpublished page shows "Not refreshed", and missing
