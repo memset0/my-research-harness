@@ -263,6 +263,13 @@ const RULES: Rule[] = [
     class: 'anon',
     projectFor: projectFromShareLanding(),
   },
+  // /s/<token> — central scoped share landing; the handler validates the
+  // token against the central registry and redirects to the issued page.
+  {
+    match: methodIs(['GET'], startsWith('/s/')),
+    class: 'anon',
+    projectFor: () => null,
+  },
 
   {
     match: methodIs(['GET'], startsWith('/h/')),
@@ -287,6 +294,13 @@ const RULES: Rule[] = [
   // Listed BEFORE the generic read rule so the GET doesn't fall through.
   {
     match: startsWith('/api/projects/') as Rule['match'],
+    class: 'mutating',
+    projectFor: () => null,
+  },
+  // Central scoped share links (`/api/shares`, `/api/shares/<id>`): owner-only, even GET.
+  {
+    match: ((_m: string, p: string) =>
+      p === '/api/shares' || p.startsWith('/api/shares/')) as Rule['match'],
     class: 'mutating',
     projectFor: () => null,
   },

@@ -174,3 +174,20 @@ describe('InboxShell reports landing — populated versus empty', () => {
     expect(screen.queryByText(/Select a report/)).not.toBeInTheDocument()
   })
 })
+
+describe('InboxShell — document-only share viewer', () => {
+  it('shows the shared Report without the picker or the list request', async () => {
+    const { SessionProvider } = await import('./session-provider')
+    vi.mocked(fetchReports).mockClear()
+    vi.mocked(fetchReport).mockReturnValue(new Promise(() => {}))
+    const { container } = renderWithQuery(
+      <SessionProvider value={{ role: 'viewer', scopeProjects: [], documentOnly: true }}>
+        <InboxShell kind="reports" project={PROJECT} selectedId="R0005" />
+      </SessionProvider>,
+    )
+    await waitFor(() => expect(fetchReport).toHaveBeenCalled())
+    expect(container.querySelector('[data-inbox-rail]')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Open list' })).not.toBeInTheDocument()
+    expect(fetchReports).not.toHaveBeenCalled()
+  })
+})

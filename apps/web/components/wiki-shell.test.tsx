@@ -24,8 +24,10 @@ vi.mock('../lib/api', async (importOriginal) => {
 vi.mock('../lib/use-user-preference-state', () => ({
   useUserPreferenceState: () => [true, vi.fn()],
 }))
+const viewer = { documentOnly: false }
 vi.mock('./session-provider', () => ({
   useIsOwner: () => false,
+  useIsDocumentOnlyViewer: () => viewer.documentOnly,
   useSession: () => ({ role: 'viewer', scopeProjects: [] }),
 }))
 vi.mock('./document-artifact-link-provider', () => ({
@@ -267,5 +269,22 @@ describe('WikiShell', () => {
     expect(await screen.findByText('Not refreshed: W0004')).toBeInTheDocument()
     expect(screen.queryByText(/not found/)).not.toBeInTheDocument()
     expect(screen.getByRole('complementary', { name: 'Wiki page picker' })).toBeInTheDocument()
+  })
+
+  it('shows a document-only share viewer the page without the page list', async () => {
+    viewer.documentOnly = true
+    try {
+      const page = summary('W0004', '2026-05-04T08:00:00+00:00', { title: 'Roadmap' })
+      vi.mocked(fetchWiki).mockClear()
+      vi.mocked(fetchWikiPage).mockResolvedValue(detail(page, '## Plan\nShared body.'))
+      const { container } = renderWithQuery(<WikiShell project="project-a" selectedId="W0004" />)
+      expect(await screen.findByTestId('wiki-markdown')).toHaveTextContent('Shared body.')
+      expect(container.querySelector('[data-wiki-rail]')).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Open list' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Show wiki pages' })).not.toBeInTheDocument()
+      expect(fetchWiki).not.toHaveBeenCalled()
+    } finally {
+      viewer.documentOnly = false
+    }
   })
 })

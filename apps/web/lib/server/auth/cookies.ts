@@ -218,6 +218,30 @@ export function verifySharesCookie(
   return payload
 }
 
+/** Most share entries one viewer cookie keeps; the oldest drop first. */
+export const MAX_SHARE_COOKIE_ENTRIES = 32
+
+/**
+ * Add one share to a viewer cookie, deduplicated by token (several page links
+ * of one Project coexist) and bounded to the newest entries. Host-qualified
+ * and legacy name-only entries never mix: a new entry of the other form
+ * replaces the cookie.
+ */
+export function mergeShareCookie(
+  existing: SharesPayload | null,
+  entry: ShareEntry,
+  secret: string,
+): string {
+  const hostQualified = entry.host !== undefined
+  const kept = (existing && (existing.v === 2) === hostQualified ? existing.entries : []).filter(
+    (candidate) => candidate.token !== entry.token,
+  ) as ShareEntry[]
+  const entries = [...kept, entry].slice(-MAX_SHARE_COOKIE_ENTRIES)
+  return hostQualified
+    ? signHostQualifiedSharesCookie(entries as HostQualifiedShareEntry[], secret)
+    : signSharesCookie(entries, secret)
+}
+
 // ----- Owner session lifetime + cookie attribute helpers -----
 
 export const OWNER_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60 // 30 days

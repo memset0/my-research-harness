@@ -32,33 +32,15 @@ afterEach(async () => {
 })
 
 describe('central share revoke composition', () => {
-  it('routes the exact Host, Project, and share ID through the safe proxy', async () => {
-    vi.mocked(proxyCentralApiRequest).mockResolvedValue(
-      Response.json({ revoked: [{ id: 'shr_abcdefgh' }] }),
-    )
-    const request = new NextRequest(
-      'https://memon.example.test/api/projects/shared-project/shares/shr_abcdefgh?host=host-b',
-      { method: 'DELETE' },
-    )
-    const response = await DELETE(request, {
-      params: Promise.resolve({ project: 'shared-project', id: 'shr_abcdefgh' }),
-    })
-    expect(response.status).toBe(200)
-    expect(proxyCentralApiRequest).toHaveBeenCalledWith(request, {
-      registry: { marker: 'registry' },
-      actor: { role: 'owner' },
-    })
-  })
-
-  it('rejects a missing Host before proxying', async () => {
+  it('points central callers to the scoped share API', async () => {
     const response = await DELETE(
       new NextRequest(
-        'https://memon.example.test/api/projects/shared-project/shares/shr_abcdefgh',
+        'https://memon.example.test/api/projects/shared-project/shares/shr_abcdefgh?host=host-b',
         { method: 'DELETE' },
       ),
       { params: Promise.resolve({ project: 'shared-project', id: 'shr_abcdefgh' }) },
     )
-    expect(response.status).toBe(400)
+    expect(response.status).toBe(410)
     expect(proxyCentralApiRequest).not.toHaveBeenCalled()
   })
 

@@ -15,13 +15,6 @@ import { getCentralFleet } from '@/lib/server/central/fleet-runtime'
 import { getRuntime } from '@/lib/server/runtime'
 import { GET, POST } from './route'
 
-const RECORD = {
-  id: 'shr_abcdefgh',
-  token: 'share_token',
-  label: 'Reviewer',
-  created_at: '2026-08-26T12:00:00Z',
-  expires_at: null,
-}
 let root: string
 
 beforeEach(async () => {
@@ -50,67 +43,20 @@ function request(host?: string): NextRequest {
 }
 
 describe('central/standalone share create composition', () => {
-  it('returns central GET through the safe proxy without rebuilding Backend headers', async () => {
+  it('points central callers to the scoped share API', async () => {
     vi.mocked(getRuntime).mockResolvedValue({
       config: { central: { hosts: [] }, projects: [] },
     } as never)
-    vi.mocked(proxyCentralApiRequest).mockResolvedValue(
-      Response.json({ shares: [RECORD] }, { headers: { 'cache-control': 'no-store' } }),
+    const params = { params: Promise.resolve({ project: 'shared-project' }) }
+    const listed = await GET(
+      new NextRequest('https://memon.example.test/api/projects/shared-project/shares?host=host-a'),
+      params,
     )
-    const req = new NextRequest(
-      'https://memon.example.test/api/projects/shared-project/shares?host=host-a&reveal=true',
-    )
-    const response = await GET(req, {
-      params: Promise.resolve({ project: 'shared-project' }),
-    })
-    expect(response.status).toBe(200)
-    expect(response.headers.get('cache-control')).toBe('no-store')
-    expect(proxyCentralApiRequest).toHaveBeenCalledWith(
-      req,
-      expect.objectContaining({ actor: { role: 'owner' } }),
-    )
-  })
-
-  it('rewrites Backend records to the central Host-qualified public URL', async () => {
-    vi.mocked(getRuntime).mockResolvedValue({
-      config: { central: { hosts: [] }, projects: [] },
-    } as never)
-    vi.mocked(proxyCentralApiRequest).mockImplementation(async (req) => {
-      const host = new URL(req.url).searchParams.get('host')
-      return Response.json(
-        { share: { ...RECORD, token: `share_for_${host}` } },
-        {
-          status: 201,
-          headers: { location: 'https://backend.internal/private-share-url' },
-        },
-      )
-    })
-
-    for (const host of ['host-a', 'host-b']) {
-      const response = await POST(request(host), {
-        params: Promise.resolve({ project: 'shared-project' }),
-      })
-      expect(response.status).toBe(201)
-      const body = await response.json()
-      expect(body.share.share_url).toBe(
-        `https://memon.example.test/share/${host}/shared-project/share_for_${host}`,
-      )
-      expect(JSON.stringify(body)).not.toContain('backend.internal')
+    const created = await POST(request('host-a'), params)
+    for (const response of [listed, created]) {
+      expect(response.status).toBe(410)
+      expect(await response.json()).toMatchObject({ error: { code: 'GONE' } })
     }
-    expect(proxyCentralApiRequest).toHaveBeenCalledWith(
-      expect.any(NextRequest),
-      expect.objectContaining({ actor: { role: 'owner' } }),
-    )
-  })
-
-  it('requires an exact central Host selector', async () => {
-    vi.mocked(getRuntime).mockResolvedValue({
-      config: { central: { hosts: [] }, projects: [] },
-    } as never)
-    const response = await POST(request(), {
-      params: Promise.resolve({ project: 'shared-project' }),
-    })
-    expect(response.status).toBe(400)
     expect(proxyCentralApiRequest).not.toHaveBeenCalled()
   })
 

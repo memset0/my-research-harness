@@ -16,6 +16,7 @@ import type { ArtifactTarget } from '../lib/artifact-links'
 import { queryKeys } from '../lib/query-keys'
 import { buildArtifactNavigationHref } from '../lib/report-workspace-url'
 import { MarkdownArtifactLinkProvider, type MarkdownArtifactSourceSurface } from './markdown'
+import { useIsDocumentOnlyViewer } from './session-provider'
 
 export function DocumentArtifactLinkProvider({
   project,
@@ -32,20 +33,25 @@ export function DocumentArtifactLinkProvider({
 }) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  // Project inventories are not readable through a document-only share.
+  const documentOnly = useIsDocumentOnlyViewer()
   const reportsQuery = useQuery({
     queryKey: queryKeys.reportsInventory(project),
     queryFn: () => fetchReportsInventory(project),
     staleTime: 5_000,
+    enabled: !documentOnly,
   })
   const experimentsQuery = useQuery({
     queryKey: queryKeys.experimentsInventory(project),
     queryFn: () => fetchExperimentsInventory(project),
     staleTime: 5_000,
+    enabled: !documentOnly,
   })
   const wikiQuery = useQuery({
     queryKey: queryKeys.wikiInventory(project),
     queryFn: () => fetchWikiInventory(project),
     staleTime: 5_000,
+    enabled: !documentOnly,
   })
   const currentHref = useMemo(() => {
     const search = searchParams?.toString() ?? ''

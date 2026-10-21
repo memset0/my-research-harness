@@ -169,6 +169,8 @@ export const API_ROUTE_MANIFEST = {
   'runs/[id]/warnings/route.ts': backend(['GET', 'POST'], 'resource', 'mixed'),
   'runs/route.ts': backend(['GET'], 'project-query', 'read'),
   'runtime/health/route.ts': central(['GET'], 'read'),
+  'shares/[id]/route.ts': central(['DELETE'], 'mutating'),
+  'shares/route.ts': central(['GET', 'POST'], 'mutating'),
   'slurm/status/route.ts': backend(['GET'], 'project-query', 'read', 'none', 'slurm'),
   'ui-preferences/route.ts': central(['GET', 'PUT'], 'mixed'),
   'wiki-assets/[project]/[id]/[...path]/route.ts': backend(
@@ -221,6 +223,8 @@ export const DIRECT_RUNTIME_SURFACES = {
     purpose: 'project-data',
   },
   'app/page.tsx': { owner: 'composed', scope: 'global', purpose: 'project-data' },
+  'lib/server/share-api.ts': { owner: 'central', scope: 'global', purpose: 'auth' },
+  'app/s/[token]/route.ts': { owner: 'central', scope: 'global', purpose: 'share-landing' },
   'app/share/[host]/[project]/route.ts': {
     owner: 'composed',
     scope: 'project-path',

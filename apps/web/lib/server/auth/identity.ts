@@ -32,12 +32,28 @@ import {
 
 export type IdentityRole = 'owner' | 'viewer' | 'anon'
 
+/** One document a viewer may read through a document-scoped share. */
+export interface ShareDocumentGrant {
+  host?: string
+  project: string
+  kind: 'experiment' | 'wiki' | 'report'
+  id: string
+}
+
+/** A validated share: `true` grants the whole Project, `{document}` one document. */
+export type ShareGrant = boolean | { document: { kind: ShareDocumentGrant['kind']; id: string } }
+
 export interface ResolvedIdentity {
   role: IdentityRole
   /** Owner: empty Set. Viewer: validated project names. Anon: empty Set. */
   scopeProjects: Set<string>
   /** Central viewer scopes. Legacy standalone viewers keep this empty. */
   scopeProjectRefs: ProjectRef[]
+  /**
+   * Document-scoped grants. Their Projects are NOT in `scopeProjects` /
+   * `scopeProjectRefs`; middleware admits only requests targeting the document.
+   */
+  scopeDocuments: ShareDocumentGrant[]
   /** True if the caller should refund the rate-limit token. */
   refundToken: boolean
   /**
@@ -61,10 +77,10 @@ export interface ResolvedIdentity {
 
 export interface ShareValidator {
   /**
-   * Validate that `token` exists in `<projectRoot(project)>/.memon/shares.json`
-   * AND is not expired. Returns true on success.
+   * Validate that `token` is an unexpired share for `{host, project}`. Returns
+   * false, true (the whole Project) or `{document}` (one document only).
    */
-  validate: (project: string, token: string, host?: string) => Promise<boolean>
+  validate: (project: string, token: string, host?: string) => Promise<ShareGrant>
 }
 
 export interface AuthInputs {
@@ -113,6 +129,7 @@ export async function resolveIdentity(
         role: 'owner',
         scopeProjects: new Set(),
         scopeProjectRefs: [],
+        scopeDocuments: [],
         refundToken: true,
         refreshedSessionCookie: refreshed,
         refreshedSharesCookie: null,
@@ -133,6 +150,7 @@ export async function resolveIdentity(
         role: 'owner',
         scopeProjects: new Set(),
         scopeProjectRefs: [],
+        scopeDocuments: [],
         refundToken: true,
         refreshedSessionCookie: null,
         refreshedSharesCookie: null,
@@ -148,9 +166,17 @@ export async function resolveIdentity(
       const validatedEntries: ShareEntry[] = []
       const validatedProjects = new Set<string>()
       const validatedProjectRefs: ProjectRef[] = []
+      const validatedDocuments: ShareDocumentGrant[] = []
       for (const entry of payload.entries) {
         const ok = await shareValidator.validate(entry.project, entry.token, entry.host)
-        if (ok) {
+        if (ok && typeof ok === 'object') {
+          validatedEntries.push(entry)
+          validatedDocuments.push({
+            ...(entry.host ? { host: entry.host } : {}),
+            project: entry.project,
+            ...ok.document,
+          })
+        } else if (ok) {
           validatedEntries.push(entry)
           if (entry.host) {
             validatedProjectRefs.push({ host: entry.host, project: entry.project } as ProjectRef)
@@ -171,6 +197,7 @@ export async function resolveIdentity(
           role: 'viewer',
           scopeProjects: validatedProjects,
           scopeProjectRefs: validatedProjectRefs,
+          scopeDocuments: validatedDocuments,
           refundToken: true,
           refreshedSessionCookie: null,
           refreshedSharesCookie,
@@ -183,6 +210,7 @@ export async function resolveIdentity(
         role: 'anon',
         scopeProjects: new Set(),
         scopeProjectRefs: [],
+        scopeDocuments: [],
         refundToken: false,
         refreshedSessionCookie: null,
         refreshedSharesCookie: null,
@@ -196,6 +224,7 @@ export async function resolveIdentity(
     role: 'anon',
     scopeProjects: new Set(),
     scopeProjectRefs: [],
+    scopeDocuments: [],
     refundToken: false,
     refreshedSessionCookie: null,
     refreshedSharesCookie: null,

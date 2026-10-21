@@ -44,6 +44,7 @@ import { FrontmatterPanel } from './frontmatter-panel'
 import { Markdown } from './markdown'
 import { ReadmeMonaco } from './readme-monaco'
 import { ReportHtmlZoomProvider } from './report-html-embed'
+import { useIsDocumentOnlyViewer } from './session-provider'
 import { ListSkeleton } from './skeletons'
 import { TimestampLocal } from './timestamp'
 import { Button } from './ui/button'
@@ -96,12 +97,14 @@ export function InboxShell({
   project: ProjectTarget
   selectedId: string | null
 }) {
+  // A document-only share viewer sees the shared Report without the picker.
+  const documentOnly = useIsDocumentOnlyViewer()
   const {
     items: allItems,
     isLoading: itemsLoading,
     error: itemsError,
     refetch: refetchItems,
-  } = useItemsList(kind, project)
+  } = useItemsList(kind, project, !documentOnly)
   const [contentFilter, setContentFilter] = useState(emptyContentFilter)
   const items = allItems.filter((item) => matchesContentFilter(item, contentFilter))
   const contentFilters = (
@@ -115,8 +118,8 @@ export function InboxShell({
   const reportRailOpen = typeof storedReportRailOpen === 'boolean' ? storedReportRailOpen : true
 
   const empty = EMPTY_COPY[kind]
-  const showDesktopRail = reportRailOpen
-  const showReportRail = kind === 'reports' && !reportRailOpen
+  const showDesktopRail = reportRailOpen && !documentOnly
+  const showReportRail = kind === 'reports' && !reportRailOpen && !documentOnly
 
   return (
     <div className="flex h-[calc(100svh-3rem)] overflow-hidden">
@@ -178,16 +181,18 @@ export function InboxShell({
       )}
 
       {/* Mobile FAB → drawer with the rail */}
-      <MobileRailDrawer
-        filters={contentFilters}
-        kind={kind}
-        project={project}
-        items={items}
-        itemsLoading={itemsLoading}
-        itemsError={itemsError}
-        onRetry={refetchItems}
-        selectedId={selectedId}
-      />
+      {!documentOnly && (
+        <MobileRailDrawer
+          filters={contentFilters}
+          kind={kind}
+          project={project}
+          items={items}
+          itemsLoading={itemsLoading}
+          itemsError={itemsError}
+          onRetry={refetchItems}
+          selectedId={selectedId}
+        />
+      )}
     </div>
   )
 }
@@ -195,11 +200,12 @@ export function InboxShell({
 function useItemsList(
   kind: InboxKind,
   project: ProjectTarget,
+  enabled = true,
 ): { items: CommonItem[]; isLoading: boolean; error: Error | null; refetch: () => void } {
   const reportsQ = useQuery({
     queryKey: queryKeys.reports(project),
     queryFn: () => fetchReports(project),
-    enabled: kind === 'reports',
+    enabled: enabled && kind === 'reports',
     staleTime: 5_000,
   })
   const items = useMemo(() => {

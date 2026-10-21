@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { type ProjectTarget, projectWebPath } from '../lib/api'
 import { ManageSharesDialog } from './manage-shares-dialog'
+import { useIsDocumentOnlyViewer } from './session-provider'
 import { TabBadge, type TabKind } from './tab-badge'
 import { Button } from './ui/button'
 import { SidebarTrigger } from './ui/sidebar'
@@ -17,6 +18,8 @@ interface TabSpec {
 
 export function AppBar({ project }: { project: ProjectTarget }) {
   const pathname = usePathname() ?? ''
+  // A document-only share viewer has no Project navigation.
+  const documentOnly = useIsDocumentOnlyViewer()
   const projectBase = projectWebPath(project)
   const tabs: TabSpec[] = [
     {
@@ -93,7 +96,7 @@ export function AppBar({ project }: { project: ProjectTarget }) {
       */}
       <div className="flex flex-1 flex-wrap items-center gap-1 min-w-0">
         <div className="contents" role="tablist">
-          {tabs.map((t) => {
+          {(documentOnly ? [] : tabs).map((t) => {
             const isActive = t.matches(pathname)
             return (
               <Button key={t.href} asChild size="sm" variant={isActive ? 'default' : 'ghost'}>

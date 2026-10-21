@@ -1,9 +1,7 @@
 // DELETE /api/projects/<project>/shares/<id> — owner-only revoke.
 
-import { AmbiguousShareError, HostIdSchema, ShareNotFoundError } from '@memon/core'
+import { AmbiguousShareError, ShareNotFoundError } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
-import { proxyCentralApiRequest } from '@/lib/server/central/backend-proxy'
-import { getCentralFleet } from '@/lib/server/central/fleet-runtime'
 import { getRuntime } from '@/lib/server/runtime'
 import { standaloneServices } from '@/lib/server/standalone-services'
 
@@ -11,23 +9,17 @@ interface RouteParams {
   params: Promise<{ project: string; id: string }>
 }
 
-export async function DELETE(req: NextRequest, ctx: RouteParams): Promise<Response> {
+export async function DELETE(_req: NextRequest, ctx: RouteParams): Promise<Response> {
   const { project, id } = await ctx.params
   if (!project || !id) {
     return NextResponse.json({ error: 'missing project or id' }, { status: 400 })
   }
   const runtime = await getRuntime()
   if (runtime.config.central) {
-    const hosts = req.nextUrl.searchParams.getAll('host')
-    const host = hosts.length === 1 ? HostIdSchema.safeParse(hosts[0]) : null
-    if (!host?.success) {
-      return NextResponse.json({ error: 'exact host query parameter required' }, { status: 400 })
-    }
-    const fleet = await getCentralFleet()
-    return proxyCentralApiRequest(req, {
-      registry: fleet.registry,
-      actor: { role: 'owner' },
-    })
+    return NextResponse.json(
+      { error: { code: 'GONE', message: 'central share links are managed at /api/shares' } },
+      { status: 410 },
+    )
   }
   if (!runtime.config.projects.some((candidate) => candidate.name === project)) {
     return NextResponse.json({ error: 'project not configured' }, { status: 404 })

@@ -12,10 +12,21 @@ import { createContext, useContext, useMemo } from 'react'
 
 export type SessionRole = 'owner' | 'viewer' | 'anon'
 
+export interface SessionDocumentScope {
+  host?: string
+  project: string
+  kind: 'experiment' | 'wiki' | 'report'
+  id: string
+}
+
 export interface SessionInfo {
   role: SessionRole
   scopeProjects: string[]
   scopeProjectRefs?: ProjectRef[]
+  /** Document-scoped share grants of a viewer. */
+  scopeDocuments?: SessionDocumentScope[]
+  /** The current Project is visible only through a document-scoped share. */
+  documentOnly?: boolean
 }
 
 // Test-friendly default: when no <SessionProvider> wraps the tree, treat the
@@ -42,8 +53,16 @@ export function SessionProvider({ value, children }: ProviderProps) {
       role: value.role,
       scopeProjects: Array.from(new Set(value.scopeProjects)),
       scopeProjectRefs: value.scopeProjectRefs ?? [],
+      scopeDocuments: value.scopeDocuments ?? [],
+      documentOnly: value.documentOnly === true,
     }),
-    [value.role, value.scopeProjects, value.scopeProjectRefs],
+    [
+      value.role,
+      value.scopeProjects,
+      value.scopeProjectRefs,
+      value.scopeDocuments,
+      value.documentOnly,
+    ],
   )
   return <SessionContext.Provider value={memoized}>{children}</SessionContext.Provider>
 }
@@ -51,6 +70,15 @@ export function SessionProvider({ value, children }: ProviderProps) {
 export function useSession(): SessionInfo {
   const ctx = useContext(SessionContext)
   return ctx ?? FALLBACK_OWNER_SESSION
+}
+
+/**
+ * True for a viewer who reaches this Project only through a document-scoped
+ * share: Project navigation, rails and Project-wide lists are not available.
+ */
+export function useIsDocumentOnlyViewer(): boolean {
+  const session = useSession()
+  return session.role === 'viewer' && session.documentOnly === true
 }
 
 export function useIsViewer(): boolean {

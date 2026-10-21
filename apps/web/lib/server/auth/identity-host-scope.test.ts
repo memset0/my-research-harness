@@ -5,6 +5,9 @@ import { describe, expect, it, vi } from 'vitest'
 import { signSharesCookie, verifySharesCookie } from './cookies'
 import { resolveIdentity } from './identity'
 import {
+  DOCUMENT_ONLY_HEADER,
+  DOCUMENT_SCOPE_HEADER,
+  encodeDocumentScopeHeader,
   encodeHostScopeHeader,
   HOST_SCOPE_HEADER,
   readIdentityFromRequest,
@@ -46,6 +49,35 @@ describe('Host-qualified viewer identity', () => {
     })
   })
 
+  it('keeps document-scoped grants out of the Project scopes', async () => {
+    const cookie = signSharesCookie(
+      [
+        { host: 'host-a', project: 'project-x', token: 'token-page' },
+        { host: 'host-a', project: 'project-y', token: 'token-project' },
+      ],
+      SECRET,
+    )
+    const identity = await resolveIdentity(
+      {
+        authorizationHeader: null,
+        sessionCookieValue: null,
+        sharesCookieValue: cookie,
+        allowViewer: true,
+      },
+      { username: 'admin', password: 'owner-password', sessionSecret: SECRET },
+      {
+        validate: async (_project, token) =>
+          token === 'token-page' ? { document: { kind: 'wiki', id: 'W0004' } } : true,
+      },
+    )
+    expect(identity.role).toBe('viewer')
+    expect(identity.scopeProjectRefs).toEqual([{ host: 'host-a', project: 'project-y' }])
+    expect(identity.scopeDocuments).toEqual([
+      { host: 'host-a', project: 'project-x', kind: 'wiki', id: 'W0004' },
+    ])
+    expect(identity.refreshedSharesCookie).toBeNull()
+  })
+
   it('preserves legacy standalone project-name scope independently', async () => {
     const cookie = signSharesCookie([{ project: 'project-x', token: 'legacy-token' }], SECRET)
     const identity = await resolveIdentity(
@@ -80,6 +112,8 @@ describe('trusted Host scope request header', () => {
       role: 'viewer',
       scopeProjects: new Set(['legacy-project']),
       scopeProjectRefs: scopes,
+      scopeDocuments: [],
+      documentOnly: false,
     })
   })
 
@@ -103,5 +137,26 @@ describe('trusted Host scope request header', () => {
       })
       expect(readIdentityFromRequest(request).scopeProjectRefs).toEqual([])
     }
+  })
+
+  it('reads document grants and the document-only flag for viewers only', () => {
+    const grants = [{ host: 'host-a', project: 'project-x', kind: 'report' as const, id: 'R0005' }]
+    const headers = (role: string) =>
+      new Request('https://memon.example.test/', {
+        headers: {
+          'x-memon-role': role,
+          [DOCUMENT_SCOPE_HEADER]: encodeDocumentScopeHeader(grants),
+          [DOCUMENT_ONLY_HEADER]: '1',
+        },
+      })
+    expect(readIdentityFromRequest(headers('viewer'))).toMatchObject({
+      scopeDocuments: grants,
+      documentOnly: true,
+    })
+    for (const role of ['owner', 'anon'])
+      expect(readIdentityFromRequest(headers(role))).toMatchObject({
+        scopeDocuments: [],
+        documentOnly: false,
+      })
   })
 })

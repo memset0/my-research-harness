@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { fetchCodeReviews, type ProjectTarget, projectQueryKey, projectWebPath } from '../lib/api'
 import { queryKeys } from '../lib/query-keys'
 import { SuccessBadge } from './colored-badge'
+import { useIsDocumentOnlyViewer } from './session-provider'
 import { Badge } from './ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 
@@ -22,10 +23,13 @@ export function ExperimentCodeReviews({
   project: ProjectTarget
   experimentId: string
 }) {
+  // The Project's code-review list is not readable through a document-only share.
+  const documentOnly = useIsDocumentOnlyViewer()
   const { data } = useQuery({
     queryKey: queryKeys.codeReviews(project),
     queryFn: () => fetchCodeReviews(project),
     staleTime: 5_000,
+    enabled: !documentOnly,
   })
   const items = (data?.codeReviews ?? []).filter((i) => i.experiment === experimentId)
   if (items.length === 0) return null

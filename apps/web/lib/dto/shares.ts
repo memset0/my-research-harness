@@ -23,3 +23,31 @@ export interface SharesResponse {
 export interface CreatedShareResponse {
   share: CreatedShare
 }
+
+// ----- Central scoped shares (`/api/shares/**`) -----
+
+export type ShareScopeDto =
+  | { kind: 'project' }
+  | { kind: 'experiment' | 'wiki' | 'report'; id: string }
+
+export interface ScopedShareRow {
+  id: string
+  token: string
+  label?: string
+  host: string | null
+  project: string
+  scope: ShareScopeDto
+  /** The page the link lands on. */
+  path: string
+  created_at: string
+  expires_at: string | null
+  share_url: string
+}
+
+export interface ScopedSharesResponse {
+  shares: ScopedShareRow[]
+}
+
+export interface ScopedShareCreatedResponse {
+  share: ScopedShareRow
+}

@@ -35,11 +35,23 @@ import {
   SHARES_COOKIE_NAME,
   SHARES_COOKIE_TTL_SECONDS,
 } from './lib/server/auth/cookies'
+import {
+  cleanProjectPath,
+  type DocumentTarget,
+  documentTargetFor,
+  grantCovers,
+} from './lib/server/auth/document-scope'
 import { resolveIdentity, type ShareValidator } from './lib/server/auth/identity'
 import { makeProjectResolver, resolveRequestProject } from './lib/server/auth/project-resolver'
 import { isHttps, publicOrigin } from './lib/server/auth/public-url'
 import { clientIpFromHeaders, consume, refund } from './lib/server/auth/rate-limit'
-import { encodeHostScopeHeader, HOST_SCOPE_HEADER } from './lib/server/auth/request-context'
+import {
+  DOCUMENT_ONLY_HEADER,
+  DOCUMENT_SCOPE_HEADER,
+  encodeDocumentScopeHeader,
+  encodeHostScopeHeader,
+  HOST_SCOPE_HEADER,
+} from './lib/server/auth/request-context'
 import {
   classifyAndExtract,
   isAuthBypass,
@@ -47,7 +59,8 @@ import {
 } from './lib/server/auth/route-classes'
 import { validateCentralShare } from './lib/server/central/central-shares'
 import { getCentralFleet } from './lib/server/central/fleet-runtime'
-import { getRuntime } from './lib/server/runtime'
+import { getRuntime, type Runtime } from './lib/server/runtime'
+import { matchShare, type ShareRegistryRecord, shareRegistryFor } from './lib/server/share-registry'
 import { standaloneServices } from './lib/server/standalone-services'
 
 export const config = {
@@ -128,9 +141,21 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
     })
   }
 
-  // Build a share validator backed by the runtime's projects.
+  // Build a share validator: the central share registry first (read once per
+  // request; unreadable fails closed), then legacy project-file shares.
+  let registryRecords: Promise<ShareRegistryRecord[]> | null = null
   const shareValidator: ShareValidator = {
     validate: async (projectName, token, host) => {
+      let scope: ReturnType<typeof matchShare> = null
+      if (runtime.configPath) {
+        try {
+          registryRecords ??= shareRegistryFor(runtime.configPath).read()
+          scope = matchShare(await registryRecords, host ?? null, projectName, token)
+        } catch {
+          return false
+        }
+      }
+      if (scope) return scope.kind === 'project' ? true : { document: scope }
       if (host !== undefined) {
         if (!runtime.config.central) return false
         const fleet = await getCentralFleet().catch(() => null)
@@ -169,6 +194,8 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   // Build the response we'll return — either a deny or a passthrough with
   // request-context headers + refreshed cookies.
   let response: NextResponse
+  /** The Project admitted for this request only through a document grant. */
+  let documentProject: { host: string | null; project: string } | null = null
 
   if (identity.role === 'owner') {
     // Owner may pass every route class.
@@ -179,21 +206,29 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
       return response
     }
     // Viewer can only reach `read` routes (allowViewer was true). Apply
-    // scope check against `project`.
-    const scopeOk = checkViewerScope(
+    // scope check against `project`; a document-scoped grant admits only
+    // requests that address its document.
+    const resolvedProject =
       project ??
-        (await resolveRequestProject(
-          runtime,
-          req.method,
-          pathname,
-          search,
-          identity.scopeProjects,
-        )),
+      (await resolveRequestProject(runtime, req.method, pathname, search, identity.scopeProjects))
+    const requestHost = hostFromRequest(pathname, search)
+    let scopeOk = checkViewerScope(
+      resolvedProject,
       identity.scopeProjects,
       identity.scopeProjectRefs,
-      hostFromRequest(pathname, search),
+      requestHost,
       runtime.config.central !== undefined,
     )
+    if (!scopeOk && typeof resolvedProject === 'string' && resolvedProject !== 'multi') {
+      scopeOk = await documentGrantAdmits(
+        runtime,
+        req,
+        resolvedProject,
+        runtime.config.central ? requestHost : null,
+        identity.scopeDocuments,
+      )
+      if (scopeOk) documentProject = { host: requestHost, project: resolvedProject }
+    }
     if (scopeOk) {
       // Exact viewer scope may pass this read route.
     } else {
@@ -210,9 +245,21 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
 
   // Allowed: passthrough with role/scope headers + refreshed cookies.
   const requestHeaders = new Headers(req.headers)
+  const scopeProjects = new Set(identity.scopeProjects)
+  const scopeProjectRefs = [...identity.scopeProjectRefs]
+  if (documentProject) {
+    if (documentProject.host === null) scopeProjects.add(documentProject.project)
+    else
+      scopeProjectRefs.push({
+        host: documentProject.host,
+        project: documentProject.project,
+      } as (typeof scopeProjectRefs)[number])
+  }
   requestHeaders.set('x-memon-role', identity.role)
-  requestHeaders.set('x-memon-scope', Array.from(identity.scopeProjects).join(','))
-  requestHeaders.set(HOST_SCOPE_HEADER, encodeHostScopeHeader(identity.scopeProjectRefs))
+  requestHeaders.set('x-memon-scope', Array.from(scopeProjects).join(','))
+  requestHeaders.set(HOST_SCOPE_HEADER, encodeHostScopeHeader(scopeProjectRefs))
+  requestHeaders.set(DOCUMENT_SCOPE_HEADER, encodeDocumentScopeHeader(identity.scopeDocuments))
+  requestHeaders.set(DOCUMENT_ONLY_HEADER, documentProject ? '1' : '0')
   // The class is useful for handlers that want to know "am I a 'multi' route?"
   // without re-classifying — currently optional, costs one header byte to set.
   requestHeaders.set('x-memon-route-class', routeClass)
@@ -220,6 +267,39 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   response = NextResponse.next({ request: { headers: requestHeaders } })
   attachCookieRefreshes(response.headers, identity, isHttps(req))
   return response
+}
+
+/**
+ * Whether a document grant of the viewer for `{host, project}` covers the
+ * document this request addresses. Run IDs are resolved to their run
+ * directory first; anything that addresses no document is refused.
+ */
+async function documentGrantAdmits(
+  runtime: Runtime,
+  req: NextRequest,
+  project: string,
+  host: string | null,
+  documents: Awaited<ReturnType<typeof resolveIdentity>>['scopeDocuments'],
+): Promise<boolean> {
+  if (runtime.config.central && host === null) return false
+  const grants = documents.filter(
+    (grant) => grant.project === project && (grant.host ?? null) === host,
+  )
+  if (!grants.length) return false
+  let target: DocumentTarget | null = documentTargetFor(
+    req.method,
+    req.nextUrl.pathname,
+    req.nextUrl.searchParams,
+  )
+  if (target?.kind === 'run') {
+    const runId = target.id
+    const run = await standaloneServices(runtime.config)
+      .projects.getRun(project, runId)
+      .catch(() => null)
+    const path = cleanProjectPath((run as { resource?: string } | null)?.resource)
+    target = path ? { kind: 'path', path } : null
+  }
+  return target !== null && grants.some((grant) => grantCovers(grant, target))
 }
 
 function hostFromRequest(pathname: string, search: URLSearchParams): string | null {

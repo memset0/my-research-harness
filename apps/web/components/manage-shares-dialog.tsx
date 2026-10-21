@@ -1,23 +1,24 @@
 'use client'
 
-// "Manage share links" dialog — owner-only UI for issuing / revoking
-// per-project shares. Backed by /api/projects/<project>/shares.
+// "Share" dialog — owner-only UI for issuing / revoking share links, backed by
+// the central share registry at /api/shares.
 //
-// We GET with `?reveal=true` so each row carries the share token, which lets
-// us reconstruct the full URL on demand for the per-row Copy button (and for
-// clicking the ID cell). The endpoint is owner-only at the route-class level,
-// so revealing tokens here doesn't widen the threat surface.
+// On an Experiment, Report or Wiki page a new link may open only that page
+// (the default) or the whole Project; elsewhere links are Project-scoped. A
+// link lands on the page it was issued from. The list shows every link of
+// this Project with what it can reach, and copies or revokes it.
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Copy, Plus, Share2, Trash2 } from 'lucide-react'
+import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { type ProjectTarget, projectHost, projectName } from '../lib/api'
 import type {
-  CreatedShare,
-  CreatedShareResponse,
-  ShareRow,
-  SharesResponse,
+  ScopedShareCreatedResponse,
+  ScopedShareRow,
+  ScopedSharesResponse,
+  ShareScopeDto,
 } from '../lib/dto/shares'
 import { queryKeys } from '../lib/query-keys'
 import { useSession } from './session-provider'
@@ -33,91 +34,86 @@ import {
 import { Input } from './ui/input'
 import { Label } from './ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
+import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
 
 interface Props {
   project: ProjectTarget
 }
 
-function sharesUrl(project: ProjectTarget, suffix = '', reveal = false): string {
-  const params = new URLSearchParams()
-  const host = projectHost(project)
-  if (host) params.set('host', host)
-  if (reveal) params.set('reveal', 'true')
-  const query = params.toString()
-  return `/api/projects/${encodeURIComponent(projectName(project))}/shares${suffix}${query ? `?${query}` : ''}`
+type DocumentScope = Exclude<ShareScopeDto, { kind: 'project' }>
+
+const PAGE = /^(?:\/h\/[^/]+)?\/p\/[^/]+\/(wiki|reports|e)\/([^/?#]+)\/?$/
+const PAGE_KIND = { wiki: 'wiki', reports: 'report', e: 'experiment' } as const
+const KIND_LABEL = { wiki: 'Wiki', report: 'Report', experiment: 'Experiment' } as const
+
+/** The document the current page shows, when it is an Experiment, Report or Wiki page. */
+export function pageDocument(pathname: string): DocumentScope | null {
+  const match = PAGE.exec(pathname)
+  if (!match) return null
+  try {
+    return {
+      kind: PAGE_KIND[match[1] as keyof typeof PAGE_KIND],
+      id: decodeURIComponent(match[2]!),
+    }
+  } catch {
+    return null
+  }
 }
 
-async function fetchShares(project: ProjectTarget): Promise<ShareRow[]> {
-  const res = await fetch(sharesUrl(project, '', true), { credentials: 'include' })
+export function scopeLabel(scope: ShareScopeDto): string {
+  return scope.kind === 'project' ? 'Whole project' : `${KIND_LABEL[scope.kind]} ${scope.id}`
+}
+
+function errorMessage(body: unknown, fallback: string): string {
+  const error = (body as { error?: string | { message?: string } } | null)?.error
+  if (typeof error === 'string') return error
+  if (typeof error?.message === 'string') return error.message
+  return fallback
+}
+
+async function fetchShares(project: ProjectTarget): Promise<ScopedShareRow[]> {
+  const params = new URLSearchParams({ project: projectName(project) })
+  const host = projectHost(project)
+  if (host) params.set('host', host)
+  const res = await fetch(`/api/shares?${params}`, { credentials: 'include' })
   if (!res.ok) throw new Error(`failed to list shares (${res.status})`)
-  const json = (await res.json()) as SharesResponse
-  return json.shares
+  return ((await res.json()) as ScopedSharesResponse).shares
 }
 
 async function createShare(
   project: ProjectTarget,
-  body: { label?: string; expires?: string },
-): Promise<CreatedShare> {
-  const res = await fetch(sharesUrl(project), {
+  body: { scope: ShareScopeDto; label?: string; expires: string; currentPath: string },
+): Promise<ScopedShareRow> {
+  const res = await fetch('/api/shares', {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      ...body,
+      project: projectName(project),
+      ...(projectHost(project) ? { host: projectHost(project) } : {}),
+    }),
   })
-  if (!res.ok) {
-    const err = (await res.json().catch(() => null)) as {
-      error?: string | { message?: string }
-    } | null
-    const message =
-      typeof err?.error === 'string'
-        ? err.error
-        : typeof err?.error?.message === 'string'
-          ? err.error.message
-          : `failed to create share (HTTP ${res.status})`
-    throw new Error(message)
-  }
-  const json = (await res.json()) as CreatedShareResponse
-  return json.share
+  const json = await res.json().catch(() => null)
+  if (!res.ok) throw new Error(errorMessage(json, `failed to create share (HTTP ${res.status})`))
+  return (json as ScopedShareCreatedResponse).share
 }
 
-async function deleteShare(project: ProjectTarget, id: string): Promise<void> {
-  const res = await fetch(sharesUrl(project, `/${encodeURIComponent(id)}`), {
+async function deleteShare(id: string): Promise<void> {
+  const res = await fetch(`/api/shares/${encodeURIComponent(id)}`, {
     method: 'DELETE',
     credentials: 'include',
   })
   if (!res.ok) {
-    const err = (await res.json().catch(() => null)) as {
-      error?: string | { message?: string }
-    } | null
-    const message =
-      typeof err?.error === 'string'
-        ? err.error
-        : typeof err?.error?.message === 'string'
-          ? err.error.message
-          : `failed to delete share (HTTP ${res.status})`
-    throw new Error(message)
+    const json = await res.json().catch(() => null)
+    throw new Error(errorMessage(json, `failed to revoke share (HTTP ${res.status})`))
   }
 }
 
-function formatExpires(expires: string | null): string {
-  if (expires === null) return 'never'
-  const d = new Date(expires)
-  if (Number.isNaN(d.getTime())) return expires
-  return d.toLocaleDateString()
-}
-
-function formatCreated(created: string): string {
-  const d = new Date(created)
-  if (Number.isNaN(d.getTime())) return created
-  return d.toLocaleDateString()
-}
-
-function buildShareUrl(origin: string, project: ProjectTarget, token: string): string {
-  const host = projectHost(project)
-  const prefix = host
-    ? `/share/${encodeURIComponent(host)}/${encodeURIComponent(projectName(project))}`
-    : `/share/${encodeURIComponent(projectName(project))}`
-  return `${origin}${prefix}/${encodeURIComponent(token)}`
+function formatDate(value: string | null, empty: string): string {
+  if (value === null) return empty
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString()
 }
 
 async function copyToClipboard(text: string): Promise<void> {
@@ -138,9 +134,12 @@ async function copyToClipboard(text: string): Promise<void> {
 
 export function ManageSharesDialog({ project }: Props) {
   const { role } = useSession()
+  const pathname = usePathname() ?? ''
+  const pageDoc = pageDocument(pathname)
   const [open, setOpen] = useState(false)
   const [label, setLabel] = useState('')
   const [expires, setExpires] = useState('never')
+  const [reach, setReach] = useState<'page' | 'project'>('page')
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
@@ -151,30 +150,33 @@ export function ManageSharesDialog({ project }: Props) {
     staleTime: 5_000,
   })
 
-  const copyRowUrl = async (row: ShareRow) => {
-    if (!row.token) {
-      toast.error('No token available for this share — try refreshing the list.')
-      return
-    }
-    const url = buildShareUrl(window.location.origin, project, row.token)
-    await copyToClipboard(url)
+  const scope: ShareScopeDto = pageDoc && reach === 'page' ? pageDoc : { kind: 'project' }
+
+  const copyRowUrl = async (row: ScopedShareRow) => {
+    await copyToClipboard(row.share_url)
     toast.success(`Copied share URL${row.label ? ` (${row.label})` : ''}`)
   }
 
   const createMutation = useMutation({
-    mutationFn: () => createShare(project, { label: label || undefined, expires }),
+    mutationFn: () =>
+      createShare(project, {
+        scope,
+        ...(label ? { label } : {}),
+        expires,
+        currentPath: `${window.location.pathname}${window.location.search}`,
+      }),
     onSuccess: async (created) => {
       setLabel('')
       setExpires('never')
       await copyToClipboard(created.share_url)
-      toast.success('Share created — URL copied to clipboard')
+      toast.success(`Share created for ${scopeLabel(created.scope)} — URL copied to clipboard`)
       queryClient.invalidateQueries({ queryKey: queryKeys.projectShares(project) })
     },
     onError: (err) => toast.error(`Could not create share: ${(err as Error).message}`),
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => deleteShare(project, id),
+    mutationFn: (id: string) => deleteShare(id),
     onSuccess: () => {
       toast.success('Share revoked')
       queryClient.invalidateQueries({ queryKey: queryKeys.projectShares(project) })
@@ -203,8 +205,8 @@ export function ManageSharesDialog({ project }: Props) {
             {projectName(project)}
           </DialogTitle>
           <DialogDescription>
-            Each link grants read-only access to this project only. Revoke any link to terminate
-            that viewer&apos;s access.
+            Links grant read-only access to one page or to the whole project, and open the page they
+            were issued from. Revoke a link to end that access.
           </DialogDescription>
         </DialogHeader>
 
@@ -217,10 +219,10 @@ export function ManageSharesDialog({ project }: Props) {
             </p>
           ) : (
             <div className="overflow-x-auto rounded border text-sm">
-              <table className="w-full">
+              <table className="w-full" data-share-list="">
                 <thead className="bg-muted/50">
                   <tr className="text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    <th className="px-3 py-1.5">ID</th>
+                    <th className="px-3 py-1.5">Access</th>
                     <th className="px-3 py-1.5">Label</th>
                     <th className="px-3 py-1.5">Created</th>
                     <th className="px-3 py-1.5">Expires</th>
@@ -229,30 +231,23 @@ export function ManageSharesDialog({ project }: Props) {
                 </thead>
                 <tbody>
                   {shares.map((s) => (
-                    <tr key={s.id} className="border-t">
-                      <td className="px-3 py-2">
-                        <button
-                          type="button"
-                          onClick={() => copyRowUrl(s)}
-                          aria-label={`Copy share URL for ${s.id}`}
-                          title="Click to copy share URL"
-                          className="cursor-pointer font-mono text-xs text-left hover:text-primary hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
-                        >
-                          {s.id}
-                        </button>
+                    <tr key={s.id} className="border-t" data-share-id={s.id}>
+                      <td className="px-3 py-2 whitespace-nowrap" data-share-scope="">
+                        {scopeLabel(s.scope)}
                       </td>
                       <td className="px-3 py-2">{s.label ?? '-'}</td>
                       <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
-                        {formatCreated(s.created_at)}
+                        {formatDate(s.created_at, '-')}
                       </td>
                       <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
-                        {formatExpires(s.expires_at)}
+                        {formatDate(s.expires_at, 'never')}
                       </td>
                       <td className="px-3 py-2 text-right whitespace-nowrap">
                         <Button
                           variant="ghost"
                           size="sm"
-                          aria-label={`Copy share URL for ${s.id}`}
+                          aria-label={`Copy share URL for ${scopeLabel(s.scope)}`}
+                          title={s.path}
                           onClick={() => copyRowUrl(s)}
                         >
                           <Copy className="size-3.5" />
@@ -275,6 +270,30 @@ export function ManageSharesDialog({ project }: Props) {
 
           <div className="space-y-3 rounded border bg-muted/30 p-4">
             <h3 className="text-sm font-medium">Issue a new share</h3>
+            {pageDoc ? (
+              <div className="space-y-1">
+                <Label className="text-xs">Recipients can open</Label>
+                <ToggleGroup
+                  type="single"
+                  variant="outline"
+                  size="sm"
+                  value={reach}
+                  onValueChange={(value) => {
+                    if (value === 'page' || value === 'project') setReach(value)
+                  }}
+                  aria-label="Share scope"
+                >
+                  <ToggleGroupItem value="page">
+                    This page only ({KIND_LABEL[pageDoc.kind]} {pageDoc.id})
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="project">Whole project</ToggleGroupItem>
+                </ToggleGroup>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                The link opens this page and grants the whole project.
+              </p>
+            )}
             <div className="grid grid-cols-[1fr_auto] gap-2">
               <div className="space-y-1">
                 <Label htmlFor="new-share-label" className="text-xs">
@@ -311,7 +330,7 @@ export function ManageSharesDialog({ project }: Props) {
               size="sm"
             >
               <Plus className="size-3.5" />
-              {createMutation.isPending ? 'Creating…' : 'Create share'}
+              {createMutation.isPending ? 'Creating…' : `Create link for ${scopeLabel(scope)}`}
             </Button>
           </div>
         </div>

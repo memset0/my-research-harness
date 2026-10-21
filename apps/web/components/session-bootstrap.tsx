@@ -6,20 +6,26 @@
 // uses that as the initial context value.
 
 import type { ProjectRef } from '@memon/core'
-import { readIdentityFromHeaders } from '@/lib/server/auth/request-context'
+import { type DocumentScope, readIdentityFromHeaders } from '@/lib/server/auth/request-context'
 
 export interface SerializedSession {
   role: 'owner' | 'viewer' | 'anon'
   scopeProjects: string[]
   scopeProjectRefs: ProjectRef[]
+  scopeDocuments: DocumentScope[]
+  /** This page's Project is visible only through a document-scoped share. */
+  documentOnly: boolean
 }
 
 export async function readSerializedSession(): Promise<SerializedSession> {
-  const { role, scopeProjects, scopeProjectRefs } = await readIdentityFromHeaders()
+  const { role, scopeProjects, scopeProjectRefs, scopeDocuments, documentOnly } =
+    await readIdentityFromHeaders()
   return {
     role,
     scopeProjects: Array.from(scopeProjects),
     scopeProjectRefs,
+    scopeDocuments: scopeDocuments ?? [],
+    documentOnly: documentOnly === true,
   }
 }
 

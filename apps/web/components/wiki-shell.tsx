@@ -62,7 +62,7 @@ import { FrontmatterPanel } from './frontmatter-panel'
 import { Markdown } from './markdown'
 import { ReadmeMonaco } from './readme-monaco'
 import { ReportHtmlZoomProvider } from './report-html-embed'
-import { useIsOwner } from './session-provider'
+import { useIsDocumentOnlyViewer, useIsOwner } from './session-provider'
 import { ListSkeleton } from './skeletons'
 import { TimestampLocal } from './timestamp'
 import { Button } from './ui/button'
@@ -98,11 +98,12 @@ export function wikiResourceBaseUrl(project: ProjectTarget, wikiId: string): str
     : base
 }
 
-export function useWikiPages(project: ProjectTarget) {
+export function useWikiPages(project: ProjectTarget, enabled = true) {
   const query = useQuery({
     queryKey: queryKeys.wiki(project),
     queryFn: () => fetchWiki(project),
     staleTime: 5_000,
+    enabled,
   })
   const pages = useMemo(() => sortWikiPages(query.data?.pages ?? []), [query.data])
   return {
@@ -120,12 +121,15 @@ export function WikiShell({
   project: ProjectTarget
   selectedId: string | null
 }) {
-  const { pages, isLoading, error, refetch } = useWikiPages(project)
+  // A document-only share viewer sees the shared page without the page list.
+  const documentOnly = useIsDocumentOnlyViewer()
+  const { pages, isLoading, error, refetch } = useWikiPages(project, !documentOnly)
   const [storedRailOpen, setRailOpen] = useUserPreferenceState<boolean>(
     WIKI_RAIL_PREFERENCE_KEY,
     true,
   )
-  const railOpen = typeof storedRailOpen === 'boolean' ? storedRailOpen : true
+  const railOpen = !documentOnly && (typeof storedRailOpen === 'boolean' ? storedRailOpen : true)
+  const showRail = documentOnly ? undefined : () => setRailOpen(true)
   const [contentFilter, setContentFilter] = useState(emptyContentFilter)
   const [kindFilter, setKindFilter] = useState('all')
   const [textFilter, setTextFilter] = useState('')
@@ -164,7 +168,7 @@ export function WikiShell({
             pageCount={pages.length}
             isLoading={isLoading}
             error={error}
-            onShowRail={railOpen ? undefined : () => setRailOpen(true)}
+            onShowRail={railOpen ? undefined : showRail}
           />
         ) : (
           <WikiSelectedPane
@@ -175,7 +179,7 @@ export function WikiShell({
             error={(detail.error as Error | null) ?? null}
             pages={pages}
             pagesLoading={isLoading}
-            onShowRail={railOpen ? undefined : () => setRailOpen(true)}
+            onShowRail={railOpen ? undefined : showRail}
           />
         )}
       </main>
@@ -208,16 +212,18 @@ export function WikiShell({
         </aside>
       )}
 
-      <WikiMobileRail
-        project={project}
-        pages={visible}
-        selectedId={selectedId}
-        loading={isLoading}
-        error={error}
-        onRetry={refetch}
-        filters={filters}
-        filtered={textFilter.trim() !== '' || kindFilter !== 'all'}
-      />
+      {!documentOnly && (
+        <WikiMobileRail
+          project={project}
+          pages={visible}
+          selectedId={selectedId}
+          loading={isLoading}
+          error={error}
+          onRetry={refetch}
+          filters={filters}
+          filtered={textFilter.trim() !== '' || kindFilter !== 'all'}
+        />
+      )}
     </div>
   )
 }
