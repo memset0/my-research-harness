@@ -98,28 +98,29 @@ The chip styling SHALL apply ONLY to inline `<code>`. Code rendered inside fence
 
 The dashboard SHALL provide an inbox-shaped layout for browsing per-project
 markdown artifact families. On viewports at the `md` breakpoint or wider, the
-layout SHALL render two columns by default: a left rail (~280–320 px) holding a
-scrollable list of items, and a right pane (flex) holding the rendered markdown
-of the currently selected item. The active item in the rail SHALL be visually
+layout SHALL render two columns by default: a left pane (flex) holding the
+rendered markdown of the currently selected item, and a right rail (~280–320 px)
+holding a scrollable list of items. The active item in the rail SHALL be visually
 highlighted.
 
 On Report routes, the desktop rail SHALL include an accessible control that
 lets the user hide it. Hiding the rail SHALL remove it from the layout and let
-the right pane reclaim the available width. A corresponding accessible control
-SHALL remain visible in the right pane so the user can show the rail again. The
+the reading pane reclaim the available width. A corresponding accessible control
+SHALL remain visible in the reading pane so the user can show the rail again. The
 rail SHALL be shown by default when the Report inbox mounts.
 
 When the user clicks Edit, the layout SHALL add a Monaco editor to the right of
-the rendered markdown. This produces three columns when the list rail is shown
-and two columns when a Report user has hidden the list rail. Closing the editor
-(Save or Cancel) SHALL preserve the current Report rail visibility and remove
-the editor.
+the rendered markdown and to the left of the list rail. This produces three
+columns when the list rail is shown and two columns when a Report user has hidden
+the list rail. Closing the editor (Save or Cancel) SHALL preserve the current
+Report rail visibility and remove the editor.
 
 #### Scenario: Two-column read mode default
 
 - **WHEN** the user opens an inbox URL at desktop width
-- **THEN** the layout renders the left rail (file list) and the right pane
-  (rendered markdown of the selected item, or empty-state if none selected)
+- **THEN** the layout renders the reading pane (rendered markdown of the selected
+  item, or empty-state if none selected) on the left and the rail (file list) on
+  the right
 - **AND** no Monaco editor is mounted
 
 #### Scenario: Report picker can be hidden and restored
@@ -130,14 +131,15 @@ the editor.
   the reclaimed width
 - **AND** a Show reports control remains visible and keyboard accessible
 - **WHEN** the user activates Show reports
-- **THEN** the Report rail returns with the same active Report selected
+- **THEN** the Report rail returns on the right with the same active Report selected
 
 #### Scenario: Switch to three-column edit mode
 
 - **GIVEN** the user is reading a Report at desktop width
-- **WHEN** the user clicks the Edit button in the right pane's header
+- **WHEN** the user clicks the Edit button in the reading pane's header
 - **THEN** the layout adds a Monaco editor pane (~440 px) to the right of the
-  rendered markdown, and the rendered markdown stays visible as a live preview
+  rendered markdown and left of the rail, and the rendered markdown stays visible
+  as a live preview
 - **AND** the editor mounts with the current file's content as its initial value
 - **AND** the layout has three columns when the Report rail is shown and two
   columns when it is hidden
@@ -151,11 +153,17 @@ the editor.
 
 ### Requirement: Report inbox empty state names its authoring workflow
 
-The inbox SHALL render kind-specific empty states. Reports SHALL identify memon-write-report as the authoring workflow. Copy SHALL remain a property of the shared layout rather than hardcoded behavior.
+The inbox SHALL render kind-specific empty states. Reports SHALL identify memon-write-report as the authoring workflow. Copy SHALL remain a property of the shared layout rather than hardcoded behavior. With no Report selected, the reading pane SHALL show the authoring empty state only when the Report list has loaded and is empty; while it loads it SHALL show a loading placeholder, when Reports exist it SHALL ask the reader to select one from the report list, and when the list fails it SHALL show the failure. Whenever the picker is hidden, the control to show it SHALL remain available in that pane.
 
 #### Scenario: Empty reports directory
 - **WHEN** a project has no matching Report files
 - **THEN** the pane points to memon-write-report and the rail shows an empty placeholder
+
+#### Scenario: Reports exist but none is selected
+- **GIVEN** a project with published Reports and the picker hidden by the reader's preference
+- **WHEN** the reader opens the Reports landing route
+- **THEN** the pane asks the reader to select a report and offers the show-reports control
+- **AND** it does not say that there are no reports
 
 ### Requirement: Report frontmatter property panel above rendered body
 
@@ -489,3 +497,24 @@ Markdown surfaces outside Report rendering SHALL NOT receive this Report-prefixe
 #### Scenario: Empty outlines remain absent
 - **WHEN** a Report contains only its H1 title
 - **THEN** no generated Report table of contents is rendered for that body
+
+### Requirement: Report content filters form one icon row
+
+The Report rail and the mobile Report list SHALL render the category, freshness
+and presentation filters as one row of three equal-width selects. Each select
+SHALL show a distinct icon identifying its filter and its current value, shown as
+`All` when that filter is not narrowing the list, truncated to fit. Each select
+SHALL keep an accessible name and a tooltip naming its filter. The available
+options and the filtering result SHALL be unchanged.
+
+#### Scenario: Filters share one row
+
+- **WHEN** the Report rail renders at desktop width
+- **THEN** the category, freshness and presentation selects appear side by side
+  in one row, each with its own icon
+- **AND** each select is announced by its filter name
+
+#### Scenario: Selected value replaces All
+
+- **WHEN** the reader selects `STALE` in the freshness filter
+- **THEN** that select shows its icon with `STALE` and the list narrows as before
