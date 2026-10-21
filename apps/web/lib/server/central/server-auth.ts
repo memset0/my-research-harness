@@ -22,6 +22,16 @@ export interface CentralServerAuthOptions {
    * validates against its own share file.
    */
   shareValidator: ShareValidator
+  /**
+   * Whether a viewer's document-scoped grants for the selected Project cover
+   * this request. Without it, document grants admit nothing here.
+   */
+  documentAdmits?: (
+    selected: ProjectRef,
+    url: URL,
+    method: string,
+    grants: Awaited<ReturnType<typeof resolveIdentity>>['scopeDocuments'],
+  ) => Promise<boolean>
   runtimeAuth: RuntimeAuth
   nowSeconds?: number
   rateLimit?: {
@@ -204,11 +214,26 @@ export async function authorizeCentralServerRequest(
   }
   const requestUrl = new URL(options.request.url ?? '/', 'http://central.invalid')
   const selected = selectedProjectRef(options.route, requestUrl)
+  const grants = selected
+    ? identity.scopeDocuments.filter(
+        (grant) => grant.host === selected.host && grant.project === selected.project,
+      )
+    : []
   if (
     !selected ||
-    !identity.scopeProjectRefs.some(
+    (!identity.scopeProjectRefs.some(
       (scope) => scope.host === selected.host && scope.project === selected.project,
-    )
+    ) &&
+      !(
+        grants.length > 0 &&
+        options.documentAdmits !== undefined &&
+        (await options.documentAdmits(
+          selected,
+          requestUrl,
+          options.request.method ?? 'GET',
+          grants,
+        ))
+      ))
   ) {
     return {
       ok: false,

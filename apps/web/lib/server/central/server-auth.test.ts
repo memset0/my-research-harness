@@ -148,4 +148,33 @@ describe('authorizeCentralServerRequest', () => {
     expect(limited).toMatchObject({ ok: false, status: 429 })
     expect(limited.headers['Retry-After']).toBe('7')
   })
+
+  it('admits a document-scoped viewer only where the document check passes', async () => {
+    const documentValidator = {
+      validate: vi.fn(async () => ({ document: { kind: 'wiki' as const, id: 'W0004' } })),
+    }
+    const documentAdmits = vi.fn(async (_selected, url: URL) => url.pathname === '/api/wiki/W0004')
+    const authorize = (path: string) =>
+      authorizeCentralServerRequest({
+        request: incoming(`${path}?host=host-a&project=project-x`, 'GET', {
+          cookie: `${SHARES_COOKIE_NAME}=${viewerCookie()}`,
+        }),
+        route: resolveCentralApiRoute(path),
+        shareValidator: documentValidator,
+        documentAdmits,
+        runtimeAuth,
+      })
+
+    await expect(authorize('/api/wiki/W0004')).resolves.toMatchObject({
+      ok: true,
+      actor: { role: 'viewer', scopes: [{ host: 'host-a', project: 'project-x' }] },
+    })
+    await expect(authorize('/api/wiki/W0001')).resolves.toMatchObject({ ok: false, status: 403 })
+    expect(documentAdmits).toHaveBeenCalledWith(
+      { host: 'host-a', project: 'project-x' },
+      expect.any(URL),
+      'GET',
+      [{ host: 'host-a', project: 'project-x', kind: 'wiki', id: 'W0004' }],
+    )
+  })
 })

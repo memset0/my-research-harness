@@ -10,17 +10,18 @@ vi.mock('./lib/server/runtime', () => ({ getRuntime: vi.fn() }))
 vi.mock('./lib/server/central/fleet-runtime', () => ({ getCentralFleet: vi.fn() }))
 vi.mock('./lib/server/central/central-shares', () => ({ validateCentralShare: vi.fn() }))
 vi.mock('./lib/server/standalone-services', () => ({ standaloneServices: vi.fn() }))
+vi.mock('./lib/server/share-api', () => ({ runResource: vi.fn() }))
 
 import { signSharesCookie } from './lib/server/auth/cookies'
 import { __resetForTests } from './lib/server/auth/rate-limit'
 import { getRuntime } from './lib/server/runtime'
+import { runResource } from './lib/server/share-api'
 import { shareRegistryFor } from './lib/server/share-registry'
 import { standaloneServices } from './lib/server/standalone-services'
 import { middleware } from './middleware'
 
 const SECRET = 'central-session-secret'
 let directory: string
-const getRun = vi.fn()
 
 beforeEach(async () => {
   __resetForTests()
@@ -39,7 +40,6 @@ beforeEach(async () => {
   } as never)
   vi.mocked(standaloneServices).mockReturnValue({
     shares: { validate: vi.fn().mockResolvedValue(false) },
-    projects: { getRun },
   } as never)
 })
 afterEach(async () => {
@@ -95,11 +95,11 @@ describe('middleware document-scoped shares', () => {
 
   it('admits Runs of the shared Experiment only after resolving their directory', async () => {
     const open = await viewerFor({ kind: 'experiment', id: 'E0001-pipeline' })
-    getRun.mockResolvedValueOnce({ resource: 'logs/E0001/V0001/run-1' })
+    vi.mocked(runResource).mockResolvedValueOnce('logs/E0001/V0001/run-1')
     expect(allowed(await open('/api/runs/run-1?host=host-a&project=project-x'))).toBe(true)
-    getRun.mockResolvedValueOnce({ resource: 'logs/E0002/V0001/run-9' })
+    vi.mocked(runResource).mockResolvedValueOnce('logs/E0002/V0001/run-9')
     expect((await open('/api/runs/run-9?host=host-a&project=project-x')).status).toBe(403)
-    getRun.mockRejectedValueOnce(new Error('missing'))
+    vi.mocked(runResource).mockResolvedValueOnce(null)
     expect((await open('/api/runs/run-0?host=host-a&project=project-x')).status).toBe(403)
   })
 

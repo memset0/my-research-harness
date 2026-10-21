@@ -66,6 +66,7 @@ if (runtime.config.central) {
       createDirectCentralGateway({
         runtime: directCentralRuntime(runtime.config),
         runtimeAuth: runtime.auth,
+        configPath: runtime.configPath,
       }),
     )
   }

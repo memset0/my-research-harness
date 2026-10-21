@@ -76,11 +76,22 @@ async function scopedPOST(req: NextRequest): Promise<Response> {
   if (!target) return bad('project is not configured', 404)
   const scope = ShareScopeSchema.safeParse(body.scope)
   if (!scope.success) return bad('invalid share scope')
-  if (
-    isDocumentScope(scope.data) &&
-    !(await sharedDocumentExists(runtime, target.project, scope.data.kind, scope.data.id))
-  )
-    return bad(`${scope.data.kind} ${scope.data.id} is not published`, 404)
+  if (isDocumentScope(scope.data)) {
+    let exists: boolean
+    try {
+      exists = await sharedDocumentExists(
+        runtime,
+        target.host,
+        target.project,
+        scope.data.kind,
+        scope.data.id,
+      )
+    } catch (error) {
+      console.error('share: document lookup failed', error)
+      return bad(`could not read ${scope.data.kind} ${scope.data.id}; try again`, 503)
+    }
+    if (!exists) return bad(`${scope.data.kind} ${scope.data.id} is not published`, 404)
+  }
   try {
     const record = await (await shareRegistry(runtime)).create({
       ...target,

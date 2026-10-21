@@ -11,10 +11,15 @@ vi.mock('@/lib/server/standalone-request', () => ({
   withStandaloneRequest: (handler: unknown) => handler,
 }))
 const getWiki = vi.fn()
-vi.mock('@/lib/server/standalone-services', () => ({
-  standaloneServices: () => ({
-    documents: { getWiki, getReport: vi.fn().mockRejectedValue(new Error('missing')) },
-    projects: { getExperiment: vi.fn() },
+vi.mock('@/lib/server/central/direct-runtime', () => ({
+  directCentralRuntime: () => ({
+    registry: { capabilities: (host: string) => (host === 'host-a' ? {} : null) },
+    dispatch: async ({ request }: { request: Request }) => {
+      const path = new URL(request.url).pathname
+      return path === '/api/wiki/W0004' && (await getWiki())
+        ? Response.json({ id: 'W0004' })
+        : Response.json({ error: { code: 'NOT_FOUND' } }, { status: 404 })
+    },
   }),
 }))
 

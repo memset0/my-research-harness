@@ -60,7 +60,8 @@ import {
 import { validateCentralShare } from './lib/server/central/central-shares'
 import { getCentralFleet } from './lib/server/central/fleet-runtime'
 import { getRuntime, type Runtime } from './lib/server/runtime'
-import { matchShare, type ShareRegistryRecord, shareRegistryFor } from './lib/server/share-registry'
+import { runResource } from './lib/server/share-api'
+import { withShareRegistry } from './lib/server/share-validator'
 import { standaloneServices } from './lib/server/standalone-services'
 
 export const config = {
@@ -141,21 +142,10 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
     })
   }
 
-  // Build a share validator: the central share registry first (read once per
-  // request; unreadable fails closed), then legacy project-file shares.
-  let registryRecords: Promise<ShareRegistryRecord[]> | null = null
-  const shareValidator: ShareValidator = {
+  // Share validation: the central share registry first, then legacy
+  // project-file shares (see share-validator.ts).
+  const shareValidator: ShareValidator = withShareRegistry(runtime.configPath, {
     validate: async (projectName, token, host) => {
-      let scope: ReturnType<typeof matchShare> = null
-      if (runtime.configPath) {
-        try {
-          registryRecords ??= shareRegistryFor(runtime.configPath).read()
-          scope = matchShare(await registryRecords, host ?? null, projectName, token)
-        } catch {
-          return false
-        }
-      }
-      if (scope) return scope.kind === 'project' ? true : { document: scope }
       if (host !== undefined) {
         if (!runtime.config.central) return false
         const fleet = await getCentralFleet().catch(() => null)
@@ -171,7 +161,7 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
         .shares.validate(projectName, token)
         .catch(() => false)
     },
-  }
+  })
 
   // These owner-only routes intentionally identify a valid share viewer so
   // the denial is an explicit 403. Every other mutating/shell route keeps the
@@ -292,11 +282,7 @@ async function documentGrantAdmits(
     req.nextUrl.searchParams,
   )
   if (target?.kind === 'run') {
-    const runId = target.id
-    const run = await standaloneServices(runtime.config)
-      .projects.getRun(project, runId)
-      .catch(() => null)
-    const path = cleanProjectPath((run as { resource?: string } | null)?.resource)
+    const path = cleanProjectPath(await runResource(runtime, host, project, target.id))
     target = path ? { kind: 'path', path } : null
   }
   return target !== null && grants.some((grant) => grantCovers(grant, target))

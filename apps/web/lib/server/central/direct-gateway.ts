@@ -7,7 +7,14 @@
 // execute. A Host this instance does not serve is left untouched so a mixed
 // deployment can still forward it to a registered peer Backend.
 
-import type { RuntimeAuth } from '../auth/identity'
+import {
+  cleanProjectPath,
+  type DocumentTarget,
+  documentTargetFor,
+  grantCovers,
+} from '../auth/document-scope'
+import type { RuntimeAuth, ShareDocumentGrant } from '../auth/identity'
+import { withShareRegistry } from '../share-validator'
 import { CentralBackendProxyError } from './backend-proxy'
 import {
   BackendRouteError,
@@ -28,6 +35,8 @@ import { authorizeCentralServerRequest, type CentralServerAuthOptions } from './
 export interface DirectCentralGatewayOptions {
   runtime: DirectCentralRuntime
   runtimeAuth: RuntimeAuth
+  /** Instance config path: the central share registry lives beside it. */
+  configPath?: string
   authorize?: typeof authorizeCentralServerRequest
   rateLimit?: CentralServerAuthOptions['rateLimit']
 }
@@ -55,6 +64,36 @@ function failureResponse(error: unknown): {
     status: 500,
     payload: { code: 'INTERNAL', message: 'Central request failed' },
   }
+}
+
+/**
+ * Whether document-scoped grants cover this request: the request must address
+ * the shared document; a Run is resolved (as owner, in process) to its run
+ * directory first.
+ */
+async function documentGrantsAdmit(
+  runtime: DirectCentralRuntime,
+  selected: { host: string; project: string },
+  url: URL,
+  method: string,
+  grants: readonly ShareDocumentGrant[],
+): Promise<boolean> {
+  let target: DocumentTarget | null = documentTargetFor(method, url.pathname, url.searchParams)
+  if (target?.kind === 'run') {
+    const search = new URLSearchParams({ host: selected.host, project: selected.project })
+    const response = await runtime
+      .dispatch({
+        request: new Request(
+          `http://localhost/api/runs/${encodeURIComponent(target.id)}?${search}`,
+        ),
+        actor: { role: 'owner' },
+      })
+      .catch(() => null)
+    const body = response?.ok ? await response.json().catch(() => null) : null
+    const path = cleanProjectPath((body as { resource?: string } | null)?.resource)
+    target = path ? { kind: 'path', path } : null
+  }
+  return target !== null && grants.some((grant) => grantCovers(grant, target))
 }
 
 /** Create the gateway for directly served Hosts; omitted when none exist. */
@@ -88,12 +127,14 @@ export function createDirectCentralGateway(
       const auth = await authorize({
         request: incoming,
         route,
-        // Shares of a directly served Project live in that Project's own
-        // share file; there is no Host service to ask.
-        shareValidator: {
+        // Central-issued shares live in the central registry; older shares
+        // of a directly served Project live in that Project's own share file.
+        shareValidator: withShareRegistry(options.configPath, {
           validate: async (project, token, host) =>
             host === undefined ? false : options.runtime.validateShare(host, project, token),
-        },
+        }),
+        documentAdmits: (selected, requestUrl, method, grants) =>
+          documentGrantsAdmit(options.runtime, selected, requestUrl, method, grants),
         runtimeAuth: options.runtimeAuth,
         ...(options.rateLimit ? { rateLimit: options.rateLimit } : {}),
       })
