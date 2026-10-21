@@ -1,5 +1,3 @@
-import 'server-only'
-
 // Share validation shared by the Next middleware and the custom-server central
 // gateway: the central share registry first (read once per validator, an
 // unreadable registry fails closed), then the caller's legacy validator for

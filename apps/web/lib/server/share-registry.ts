@@ -1,5 +1,3 @@
-import 'server-only'
-
 // Central share registry: every share token this dashboard issues, with its
 // Host-qualified Project, scope (the whole Project or one Experiment, Wiki
 // page or Report) and the page its link lands on.
