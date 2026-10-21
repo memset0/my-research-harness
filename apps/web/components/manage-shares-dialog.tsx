@@ -5,8 +5,10 @@
 //
 // On an Experiment, Report or Wiki page a new link may open only that page
 // (the default) or the whole Project; elsewhere links are Project-scoped. A
-// link lands on the page it was issued from. The list shows every link of
-// this Project with what it can reach, and copies or revokes it.
+// link is the page's own URL with `?share=<token>`. Report and Wiki pages can
+// also be made public (readable by anyone with the plain page URL). The list
+// shows every link of this Project with what it can reach, and copies or
+// revokes it.
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Copy, Plus, Share2, Trash2 } from 'lucide-react'
@@ -64,6 +66,14 @@ export function scopeLabel(scope: ShareScopeDto): string {
   return scope.kind === 'project' ? 'Whole project' : `${KIND_LABEL[scope.kind]} ${scope.id}`
 }
 
+function rowLabel(row: ScopedShareRow): string {
+  return row.public ? `Public · ${scopeLabel(row.scope)}` : scopeLabel(row.scope)
+}
+
+function sameScope(a: ShareScopeDto, b: ShareScopeDto): boolean {
+  return a.kind === b.kind && (a.kind === 'project' || a.id === (b as { id: string }).id)
+}
+
 function errorMessage(body: unknown, fallback: string): string {
   const error = (body as { error?: string | { message?: string } } | null)?.error
   if (typeof error === 'string') return error
@@ -82,7 +92,13 @@ async function fetchShares(project: ProjectTarget): Promise<ScopedShareRow[]> {
 
 async function createShare(
   project: ProjectTarget,
-  body: { scope: ShareScopeDto; label?: string; expires: string; currentPath: string },
+  body: {
+    scope: ShareScopeDto
+    label?: string
+    expires: string
+    currentPath: string
+    public?: boolean
+  },
 ): Promise<ScopedShareRow> {
   const res = await fetch('/api/shares', {
     method: 'POST',
@@ -151,10 +167,17 @@ export function ManageSharesDialog({ project }: Props) {
   })
 
   const scope: ShareScopeDto = pageDoc && reach === 'page' ? pageDoc : { kind: 'project' }
+  // Only Report and Wiki pages can be public.
+  const publishable = pageDoc && pageDoc.kind !== 'experiment' ? pageDoc : null
+  const publicRecord = publishable
+    ? (shares ?? []).find((row) => row.public && sameScope(row.scope, publishable))
+    : undefined
 
   const copyRowUrl = async (row: ScopedShareRow) => {
     await copyToClipboard(row.share_url)
-    toast.success(`Copied share URL${row.label ? ` (${row.label})` : ''}`)
+    toast.success(
+      `Copied ${row.public ? 'page' : 'share'} URL${row.label ? ` (${row.label})` : ''}`,
+    )
   }
 
   const createMutation = useMutation({
@@ -173,6 +196,22 @@ export function ManageSharesDialog({ project }: Props) {
       queryClient.invalidateQueries({ queryKey: queryKeys.projectShares(project) })
     },
     onError: (err) => toast.error(`Could not create share: ${(err as Error).message}`),
+  })
+
+  const publishMutation = useMutation({
+    mutationFn: () =>
+      createShare(project, {
+        scope: publishable as ShareScopeDto,
+        expires: 'never',
+        currentPath: window.location.pathname,
+        public: true,
+      }),
+    onSuccess: async (created) => {
+      await copyToClipboard(created.share_url)
+      toast.success(`${scopeLabel(created.scope)} is public — page URL copied to clipboard`)
+      queryClient.invalidateQueries({ queryKey: queryKeys.projectShares(project) })
+    },
+    onError: (err) => toast.error(`Could not make the page public: ${(err as Error).message}`),
   })
 
   const deleteMutation = useMutation({
@@ -233,7 +272,7 @@ export function ManageSharesDialog({ project }: Props) {
                   {shares.map((s) => (
                     <tr key={s.id} className="border-t" data-share-id={s.id}>
                       <td className="px-3 py-2 whitespace-nowrap" data-share-scope="">
-                        {scopeLabel(s.scope)}
+                        {rowLabel(s)}
                       </td>
                       <td className="px-3 py-2">{s.label ?? '-'}</td>
                       <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
@@ -246,7 +285,7 @@ export function ManageSharesDialog({ project }: Props) {
                         <Button
                           variant="ghost"
                           size="sm"
-                          aria-label={`Copy share URL for ${scopeLabel(s.scope)}`}
+                          aria-label={`Copy URL for ${rowLabel(s)}`}
                           title={s.path}
                           onClick={() => copyRowUrl(s)}
                         >
@@ -255,7 +294,9 @@ export function ManageSharesDialog({ project }: Props) {
                         <Button
                           variant="ghost"
                           size="sm"
-                          aria-label={`Revoke ${s.id}`}
+                          aria-label={
+                            s.public ? `Make ${scopeLabel(s.scope)} private` : `Revoke ${s.id}`
+                          }
                           onClick={() => setConfirmId(s.id)}
                         >
                           <Trash2 className="size-3.5" />
@@ -267,6 +308,33 @@ export function ManageSharesDialog({ project }: Props) {
               </table>
             </div>
           )}
+
+          {publishable ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded border bg-muted/30 p-4">
+              <div className="space-y-0.5">
+                <h3 className="text-sm font-medium">Public page</h3>
+                <p className="text-xs text-muted-foreground" data-public-state="">
+                  {publicRecord
+                    ? `${scopeLabel(publishable)} is public: anyone with the page URL can read it.`
+                    : `Make ${scopeLabel(publishable)} readable by anyone with its page URL.`}
+                </p>
+              </div>
+              {publicRecord ? (
+                <Button variant="outline" size="sm" onClick={() => setConfirmId(publicRecord.id)}>
+                  Make private
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => publishMutation.mutate()}
+                  disabled={publishMutation.isPending}
+                >
+                  {publishMutation.isPending ? 'Publishing…' : 'Make public'}
+                </Button>
+              )}
+            </div>
+          ) : null}
 
           <div className="space-y-3 rounded border bg-muted/30 p-4">
             <h3 className="text-sm font-medium">Issue a new share</h3>

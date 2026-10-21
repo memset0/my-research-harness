@@ -108,4 +108,58 @@ describe('middleware document-scoped shares', () => {
     expect(allowed(await open('/h/host-a/p/project-x/wiki/W0001'))).toBe(true)
     expect(allowed(await open('/api/reports?host=host-a&project=project-x'))).toBe(true)
   })
+
+  it('redeems ?share= on a page URL of its own Project only', async () => {
+    const registry = shareRegistryFor(join(directory, 'config.yml'))
+    const record = await registry.create({
+      host: 'host-a',
+      project: 'project-x',
+      scope: { kind: 'report', id: 'R0005' },
+    })
+    const open = (path: string) =>
+      middleware(
+        new NextRequest(`https://memon.example.test${path}`, {
+          headers: { 'x-forwarded-for': '203.0.113.82' },
+        }),
+      )
+    const redeemed = await open(`/h/host-a/p/project-x/reports/R0005?share=${record.token}&tab=1`)
+    expect(redeemed.status).toBe(302)
+    expect(redeemed.headers.get('location')).toBe(
+      'https://memon.example.test/h/host-a/p/project-x/reports/R0005?tab=1',
+    )
+    expect(redeemed.headers.get('set-cookie')).toContain('memon-shares=')
+    for (const path of [
+      `/h/host-a/p/project-y/reports/R0005?share=${record.token}`,
+      '/h/host-a/p/project-x/reports/R0005?share=not-a-valid-token-at-all',
+    ]) {
+      const refused = await open(path)
+      expect(refused.status).toBe(404)
+      expect(refused.headers.get('set-cookie')).toBeNull()
+    }
+  })
+
+  it('lets anyone read a public page and nothing else', async () => {
+    await shareRegistryFor(join(directory, 'config.yml')).create({
+      host: 'host-a',
+      project: 'project-x',
+      scope: { kind: 'wiki', id: 'W0004' },
+      public: true,
+    })
+    const anonymous = (path: string, accept = 'application/json') =>
+      middleware(
+        new NextRequest(`https://memon.example.test${path}`, {
+          headers: { accept, 'x-forwarded-for': '203.0.113.83' },
+        }),
+      )
+    const page = await anonymous('/h/host-a/p/project-x/wiki/W0004', 'text/html')
+    expect(allowed(page)).toBe(true)
+    expect(page.headers.get('x-middleware-request-x-memon-role')).toBe('viewer')
+    expect(page.headers.get('x-middleware-request-x-memon-document-only')).toBe('1')
+    expect(allowed(await anonymous('/api/wiki/W0004?host=host-a&project=project-x'))).toBe(true)
+    expect((await anonymous('/api/wiki/W0001?host=host-a&project=project-x')).status).toBe(401)
+    expect((await anonymous('/api/wiki?host=host-a&project=project-x')).status).toBe(401)
+    const other = await anonymous('/h/host-a/p/project-x/wiki/W0001', 'text/html')
+    expect(other.status).toBe(302)
+    expect(other.headers.get('location')).toContain('/login')
+  })
 })

@@ -109,6 +109,16 @@ export async function runResource(
   }
 }
 
+/**
+ * The link to copy: the landing page's own URL, plus `share=<token>` for a
+ * token link (a public page needs none).
+ */
+export function shareUrl(origin: string, record: ShareRegistryRecord): string {
+  const page = `${origin}${record.path}`
+  if (record.public) return page
+  return `${page}${record.path.includes('?') ? '&' : '?'}share=${encodeURIComponent(record.token)}`
+}
+
 export function shareRow(req: NextRequest, record: ShareRegistryRecord): ScopedShareRow {
-  return { ...record, share_url: `${publicOrigin(req)}/s/${encodeURIComponent(record.token)}` }
+  return { ...record, share_url: shareUrl(publicOrigin(req), record) }
 }

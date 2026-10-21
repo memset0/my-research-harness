@@ -14,6 +14,7 @@ import {
   grantCovers,
 } from '../auth/document-scope'
 import type { RuntimeAuth, ShareDocumentGrant } from '../auth/identity'
+import { publicDocuments, shareRegistryFor } from '../share-registry'
 import { withShareRegistry } from '../share-validator'
 import { CentralBackendProxyError } from './backend-proxy'
 import {
@@ -135,6 +136,14 @@ export function createDirectCentralGateway(
         }),
         documentAdmits: (selected, requestUrl, method, grants) =>
           documentGrantsAdmit(options.runtime, selected, requestUrl, method, grants),
+        publicGrants: async (selected) =>
+          options.configPath
+            ? publicDocuments(
+                await shareRegistryFor(options.configPath).read(),
+                selected.host,
+                selected.project,
+              ).map((scope) => ({ host: selected.host, project: selected.project, ...scope }))
+            : [],
         runtimeAuth: options.runtimeAuth,
         ...(options.rateLimit ? { rateLimit: options.rateLimit } : {}),
       })

@@ -3,7 +3,13 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { ShareRegistryInputError, shareLandingPath, shareRegistryFor } from './share-registry'
+import {
+  matchShare,
+  publicDocuments,
+  ShareRegistryInputError,
+  shareLandingPath,
+  shareRegistryFor,
+} from './share-registry'
 
 let directory: string
 const registry = () => shareRegistryFor(join(directory, 'config.yml'))
@@ -82,6 +88,37 @@ describe('share registry', () => {
   it('fails closed when the registry cannot be parsed', async () => {
     await writeFile(join(directory, 'shares.json'), '{"version":1,"shares":[{"id":1}]}')
     await expect(registry().validate('host-a', 'project-x', 'a'.repeat(24))).rejects.toThrow()
+  })
+})
+
+describe('public pages', () => {
+  it('marks Report and Wiki pages public once and never redeems their token', async () => {
+    const input = {
+      host: 'host-a',
+      project: 'project-x',
+      scope: { kind: 'report' as const, id: 'R0005' },
+      public: true,
+    }
+    const first = await registry().create(input)
+    const again = await registry().create(input)
+    expect(again.id).toBe(first.id)
+    expect(first.public).toBe(true)
+    const records = await registry().read()
+    expect(records).toHaveLength(1)
+    expect(publicDocuments(records, 'host-a', 'project-x')).toEqual([
+      { kind: 'report', id: 'R0005' },
+    ])
+    expect(publicDocuments(records, 'host-b', 'project-x')).toEqual([])
+    expect(matchShare(records, 'host-a', 'project-x', first.token)).toBeNull()
+    expect(await registry().find(first.token)).toBeNull()
+    await expect(
+      registry().create({ ...input, scope: { kind: 'experiment', id: 'E0001-x' } }),
+    ).rejects.toBeInstanceOf(ShareRegistryInputError)
+    await expect(
+      registry().create({ ...input, scope: { kind: 'project' } }),
+    ).rejects.toBeInstanceOf(ShareRegistryInputError)
+    expect(await registry().remove(first.id)).toBe(true)
+    expect(publicDocuments(await registry().read(), 'host-a', 'project-x')).toEqual([])
   })
 })
 

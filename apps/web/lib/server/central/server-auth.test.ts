@@ -177,4 +177,27 @@ describe('authorizeCentralServerRequest', () => {
       [{ host: 'host-a', project: 'project-x', kind: 'wiki', id: 'W0004' }],
     )
   })
+
+  it('lets an anonymous request read a public page through the gateway only', async () => {
+    const publicGrants = vi.fn(async () => [
+      { host: 'host-a', project: 'project-x', kind: 'report' as const, id: 'R0005' },
+    ])
+    const documentAdmits = vi.fn(
+      async (_selected, url: URL) => url.pathname === '/api/reports/R0005',
+    )
+    const authorize = (path: string) =>
+      authorizeCentralServerRequest({
+        request: incoming(`${path}?host=host-a&project=project-x`),
+        route: resolveCentralApiRoute(path),
+        shareValidator: validator(false),
+        documentAdmits,
+        publicGrants,
+        runtimeAuth,
+      })
+    await expect(authorize('/api/reports/R0005')).resolves.toMatchObject({
+      ok: true,
+      actor: { role: 'viewer', scopes: [{ host: 'host-a', project: 'project-x' }] },
+    })
+    await expect(authorize('/api/reports')).resolves.toMatchObject({ ok: false, status: 401 })
+  })
 })

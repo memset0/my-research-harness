@@ -32,6 +32,10 @@ export interface CentralServerAuthOptions {
     method: string,
     grants: Awaited<ReturnType<typeof resolveIdentity>>['scopeDocuments'],
   ) => Promise<boolean>
+  /** Public Report/Wiki pages of the selected Project (anyone may read them). */
+  publicGrants?: (
+    selected: ProjectRef,
+  ) => Promise<Awaited<ReturnType<typeof resolveIdentity>>['scopeDocuments']>
   runtimeAuth: RuntimeAuth
   nowSeconds?: number
   rateLimit?: {
@@ -197,14 +201,29 @@ export async function authorizeCentralServerRequest(
   if (identity.refundToken) limiter.refund(ip)
   const setCookies = refreshedCookies(identity, requestIsHttps(options.request))
 
+  const readRoute = effectiveAuthClass(options.route, options.request.method ?? 'GET') === 'read'
+  const requestUrl = new URL(options.request.url ?? '/', 'http://central.invalid')
+  const selected = selectedProjectRef(options.route, requestUrl)
+  /** Whether a public page of the selected Project covers this request. */
+  const publicAdmits = async (): Promise<boolean> => {
+    if (!readRoute || !selected || !options.publicGrants || !options.documentAdmits) return false
+    const grants = await options.publicGrants(selected).catch(() => [])
+    return (
+      grants.length > 0 &&
+      options.documentAdmits(selected, requestUrl, options.request.method ?? 'GET', grants)
+    )
+  }
+
   if (identity.role === 'anon') {
+    if (selected && (await publicAdmits()))
+      return { ok: true, actor: { role: 'viewer', scopes: [selected] }, headers: {}, setCookies }
     return { ok: false, status: 401, headers: { ...UNAUTHORIZED_HEADERS }, setCookies }
   }
   if (identity.role === 'owner') {
     return { ok: true, actor: { role: 'owner' }, headers: {}, setCookies }
   }
 
-  if (effectiveAuthClass(options.route, options.request.method ?? 'GET') !== 'read') {
+  if (!readRoute) {
     return {
       ok: false,
       status: 403,
@@ -212,8 +231,6 @@ export async function authorizeCentralServerRequest(
       setCookies,
     }
   }
-  const requestUrl = new URL(options.request.url ?? '/', 'http://central.invalid')
-  const selected = selectedProjectRef(options.route, requestUrl)
   const grants = selected
     ? identity.scopeDocuments.filter(
         (grant) => grant.host === selected.host && grant.project === selected.project,
@@ -233,7 +250,8 @@ export async function authorizeCentralServerRequest(
           options.request.method ?? 'GET',
           grants,
         ))
-      ))
+      ) &&
+      !(await publicAdmits()))
   ) {
     return {
       ok: false,

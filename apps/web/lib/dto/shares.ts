@@ -41,6 +41,9 @@ export interface ScopedShareRow {
   path: string
   created_at: string
   expires_at: string | null
+  /** A public page: anyone with the page URL can read it. */
+  public?: true
+  /** Page URL with `share=<token>`, or the plain page URL for a public page. */
   share_url: string
 }
 

@@ -41,7 +41,11 @@ import {
   documentTargetFor,
   grantCovers,
 } from './lib/server/auth/document-scope'
-import { resolveIdentity, type ShareValidator } from './lib/server/auth/identity'
+import {
+  resolveIdentity,
+  type ShareDocumentGrant,
+  type ShareValidator,
+} from './lib/server/auth/identity'
 import { makeProjectResolver, resolveRequestProject } from './lib/server/auth/project-resolver'
 import { isHttps, publicOrigin } from './lib/server/auth/public-url'
 import { clientIpFromHeaders, consume, refund } from './lib/server/auth/rate-limit'
@@ -61,6 +65,12 @@ import { validateCentralShare } from './lib/server/central/central-shares'
 import { getCentralFleet } from './lib/server/central/fleet-runtime'
 import { getRuntime, type Runtime } from './lib/server/runtime'
 import { runResource } from './lib/server/share-api'
+import {
+  invalidShareLinkResponse,
+  SHARE_TOKEN_PATTERN,
+  shareLandingResponse,
+} from './lib/server/share-landing'
+import { projectRoutePrefix, publicDocuments, shareRegistryFor } from './lib/server/share-registry'
 import { withShareRegistry } from './lib/server/share-validator'
 import { standaloneServices } from './lib/server/standalone-services'
 
@@ -142,6 +152,16 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
     })
   }
 
+  // A page URL carrying `?share=<token>` redeems the token into the viewer
+  // cookie and redirects to the same URL without it (before any auth).
+  const shareParam = search.get('share')
+  if (
+    shareParam !== null &&
+    (req.method === 'GET' || req.method === 'HEAD') &&
+    !pathname.startsWith('/api/')
+  )
+    return redeemPageShare(req, runtime, ip, shareParam)
+
   // Share validation: the central share registry first, then legacy
   // project-file shares (see share-validator.ts).
   const shareValidator: ShareValidator = withShareRegistry(runtime.configPath, {
@@ -186,6 +206,8 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   let response: NextResponse
   /** The Project admitted for this request only through a document grant. */
   let documentProject: { host: string | null; project: string } | null = null
+  /** Public-page grants that admitted this request (anonymous or uncovered viewer). */
+  let publicGrants: Awaited<ReturnType<typeof publicGrantsAdmitting>> = null
 
   if (identity.role === 'owner') {
     // Owner may pass every route class.
@@ -219,6 +241,13 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
       )
       if (scopeOk) documentProject = { host: requestHost, project: resolvedProject }
     }
+    if (!scopeOk && typeof resolvedProject === 'string' && resolvedProject !== 'multi') {
+      publicGrants = await publicGrantsAdmitting(runtime, req, resolvedProject, requestHost)
+      if (publicGrants) {
+        scopeOk = true
+        documentProject = { host: requestHost, project: resolvedProject }
+      }
+    }
     if (scopeOk) {
       // Exact viewer scope may pass this read route.
     } else {
@@ -227,10 +256,24 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
       return response
     }
   } else {
-    // Anon — deny.
-    response = denyAnon(req)
-    attachCookieRefreshes(response.headers, identity, isHttps(req))
-    return response
+    // Anon: only a public Report/Wiki page and its own reads pass, as a
+    // viewer limited to that document; everything else is denied.
+    const resolvedProject =
+      routeClass === 'read'
+        ? (project ??
+          (await resolveRequestProject(runtime, req.method, pathname, search, new Set())))
+        : null
+    const requestHost = hostFromRequest(pathname, search)
+    publicGrants =
+      typeof resolvedProject === 'string' && resolvedProject !== 'multi'
+        ? await publicGrantsAdmitting(runtime, req, resolvedProject, requestHost)
+        : null
+    if (!publicGrants || typeof resolvedProject !== 'string') {
+      response = denyAnon(req)
+      attachCookieRefreshes(response.headers, identity, isHttps(req))
+      return response
+    }
+    documentProject = { host: requestHost, project: resolvedProject }
   }
 
   // Allowed: passthrough with role/scope headers + refreshed cookies.
@@ -245,10 +288,13 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
         project: documentProject.project,
       } as (typeof scopeProjectRefs)[number])
   }
-  requestHeaders.set('x-memon-role', identity.role)
+  requestHeaders.set('x-memon-role', publicGrants ? 'viewer' : identity.role)
   requestHeaders.set('x-memon-scope', Array.from(scopeProjects).join(','))
   requestHeaders.set(HOST_SCOPE_HEADER, encodeHostScopeHeader(scopeProjectRefs))
-  requestHeaders.set(DOCUMENT_SCOPE_HEADER, encodeDocumentScopeHeader(identity.scopeDocuments))
+  requestHeaders.set(
+    DOCUMENT_SCOPE_HEADER,
+    encodeDocumentScopeHeader([...identity.scopeDocuments, ...(publicGrants ?? [])]),
+  )
   requestHeaders.set(DOCUMENT_ONLY_HEADER, documentProject ? '1' : '0')
   // The class is useful for handlers that want to know "am I a 'multi' route?"
   // without re-classifying — currently optional, costs one header byte to set.
@@ -286,6 +332,61 @@ async function documentGrantAdmits(
     target = path ? { kind: 'path', path } : null
   }
   return target !== null && grants.some((grant) => grantCovers(grant, target))
+}
+
+/**
+ * The public Report/Wiki pages of `{host, project}` when they cover this
+ * request, else null. An unreadable registry admits nothing.
+ */
+async function publicGrantsAdmitting(
+  runtime: Runtime,
+  req: NextRequest,
+  project: string,
+  requestHost: string | null,
+): Promise<ShareDocumentGrant[] | null> {
+  if (!runtime.configPath) return null
+  const host = runtime.config.central ? requestHost : null
+  if (runtime.config.central && host === null) return null
+  const records = await shareRegistryFor(runtime.configPath)
+    .read()
+    .catch(() => null)
+  if (!records) return null
+  const grants: ShareDocumentGrant[] = publicDocuments(records, host, project).map((scope) => ({
+    ...(host === null ? {} : { host }),
+    project,
+    ...scope,
+  }))
+  if (!grants.length) return null
+  return (await documentGrantAdmits(runtime, req, project, host, grants)) ? grants : null
+}
+
+/** Redeem `?share=<token>` on a page URL: cookie + redirect, or the invalid-link page. */
+async function redeemPageShare(
+  req: NextRequest,
+  runtime: Runtime,
+  ip: string,
+  token: string,
+): Promise<NextResponse> {
+  if (!SHARE_TOKEN_PATTERN.test(token) || !runtime.configPath) return invalidShareLinkResponse()
+  const secret = runtime.auth.sessionSecret
+  if (!secret) return new NextResponse('Server not initialised', { status: 503 })
+  const record = await shareRegistryFor(runtime.configPath)
+    .find(token)
+    .catch(() => null)
+  const prefix = record ? projectRoutePrefix(record.host, record.project) : null
+  const { pathname } = req.nextUrl
+  if (!record || !prefix || (pathname !== prefix && !pathname.startsWith(`${prefix}/`)))
+    return invalidShareLinkResponse()
+  refund(ip)
+  const location = new URL(`${pathname}${req.nextUrl.search}`, publicOrigin(req))
+  location.searchParams.delete('share')
+  return shareLandingResponse({
+    record,
+    existingCookie: req.cookies.get(SHARES_COOKIE_NAME)?.value ?? null,
+    secret,
+    location: location.toString(),
+    secure: isHttps(req),
+  })
 }
 
 function hostFromRequest(pathname: string, search: URLSearchParams): string | null {

@@ -78,14 +78,28 @@ describe('/api/shares', () => {
       path: '/h/host-a/p/project-x/wiki/W0004',
       label: 'Alice',
     })
-    expect(share.share_url).toBe(`https://memon.example.test/s/${share.token}`)
+    expect(share.share_url).toBe(
+      `https://memon.example.test/h/host-a/p/project-x/wiki/W0004?share=${share.token}`,
+    )
+
+    const published = await create({
+      host: 'host-a',
+      project: 'project-x',
+      scope: { kind: 'wiki', id: 'W0004' },
+      public: true,
+    })
+    expect(published.status).toBe(201)
+    expect((await published.json()).share).toMatchObject({
+      public: true,
+      share_url: 'https://memon.example.test/h/host-a/p/project-x/wiki/W0004',
+    })
 
     const listed = await GET(
       new NextRequest('http://central.internal/api/shares?host=host-a&project=project-x', {
         headers: OWNER,
       }),
     )
-    expect((await listed.json()).shares.map((row: { id: string }) => row.id)).toEqual([share.id])
+    expect((await listed.json()).shares).toHaveLength(2)
 
     const revoked = await DELETE(
       new NextRequest(`http://central.internal/api/shares/${share.id}`, {
@@ -98,7 +112,7 @@ describe('/api/shares', () => {
     const again = await GET(
       new NextRequest('http://central.internal/api/shares', { headers: OWNER }),
     )
-    expect((await again.json()).shares).toEqual([])
+    expect((await again.json()).shares).toHaveLength(1)
   })
 
   it('rejects unknown Projects, wrong Hosts, unpublished documents and non-owners', async () => {

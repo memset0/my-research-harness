@@ -2,7 +2,9 @@
 //
 // GET  [?host=NAME&project=NAME]  every issued link (optionally one Project),
 //                                 with token, scope, landing path and share_url.
-// POST { host?, project, scope, label?, expires?, currentPath? }
+// POST { host?, project, scope, label?, expires?, currentPath?, public? }
+//      public: true makes a Report/Wiki page public (idempotent) instead of
+//      issuing a token link.
 //      scope: { kind: 'project' } | { kind: 'experiment'|'wiki'|'report', id }
 //      Document scope must name a published document; the landing path is
 //      derived on the server (see share-registry.ts). 201 { share }.
@@ -99,6 +101,7 @@ async function scopedPOST(req: NextRequest): Promise<Response> {
       ...(typeof body.label === 'string' ? { label: body.label } : {}),
       ...(typeof body.expires === 'string' ? { expires: body.expires } : {}),
       currentPath: typeof body.currentPath === 'string' ? body.currentPath : null,
+      ...(body.public === true ? { public: true } : {}),
     })
     return NextResponse.json(
       { share: shareRow(req, record) } satisfies ScopedShareCreatedResponse,

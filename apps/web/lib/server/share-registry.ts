@@ -52,6 +52,8 @@ const ShareRegistryRecordSchema = z
     path: z.string().regex(/^\/(?![/\\])/),
     created_at: z.string(),
     expires_at: z.string().nullable(),
+    /** A public Report/Wiki page: readable by anyone, its token grants nothing. */
+    public: z.literal(true).optional(),
   })
   .strict()
 export type ShareRegistryRecord = z.infer<typeof ShareRegistryRecordSchema>
@@ -142,9 +144,28 @@ export function matchShare(
 ): ShareScope | null {
   let match: ShareRegistryRecord | null = null
   for (const record of records) {
-    if (tokenMatches(record.token, token) && !isExpired(record, nowMs)) match = record
+    if (tokenMatches(record.token, token) && !isExpired(record, nowMs) && !record.public)
+      match = record
   }
   return match && match.host === host && match.project === project ? match.scope : null
+}
+
+/** The Report and Wiki pages of `{host, project}` that are public. */
+export function publicDocuments(
+  records: readonly ShareRegistryRecord[],
+  host: string | null,
+  project: string,
+  nowMs = Date.now(),
+): ShareDocumentScope[] {
+  return records.flatMap((record) =>
+    record.public &&
+    record.host === host &&
+    record.project === project &&
+    isDocumentScope(record.scope) &&
+    !isExpired(record, nowMs)
+      ? [record.scope]
+      : [],
+  )
 }
 
 const queues = new Map<string, Promise<unknown>>()
@@ -156,6 +177,8 @@ export interface CreateShareInput {
   label?: string
   expires?: string
   currentPath?: string | null
+  /** Make a Report or Wiki page public instead of issuing a token link. */
+  public?: boolean
 }
 
 export class ShareRegistry {
@@ -187,6 +210,18 @@ export class ShareRegistry {
       throw new ShareRegistryInputError('label must be at most 64 characters')
     const scope = ShareScopeSchema.safeParse(input.scope)
     if (!scope.success) throw new ShareRegistryInputError('invalid share scope')
+    if (input.public) {
+      if (scope.data.kind !== 'report' && scope.data.kind !== 'wiki')
+        throw new ShareRegistryInputError('only Report and Wiki pages can be public')
+      const existing = (await this.read()).find(
+        (record) =>
+          record.public &&
+          record.host === input.host &&
+          record.project === input.project &&
+          JSON.stringify(record.scope) === JSON.stringify(scope.data),
+      )
+      if (existing) return existing
+    }
     let durationMs: number | null
     try {
       durationMs = parseDuration(input.expires).ms
@@ -203,6 +238,7 @@ export class ShareRegistry {
       path: shareLandingPath(input.host, input.project, scope.data, input.currentPath),
       created_at: formatIsoLocal(now),
       expires_at: durationMs === null ? null : formatIsoLocal(new Date(now.getTime() + durationMs)),
+      ...(input.public ? { public: true as const } : {}),
     }
     await this.update((records) => [...records, record])
     return record
@@ -225,7 +261,8 @@ export class ShareRegistry {
   async find(token: string, nowMs = Date.now()): Promise<ShareRegistryRecord | null> {
     let found: ShareRegistryRecord | null = null
     for (const record of await this.read()) {
-      if (tokenMatches(record.token, token) && !isExpired(record, nowMs)) found = record
+      if (tokenMatches(record.token, token) && !isExpired(record, nowMs) && !record.public)
+        found = record
     }
     return found
   }

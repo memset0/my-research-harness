@@ -23,8 +23,13 @@ const row = (id: string, scope: unknown) => ({
 })
 
 let posted: unknown[]
+let listed: unknown[]
 beforeEach(() => {
   posted = []
+  listed = [
+    row('shr_project1', { kind: 'project' }),
+    row('shr_wikipage', { kind: 'wiki', id: 'W0004' }),
+  ]
   Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } })
   vi.stubGlobal(
     'fetch',
@@ -32,14 +37,14 @@ beforeEach(() => {
       if (init?.method === 'POST') {
         const body = JSON.parse(String(init.body))
         posted.push(body)
-        return Response.json({ share: row('shr_newshare', body.scope) }, { status: 201 })
+        return Response.json(
+          {
+            share: { ...row('shr_newshare', body.scope), ...(body.public ? { public: true } : {}) },
+          },
+          { status: 201 },
+        )
       }
-      return Response.json({
-        shares: [
-          row('shr_project1', { kind: 'project' }),
-          row('shr_wikipage', { kind: 'wiki', id: 'W0004' }),
-        ],
-      })
+      return Response.json({ shares: listed })
     }),
   )
 })
@@ -93,5 +98,35 @@ describe('page helpers', () => {
     expect(pageDocument('/p/project-x/reports/R0005')).toEqual({ kind: 'report', id: 'R0005' })
     expect(pageDocument('/h/host-a/p/project-x/wiki')).toBeNull()
     expect(scopeLabel({ kind: 'report', id: 'R0005' })).toBe('Report R0005')
+  })
+})
+
+describe('ManageSharesDialog public pages', () => {
+  it('makes the current Wiki page public and shows when it already is', async () => {
+    pathname.mockReturnValue('/h/host-a/p/project-x/wiki/W0004')
+    const view = renderWithQuery(<ManageSharesDialog project={PROJECT} />)
+    await userEvent.click(screen.getByRole('button', { name: /Share/ }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Make public' }))
+    await waitFor(() => expect(posted).toHaveLength(1))
+    expect(posted[0]).toMatchObject({ scope: { kind: 'wiki', id: 'W0004' }, public: true })
+    view.unmount()
+
+    listed = [{ ...row('shr_public01', { kind: 'wiki', id: 'W0004' }), public: true }]
+    renderWithQuery(<ManageSharesDialog project={PROJECT} />)
+    await userEvent.click(screen.getByRole('button', { name: /Share/ }))
+    expect(
+      await screen.findByText('Public · Wiki W0004', { selector: '[data-share-scope]' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Make private' })).toBeInTheDocument()
+  })
+
+  it('does not offer public Experiment pages', async () => {
+    pathname.mockReturnValue('/h/host-a/p/project-x/e/E0001-pipeline')
+    renderWithQuery(<ManageSharesDialog project={PROJECT} />)
+    await userEvent.click(screen.getByRole('button', { name: /Share/ }))
+    expect(
+      await screen.findByRole('button', { name: 'Create link for Experiment E0001-pipeline' }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Make public' })).not.toBeInTheDocument()
   })
 })
