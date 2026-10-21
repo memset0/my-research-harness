@@ -21,9 +21,9 @@ const IndexVersionSchema = z.number().int().positive()
 
 const ISO8601_OFFSET = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/
 
-const IsoTimestampSchema = z.string().regex(ISO8601_OFFSET, 'must be ISO8601 with an offset')
+export const IsoTimestampSchema = z.string().regex(ISO8601_OFFSET, 'must be ISO8601 with an offset')
 
-const RelativePathSchema = z
+export const RelativePathSchema = z
   .string()
   .refine(isProjectRelativePath, 'must be a project-relative POSIX path')
 

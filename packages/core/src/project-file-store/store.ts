@@ -3,8 +3,7 @@ import { AgentReadHandle } from './agent-handle.js'
 // process's project file observations: entries and their freshness, attention
 // leases, the completed-value LRU, invalidation and write adoption, freshness
 // status and metrics snapshots, and the primitive operations the facade calls.
-// Queueing lives in `scheduler.ts`, the persistent-cache bridge in
-// `persistence.ts`, the root/mount availability guard in `mount-guard.ts`.
+// Queueing lives in `scheduler.ts`; source availability lives in `mount-guard.ts`.
 
 import { createHash, randomBytes } from 'node:crypto'
 import type { Stats } from 'node:fs'
@@ -12,7 +11,6 @@ import { contentVersion, directoryVersion, FileAccessError } from '@memon/file-p
 import { dirname, join, resolve } from '@memon/file-protocol/paths'
 import { LRUCache } from 'lru-cache'
 import { isWithinPath } from '../mount-table.js'
-import { isPersistedOperation, projectFileTtlMs } from '../project-file-cache.js'
 import {
   notifyProjectFilesChanged,
   type ProjectFileContext,
@@ -48,7 +46,6 @@ import {
   statObservation,
   toNegativeOrThrow,
 } from './observation.js'
-import { ObservationPersistence } from './persistence.js'
 import { freshnessStatus, metricsSnapshot } from './reporting.js'
 import { FileOperationScheduler, failureBackoffMs, successIntervalMs } from './scheduler.js'
 import { budgetedSourceOperation } from './source-budget-runtime.js'
@@ -76,12 +73,8 @@ export class ProjectFileStore {
     max: MAX_CACHE_ENTRIES,
     maxSize: MAX_CACHED_CONTENT_BYTES,
     sizeCalculation: (observation) => Math.max(1, observation.bytes),
-    dispose: (observation, key, reason) => {
+    dispose: (observation) => {
       this.cachedContentBytes -= observation.bytes
-      if (reason === 'evict') {
-        const entry = this.entries.get(key)
-        if (entry !== undefined) entry.persistLoaded = false
-      }
     },
   })
   private readonly entries = new Map<string, StoreEntry>()
@@ -99,11 +92,6 @@ export class ProjectFileStore {
   })
   private cachedContentBytes = 0
   private readonly mounts = new MountGuard()
-  private readonly persistence = new ObservationPersistence({
-    mountTable: () => this.mounts.mountTable(),
-    has: (key) => this.observations.has(key),
-    adopt: (entry, observation) => this.cacheObservation(entry, observation),
-  })
   private lastAttentionSweepWall = 0
   /**
    * Roots whose most recent context declared `storage: 'local'`. Direct
@@ -214,9 +202,6 @@ export class ProjectFileStore {
         mutationGeneration: 0,
         lastAttentionAtWall: 0,
         refreshRequested: false,
-        persist: null,
-        persistLoaded: false,
-        persistLoad: null,
       }
     } else {
       // Keep metadata in demand order without putting queued work in an LRU.
@@ -226,29 +211,9 @@ export class ProjectFileStore {
     return entry
   }
 
-  /**
-   * Freshness lifetime for one operation.
-   *
-   * Content, listing and metadata observations of a path share one explicit
-   * TTL class: 30s under `docs/wiki`, 30 minutes for every other cached
-   * document or listing path by default. Opening or focusing a page inside
-   * that window therefore costs no physical I/O at all, and a restored
-   * persistent row follows the same rule. Only `realpath` keeps the adaptive
-   * interval, which backs off while nothing changes and drops to its floor
-   * while a person is on the page.
-   */
-  private intervalRange(entry: StoreEntry): [number, number] {
-    if (entry.persist !== null && isPersistedOperation(entry.operation)) {
-      const ttl = projectFileTtlMs(entry.root, entry.path)
-      return [ttl, ttl]
-    }
-    if (this.logicalInterests.has(entry.key)) return [1000, 300_000]
-    const active = Date.now() - entry.lastAttentionAtWall <= this.options.leaseMs
-    if (!active) return [this.options.maintenanceMinMs, this.options.maintenanceMaxMs]
-    if (entry.operation === 'readdir') {
-      return [this.options.directoryMinMs, this.options.directoryMaxMs]
-    }
-    return [this.options.fileMinMs, this.options.fileMaxMs]
+  /** Demand reads share one short freshness budget; no dump or second TTL class. */
+  private intervalRange(_entry: StoreEntry): [number, number] {
+    return [30_000, 30_000]
   }
 
   private touchAttention(context: ProjectFileContext, entry: StoreEntry): void {
@@ -327,14 +292,6 @@ export class ProjectFileStore {
     const human = isHumanFileOperationReason(context.reason)
     const origin: FileOperationOrigin = human ? 'human' : 'automatic'
     this.touchAttention(context, entry)
-    // Startup has already loaded completed snapshots into memory. The first
-    // demand adopts only this key, without loading any project files.
-    if (!this.observations.has(entry.key) && !entry.persistLoaded) {
-      await this.persistence.restore(context, entry)
-      if (!entry.persistLoaded) await this.persistence.restore(context, entry)
-    }
-    // Only eligible persisted observations use the SSHFS TTL policy.
-    // Memory-only projects retain their configured attention/backoff behavior.
     if (
       (context.observationPolicy === 'revalidate' || RESET_REASON[context.reason ?? 'automatic']) &&
       this.firstTouchInRequest(context, entry.key)
@@ -346,17 +303,16 @@ export class ProjectFileStore {
     const observation = this.observations.get(entry.key)
     if (observation !== undefined) {
       this.metrics.recordCacheHit(entry.group.name, operation, origin)
-      if (context.observationPolicy === 'cached' || now < entry.dueAtMono) return observation
       if (
-        context.observationPolicy === 'fresh' ||
-        context.observationPolicy === 'revalidate' ||
-        RESET_REASON[context.reason ?? 'automatic']
+        entry.completedAtMono !== null &&
+        now - entry.completedAtMono < 30_000 &&
+        now < entry.dueAtMono &&
+        !entry.refreshRequested
       )
-        return await this.scheduler.schedule(entry, operation, origin, human, runner)
-      // Due but usable: answer from cache immediately and verify in the
-      // background. This is what keeps warm requests off the disk entirely.
-      void this.scheduler.schedule(entry, operation, origin, human, runner).catch(() => undefined)
-      return observation
+        return observation
+      if (entry.cachedError && now < entry.dueAtMono && !entry.refreshRequested)
+        throw entry.cachedError
+      return await this.scheduler.schedule(entry, operation, origin, human, runner)
     }
 
     if (entry.cachedError !== null && now < entry.dueAtMono) {
@@ -405,16 +361,12 @@ export class ProjectFileStore {
       task.attentionGeneration === entry.attentionGeneration,
     )
     entry.dueAtMono = completedMono + entry.intervalMs
-
-    // Only now, with the observation accepted as the current state, does it
-    // reach the persistent cache.
-    this.persistence.persist(entry, observation)
   }
 
   private applyFailure(entry: StoreEntry, error: NodeJS.ErrnoException): void {
     entry.failures += 1
     entry.error = typeof error.code === 'string' && error.code.length > 0 ? error.code : 'EUNKNOWN'
-    if (!this.observations.has(entry.key)) entry.cachedError = error
+    entry.cachedError = error
     const backoff = failureBackoffMs(this.options, entry.failures)
     // Successful observation time is untouched: a failure never advances it.
     entry.dueAtMono = monotonic() + backoff
@@ -458,16 +410,10 @@ export class ProjectFileStore {
    * Drop cached observations.
    *
    * With a `path` the content is known to have changed (a write, a delete, a
-   * rename): the persisted rows for that path and its parent listing are
-   * removed too, whether or not this process happens to hold a memory entry
-   * for them, so no later process can serve the superseded value.
+   * rename), its parent listing is invalidated too.
    *
    * Without a path this is a "something in this project changed" signal. The
-   * memory entries are released and re-verified on demand, while the persisted
-   * rows are kept: each remains the last observation that really succeeded,
-   * with its true timestamp, and re-reading a whole project's worth of files
-   * just to answer a structural signal is exactly the cost this cache exists
-   * to avoid.
+   * memory entries are released and re-verified on demand.
    */
   invalidate(root: string, path?: string): void {
     const normalizedRoot = resolve(root)
@@ -488,7 +434,6 @@ export class ProjectFileStore {
       const parentEntry = this.entries.get(`${normalizedRoot}\u0000readdir\u0000${parent}`)
       if (parentEntry !== undefined) this.invalidateEntry(parentEntry)
     }
-    this.persistence.forgetPath(normalizedRoot, absolutePath)
   }
 
   private invalidateEntry(entry: StoreEntry): void {
@@ -498,9 +443,6 @@ export class ProjectFileStore {
     entry.error = null
     entry.cachedError = null
     entry.failures = 0
-    // The persisted row must not be re-loaded into the state this
-    // invalidation just discarded; the next demand observes the path.
-    entry.persistLoaded = true
   }
 
   /** Adopt a just-written body as the current observation for the path. */
@@ -518,9 +460,6 @@ export class ProjectFileStore {
     entry.dueAtMono = entry.completedAtMono + entry.intervalMs
     // This process wrote the bytes, so nothing is pending verification.
     entry.refreshRequested = false
-    // Write-through: the bytes this process just wrote are the observation,
-    // and they are ordered behind the invalidation the write already issued.
-    this.persistence.persist(entry, observation)
   }
 
   /**
@@ -537,9 +476,6 @@ export class ProjectFileStore {
     this.invalidate(root)
     for (const entry of this.entries.values()) {
       if (entry.root !== root) continue
-      entry.persist = null
-      entry.persistLoaded = false
-      entry.persistLoad = null
       entry.completedAtWall = null
       entry.completedAtMono = null
       entry.fingerprint = null

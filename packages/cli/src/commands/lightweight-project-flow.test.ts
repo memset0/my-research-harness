@@ -60,9 +60,17 @@ it('creates fresh research and publishes prepared parameters and native measurem
   expect((await cli('show', id, '--results')).exitCode).toBe(0)
   expect((await cli('run', 'update', run, '--status', 'QUEUED', '--job-id', '42')).exitCode).toBe(0)
   expect((await cli('run', 'update', run, '--status', 'RUNNING')).exitCode).toBe(0)
+  expect(
+    JSON.parse(await fs.readFile(project.path('.memon/index/experiments.json'), 'utf8')).entries[0]
+      .summary.displayStatus,
+  ).toBe('RUNNING')
   // A native analysis script can write only useful measurements. No result-set or receipt step.
   await fs.writeFile(project.path(run, 'result.csv'), 'path,stat,value\nmetrics.loss,,0.2\n')
   expect((await cli('run', 'update', run, '--status', 'FINISHED')).exitCode).toBe(0)
+  expect(
+    JSON.parse(await fs.readFile(project.path('.memon/index/experiments.json'), 'utf8')).entries[0]
+      .summary.displayStatus,
+  ).toBe('COMPLETED')
   expect(await table()).toContain('V0001,metrics.loss,,0.2')
   const record = (await cli('show', run)).json
   expect(record.metadata).toMatchObject({ status: 'FINISHED', params: { rate: 0.1 } })

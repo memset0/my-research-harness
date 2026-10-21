@@ -82,7 +82,7 @@ import { indexedWikiPages, wikiPageKey } from './indexed-documents.js'
 import { experimentListing, experimentReadmeKey, type ParsedReadme } from './indexed-experiments.js'
 import { indexedRun, type RunSummary, runSummaryKey } from './indexed-runs.js'
 import { devlessFingerprint, type ProjectReadIndex, projectReadIndex } from './read-index.js'
-import { registeredProjectSnapshot } from './registered-index.js'
+import { isRegisteredProject } from './registered-index.js'
 import {
   indexedRunResultFingerprint,
   refreshStoredResultsSummary,
@@ -911,7 +911,7 @@ export function derivedIndexMirror(root: string): ProjectIndexMirror | undefined
  */
 export async function prepareProjectIndex(project: ProjectConfig): Promise<void> {
   const mirror = mirrors.get(resolve(project.root))
-  if (await registeredProjectSnapshot(project)) {
+  if (await isRegisteredProject(project)) {
     mirror?.stop()
     projectReadIndex(project.root).setStaleHandler(null)
     return

@@ -49,7 +49,6 @@ projects:
 #       storage: sshfs   # opt-in: only SSHFS roots use the scheduler/cache; default local = direct reads
 #       storage_group: mount-a # sshfs only: shared I/O budget for one mount
 #       read_only: true        # refuse every write to this Project's data
-#       persistent_cache: true # sshfs only: opt-in dumped LRU for this mount
 #       # Command capabilities (Git and Slurm) require an explicit execution
 #       # context. Absent means "no execution provider": those routes answer
 #       # 501 instead of running against the mounted root.
@@ -74,7 +73,7 @@ projects:
 #   - { name: project-a, host: host-a, root: ./mock/project-a,
 #       access: { kind: filesystem, cache: memory }, storage_group: storage-a }
 #   - { name: project-a, host: host-a, root: ./mock/project-a,
-#       access: { kind: sshfs, cache: memory-disk }, storage_group: storage-a }
+#       access: { kind: sshfs, cache: memory }, storage_group: storage-a }
 #   - name: project-a
 #     host: host-a
 #     access:
@@ -96,26 +95,11 @@ projects:
 #     certificate_file: ./tls/central-client.pem
 #     key_file: ./tls/central-client-key.pem
 #
-# `sshfs` and `agent` default to memory-disk and require a local dump below.
-# Native/NFS memory caching uses `kind: filesystem, cache: memory` and never
-# writes observations to the disk tier. Legacy declarations remain supported.
-
-# Optional local dump for the bounded in-memory observation LRU. Relative paths
-# resolve beside the selected instance config. Keep the dump on LOCAL storage
-# and ignored by Git. SSHFS and agent projects with memory-disk use it;
-# native projects remain direct or use memory only.
-# file_cache:
-#   dump_path: ./.memon-cache/project-file-cache.dump
-#   dump_interval_seconds: 30
-#   wiki_ttl_seconds: 30
-#   default_ttl_seconds: 1800
-# Valid completed observations load at startup with their original observed
-# timestamps. The cache can lag the latest completed observation by one dump
-# interval because dumps are asynchronous, periodic, and atomically renamed.
-# Opening/focusing uses valid cached observations without forcing remote I/O.
-# Manual refresh bypasses the period; successful writes invalidate exact paths.
-# Queues, in-flight work, Promises, waiters, leases, failures/retry scheduling
-# and metrics are NEVER stored in the LRU values or dump.
+# SSHFS and agent access use bounded memory observations, at most 30 seconds old.
+# Native/NFS caching is opt-in with `kind: filesystem, cache: memory`.
+# Manual refresh revalidates. Restart starts empty; there is no disk dump.
+# Legacy `memory-disk`, `persistent_cache` and `file_cache` settings remain
+# readable for upgrades but do not enable persistence. Old dumps are unused.
 
 # Optional media tools run by the dashboard server. `ffmpeg` extracts the
 # first-frame thumbnail of a `figure@1` video that declares no `poster`; a

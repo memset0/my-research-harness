@@ -228,14 +228,20 @@ export const ProjectAccessRawSchema = z.discriminatedUnion('kind', [
     .object({
       kind: z.literal('sshfs'),
       source: FileAuthorityIDSchema.refine((value) => value.length <= 128).optional(),
-      cache: z.enum(['memory', 'memory-disk']).default('memory-disk'),
+      cache: z
+        .enum(['memory', 'memory-disk'])
+        .default('memory')
+        .transform(() => 'memory' as const),
     })
     .strict(),
   z
     .object({
       kind: z.literal('agent'),
       source: FileAuthorityIDSchema.refine((value) => value.length <= 128).optional(),
-      cache: z.literal('memory-disk').default('memory-disk'),
+      cache: z
+        .enum(['memory', 'memory-disk'])
+        .default('memory')
+        .transform(() => 'memory' as const),
       connection: FileAuthorityIDSchema,
       project: FileAuthorityIDSchema,
       source_identity: z.string().min(1).max(256),
@@ -548,7 +554,7 @@ const FileCacheRawSchema = z
       .refine((path) => !path.includes('\0'), 'Invalid dump path'),
     dump_interval_seconds: z.number().finite().positive().max(MAX_NODE_TIMER_SECONDS).default(30),
     wiki_ttl_seconds: z.number().int().positive().max(2_592_000).default(30),
-    default_ttl_seconds: z.number().int().positive().max(2_592_000).default(1800),
+    default_ttl_seconds: z.number().int().positive().max(2_592_000).default(30),
   })
   .strict()
   .refine(

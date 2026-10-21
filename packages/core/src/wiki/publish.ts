@@ -5,6 +5,7 @@ import { deriveWikiEntry } from '../derived-index/entries.js'
 import { rebuildIndex } from '../derived-index/rebuild.js'
 import { readDerivedIndex } from '../derived-index/snapshot.js'
 import { withFileWriterLock } from '../file-writer-lock.js'
+import { publishWikiCatalog } from '../project-catalogs.js'
 import { formatIsoLocal } from '../time.js'
 import { MEMON_RELEASE } from '../version.js'
 import { discoverWikiPages } from './discover.js'
@@ -52,6 +53,7 @@ export async function publishWikiInventory(root: string): Promise<void> {
       read.snapshot.generator = { role: 'cli', release: MEMON_RELEASE }
       if (!(await lease.held())) throw new Error('inventory publication lease expired')
       await writeSnapshot(root, read.snapshot)
+      if (read.snapshot.fs_convention_version >= 11) await publishWikiCatalog(root, read.snapshot)
     } finally {
       await lease.release()
     }

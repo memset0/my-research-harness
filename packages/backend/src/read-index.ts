@@ -33,11 +33,11 @@ export const STRICT_READ_POLICY: ReadPolicy = Object.freeze({
   walkRefreshMs: 0,
 })
 
-/** Central: an external edit reaches every list within five minutes. */
+/** Central: primitive observations own freshness; parsed projections add no window. */
 export const CENTRAL_READ_POLICY: ReadPolicy = Object.freeze({
-  listMaxAgeMs: 60_000,
-  terminalRunMaxAgeMs: 300_000,
-  walkRefreshMs: 60_000,
+  listMaxAgeMs: 0,
+  terminalRunMaxAgeMs: 0,
+  walkRefreshMs: 30_000,
 })
 
 /** A fingerprint plus whatever the fingerprinting step observed. */

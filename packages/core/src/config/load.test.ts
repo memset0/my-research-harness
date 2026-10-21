@@ -141,12 +141,12 @@ describe('project run_dirs', () => {
 })
 
 describe('persistent file cache config', () => {
-  it('requires an explicit instance dump when any project opts in', async () => {
+  it('accepts legacy persistence without requiring a dump', async () => {
     await fs.writeFile(
       join(dir, 'config.yml'),
       'projects: [{ name: alpha, root: ./alpha, storage: sshfs, persistent_cache: true }]\n',
     )
-    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+    expect((await loadConfig({ cwd: dir }))?.projects[0]?.persistentCache).toBe(false)
   })
 
   it('resolves the dump beside the selected config rather than the caller cwd', async () => {
@@ -160,7 +160,7 @@ describe('persistent file cache config', () => {
     expect(config?.fileCache?.dumpIntervalMs).toBe(12_500)
     expect(config?.fileCache?.wikiTtlMs).toBe(45_000)
     expect(config?.fileCache?.defaultTtlMs).toBe(2_400_000)
-    expect(config?.projects[0]?.persistentCache).toBe(true)
+    expect(config?.projects[0]?.persistentCache).toBe(false)
   })
 
   it('resolves a relative ffmpeg path beside the config and keeps a bare command name', async () => {

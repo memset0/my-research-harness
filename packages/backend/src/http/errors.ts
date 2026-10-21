@@ -1,3 +1,4 @@
+import { ProjectCatalogError } from '../project-catalogs.js'
 // The one error → HTTP mapping. Every error class a handler, body reader or
 // the pipeline can throw has exactly one mapper here, so the same domain error
 // answers with the same status and code on every route. Anything unmapped
@@ -167,6 +168,7 @@ const mapper = <E>(type: new (...args: never[]) => E, map: (error: E) => HttpErr
 
 /** Ordered: a subclass precedes its base class. */
 const MAPPERS: readonly Mapper<never>[] = [
+  mapper(ProjectCatalogError, (error) => httpError(503, 'UNAVAILABLE', error.message)),
   mapper(BackendControlBodyError, (error) => httpError(error.status, error.code, error.message)),
   mapper(BackendActorContextError, (error) =>
     httpError(error.status, error.status === 401 ? 'UNAUTHORIZED' : 'BAD_REQUEST', error.message),

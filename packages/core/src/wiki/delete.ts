@@ -6,6 +6,7 @@ import { acquireIndexLease, writeSnapshot } from '../derived-index/compact.js'
 import { resolveIndexPaths } from '../derived-index/paths.js'
 import { parseSnapshot } from '../derived-index/schema.js'
 import { withFileWriterLock } from '../file-writer-lock.js'
+import { publishWikiCatalog } from '../project-catalogs.js'
 import { formatIsoLocal } from '../time.js'
 import { MEMON_RELEASE } from '../version.js'
 import {
@@ -361,8 +362,10 @@ async function deleteLocked(root: string, input: WikiDeleteInput): Promise<WikiD
   const warnings: string[] = []
   let published = false
   let failure: unknown
+  let originalSnapshot = ''
   try {
-    const parsed = parseSnapshot(JSON.parse(await fs.readFile(indexPath, 'utf8')))
+    originalSnapshot = await fs.readFile(indexPath, 'utf8')
+    const parsed = parseSnapshot(JSON.parse(originalSnapshot))
     if (!parsed.ok)
       throw new WikiDeleteError('BAD_STATE', 'invalid inventory; run memon refresh before deletion')
     await recheck(root, owned)
@@ -382,10 +385,19 @@ async function deleteLocked(root: string, input: WikiDeleteInput): Promise<WikiD
     parsed.value.generated_at = formatIsoLocal(new Date())
     parsed.value.generator = { role: 'cli', release: MEMON_RELEASE }
     await writeSnapshot(root, parsed.value)
+    if (parsed.value.fs_convention_version >= 11) await publishWikiCatalog(root, parsed.value)
     published = true
   } catch (error) {
     failure = error
     for (const move of moved.reverse()) await fs.rename(move.to, move.from)
+    if (moved.length) {
+      const original = parseSnapshot(JSON.parse(originalSnapshot))
+      if (original.ok) {
+        await writeSnapshot(root, original.value)
+        if (original.value.fs_convention_version >= 11)
+          await publishWikiCatalog(root, original.value)
+      }
+    }
     throw error
   } finally {
     try {

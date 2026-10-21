@@ -7,22 +7,7 @@ import { projectReadIndex } from './read-index.js'
 export async function registeredProjectSnapshot(
   project: ProjectConfig,
 ): Promise<IndexSnapshot | null> {
-  const markerPath = await resolveContained(
-    project.root,
-    join(project.root, '.memon/version.json'),
-    { allowMissing: true },
-  )
-  if (!markerPath) return null
-  const version = await projectReadIndex(project.root).file(
-    markerPath,
-    'registered-project-version',
-    1000,
-    (content) => {
-      const value = JSON.parse(content) as { fs_convention_version?: number }
-      return value.fs_convention_version ?? 0
-    },
-  )
-  if (version === null || version < 11) return null
+  if (!(await isRegisteredProject(project))) return null
   const path = await resolveContained(
     project.root,
     join(project.root, '.memon/index/snapshot.json'),
@@ -32,17 +17,17 @@ export async function registeredProjectSnapshot(
     ? await projectReadIndex(project.root).file(
         path,
         'registered-project-snapshot',
-        1000,
+        0,
         (content) => {
           const parsed = parseSnapshot(JSON.parse(content))
           if (!parsed.ok)
-            throw new Error(`REGISTERED_INDEX_INVALID: ${parsed.reason}; run memon index rebuild`)
+            throw new Error(`REGISTERED_INDEX_INVALID: ${parsed.reason}; run memon refresh`)
           return parsed.value
         },
       )
     : null
   if (!snapshot)
-    throw new Error('REGISTERED_INDEX_MISSING: run memon index rebuild to register project files')
+    throw new Error('REGISTERED_INDEX_MISSING: run memon refresh to register project files')
   return snapshot
 }
 
@@ -51,4 +36,23 @@ export function experimentRunPaths(snapshot: IndexSnapshot, experimentId: string
   return Object.keys(snapshot.runs)
     .filter((path) => path.startsWith(prefix))
     .sort()
+}
+
+export async function isRegisteredProject(project: ProjectConfig): Promise<boolean> {
+  const markerPath = await resolveContained(
+    project.root,
+    join(project.root, '.memon/version.json'),
+    { allowMissing: true },
+  )
+  if (!markerPath) return false
+  const version = await projectReadIndex(project.root).file(
+    markerPath,
+    'registered-project-version',
+    0,
+    (content) => {
+      const value = JSON.parse(content) as { fs_convention_version?: number }
+      return value.fs_convention_version ?? 0
+    },
+  )
+  return version !== null && version >= 11
 }

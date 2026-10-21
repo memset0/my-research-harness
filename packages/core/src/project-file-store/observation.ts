@@ -1,9 +1,8 @@
-// project-file-store/observation — observed values, their fingerprints, the persisted form,
+// project-file-store/observation — observed values, their fingerprints,
 // and the replayable negative (missing) answers.
 
 import { createHash } from 'node:crypto'
 import type { Stats } from 'node:fs'
-import type { PersistedPayload } from '../project-file-cache.js'
 import {
   type DirEntryData,
   type DirEntryKind,
@@ -142,49 +141,6 @@ export function missingObservation(error: NodeJS.ErrnoException): Observation {
     missingError: error,
     fingerprint: `missing:${error.code ?? 'ENOENT'}`,
     bytes: 0,
-  }
-}
-
-/** The persistable form of a successful observation, or null when it is not persistable. */
-export function persistedPayloadOf(observation: Observation): PersistedPayload | null {
-  if (!observation.present) {
-    return { kind: 'missing', code: observation.missingError?.code ?? 'ENOENT' }
-  }
-  const value = observation.value
-  if (value === null) return null
-  switch (value.kind) {
-    case 'file':
-      return { kind: 'file', bytes: value.bytes }
-    case 'dir':
-      return { kind: 'dir', entries: value.entries }
-    case 'stat':
-      return { kind: 'stat', stats: { ...(value.stats as unknown as StatsFields) } }
-    case 'path':
-      // Symlink resolutions are re-observed after a restart: nothing is
-      // persisted that would let a moved link answer from a stale target.
-      return null
-  }
-}
-
-/** Rebuild the in-memory observation a persisted row describes. */
-export function observationFromPersisted(payload: PersistedPayload, path: string): Observation {
-  switch (payload.kind) {
-    case 'file':
-      return fileObservation(payload.bytes)
-    case 'dir':
-      return dirObservation(payload.entries)
-    case 'stat':
-      return statObservation(payload.stats)
-    case 'missing': {
-      const error = new Error(
-        `${payload.code}: no such file or directory, access '${path}'`,
-      ) as NodeJS.ErrnoException
-      error.code = payload.code
-      error.errno = payload.code === 'ENOTDIR' ? -20 : -2
-      error.syscall = 'access'
-      error.path = path
-      return missingObservation(error)
-    }
   }
 }
 

@@ -8,6 +8,7 @@ import { getProjectFileContext, withProjectFileContext } from '@memon/core'
  */
 export function withAutomaticProjectFileContext<T>(callback: () => Promise<T>): Promise<T> {
   const context = getProjectFileContext()
-  if (context === undefined || context.reason === 'write') return callback()
+  if (context === undefined || context.reason === 'write' || context.reason === 'manual')
+    return callback()
   return withProjectFileContext({ ...context, reason: 'automatic' }, callback)
 }

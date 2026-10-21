@@ -166,12 +166,6 @@ const FIELD_GROUPS: ReadonlyArray<{ title: string; keys: readonly OptionKey[] }>
     ],
   },
   { title: 'Foreground attention', keys: ['heartbeatMs', 'leaseMs'] },
-  { title: 'Persistent remote cache', keys: ['wikiTtlMs', 'defaultTtlMs'] },
-  {
-    title: 'Memory-only watched paths',
-    keys: ['fileMinMs', 'fileMaxMs', 'directoryMinMs', 'directoryMaxMs'],
-  },
-  { title: 'Memory-only unwatched paths', keys: ['maintenanceMinMs', 'maintenanceMaxMs'] },
   { title: 'Errors', keys: ['failureMinMs', 'failureMaxMs', 'backoffFactor'] },
 ]
 
@@ -222,7 +216,7 @@ export function FileAccessSettingsPanel() {
     enabled: isOwner,
   })
   const result = query.data
-  const settings: FileAccessSettings | null = result && result.ok ? result.data : null
+  const settings: FileAccessSettings | null = result?.ok ? result.data : null
 
   const dirty = useMemo(() => {
     if (!settings || !draft) return false
@@ -423,8 +417,8 @@ export function FileAccessSettingsPanel() {
         </CardHeader>
         <CardContent className="flex flex-col gap-5">
           <p className="text-[11px] text-muted-foreground">
-            These settings cover native/NFS memory caching, SSHFS and file-agent access. Direct
-            native reads with caching disabled remain outside the scheduled file store.
+            Project reads use memory only, for at most 30 seconds. Restart starts with an empty
+            cache. Lists use source-published catalogs; direct native reads bypass this cache.
           </p>
           {issues.length > 0 && (
             <ul

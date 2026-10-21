@@ -272,10 +272,10 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
       ...(storageGroup === undefined ? {} : { storageGroup }),
       ...(readOnly === undefined ? {} : { readOnly }),
       ...(p.access
-        ? { persistentCache: p.access.cache === 'memory-disk' }
+        ? { persistentCache: false }
         : p.persistent_cache === undefined
           ? {}
-          : { persistentCache: p.persistent_cache }),
+          : { persistentCache: false }),
       ...(p.execution
         ? {
             execution:
@@ -676,12 +676,6 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
           : cfg.media.ffmpeg,
       }
     : undefined
-  if (!fileCache && resolvedProjects.some((project) => project.persistentCache)) {
-    throw new ConfigError(
-      'persistent_cache requires file_cache.dump_path in the instance config',
-      candidate,
-    )
-  }
 
   const fileAgents = cfg.file_agents
     ? Object.fromEntries(

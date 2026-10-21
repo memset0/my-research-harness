@@ -20,6 +20,7 @@ import {
   type BackendWikiWriteResponse,
   BackendWikiWriteResponseSchema,
   buildWikiProject,
+  buildWikiSummary,
   type CodeReviewCompletion,
   type CodeReviewFrontMatter,
   type ContentFields,
@@ -43,6 +44,7 @@ import {
   parseExperimentReadme,
   parseWikiFrontmatter,
   publishMutationEvent,
+  publishReportCatalog,
   ResourceIdSchema,
   type Run,
   researchDescriptionProblem,
@@ -59,6 +61,7 @@ import {
   withFileWriterLock,
   withJournalInvocation,
   writeFileAtomic,
+  writeProjectCatalog,
 } from '@memon/core'
 import { dirname, join, relative, resolve, sep } from '@memon/file-protocol/paths'
 import { PathContainmentError, resolveContained } from './containment.js'
@@ -69,6 +72,7 @@ import {
   indexedWikiPages,
 } from './indexed-documents.js'
 import { missingOrThrow } from './missing-path.js'
+import { registeredCatalog } from './project-catalogs.js'
 import { withAutomaticProjectFileContext } from './project-file-context.js'
 import { FilesystemProjectService, type InventoryListOptions } from './project-service.js'
 import {
@@ -289,8 +293,10 @@ export class FilesystemDocumentService implements BackendDocumentService {
     const project = this.requireProject(projectName)
     if (!(kind === 'wiki' ? /^W\d{4}$/ : /^R\d{4}$/).test(id))
       throw new BackendDocumentServiceError('INVALID_RESOURCE', 'Invalid content identity')
-    const inventory =
-      kind === 'wiki'
+    const catalog = await registeredCatalog(project, kind === 'wiki' ? 'wiki' : 'reports')
+    const inventory = catalog
+      ? catalog.entries
+      : kind === 'wiki'
         ? (await indexedWikiPages(project, this.policy, { assets: false, id })).map((page) => ({
             id: page.id,
             resource: page.path,
@@ -321,7 +327,7 @@ export class FilesystemDocumentService implements BackendDocumentService {
 
   async getReport(projectName: string, id: string) {
     const project = this.requireProject(projectName)
-    const reports = await withAutomaticProjectFileContext(() => this.discoverReports(project))
+    const reports = await withAutomaticProjectFileContext(() => this.discoverReports(project, id))
     const entry = exactEntry(reports, id)
     return BackendReportResponseSchema.parse({
       ...reportSummary(project, entry),
@@ -331,11 +337,13 @@ export class FilesystemDocumentService implements BackendDocumentService {
 
   async putReport(projectName: string, id: string, input: DocumentWriteInput) {
     const project = this.requireProject(projectName)
-    return this.record(project, 'report write', { report: id }, async () => {
-      const entry = exactEntry(await this.discoverReports(project), id)
-      addJournalInvocationDetail({ kind: 'target', type: 'project', id: project.name })
-      return this.write(project, entry, input)
-    })
+    return this.record(project, 'report write', { report: id }, () =>
+      withFileWriterLock(project.root, async () => {
+        const entry = exactEntry(await this.discoverReports(project, id), id)
+        addJournalInvocationDetail({ kind: 'target', type: 'project', id: project.name })
+        return this.write(project, entry, input)
+      }),
+    )
   }
 
   async listCodeReviews(projectName: string, options: InventoryListOptions = {}) {
@@ -439,6 +447,21 @@ export class FilesystemDocumentService implements BackendDocumentService {
 
   async listWiki(projectName: string, options: { inventoryOnly?: boolean } = {}) {
     const project = this.requireProject(projectName)
+    const catalog = await registeredCatalog(project, 'wiki')
+    if (catalog)
+      return options.inventoryOnly
+        ? BackendWikiInventoryResponseSchema.parse({
+            pages: catalog.entries.map((item) => ({
+              id: item.id,
+              resource: item.resource,
+              legacyId: item.summary.legacyId ?? null,
+            })),
+          })
+        : BackendWikiPagesResponseSchema.parse({
+            pages: catalog.entries.map((item) =>
+              wikiSummary(project, item.summary as unknown as WikiSummary),
+            ),
+          })
     if (options.inventoryOnly) {
       const pages = await withAutomaticProjectFileContext(() =>
         indexedWikiPages(project, this.policy, { assets: false }),
@@ -502,6 +525,25 @@ export class FilesystemDocumentService implements BackendDocumentService {
           before: currentHash,
           after: sha1(content),
         })
+        const catalog = await registeredCatalog(project, 'wiki')
+        if (catalog) {
+          const parsed = parseWikiFrontmatter(content, summary.path)
+          const next = {
+            ...buildWikiSummary({
+              location: { ...summary, mtime: (await fs.stat(absolutePath)).mtimeMs },
+              frontmatter: parsed.frontmatter,
+              body: parsed.body,
+            }),
+            ...parseContent(content, summary.path, summary.kind).fields,
+          }
+          await writeProjectCatalog(
+            project.root,
+            'wiki',
+            catalog.entries.map((item) =>
+              item.id === id ? { ...item, summary: { ...next } } : item,
+            ),
+          )
+        }
         // Re-project so the response carries the updated staleness and diagnostics.
         const next = await this.wikiPageSummary(project, id)
         const page = BackendWikiDocumentSchema.parse(await this.readWikiPage(project, next))
@@ -543,6 +585,12 @@ export class FilesystemDocumentService implements BackendDocumentService {
   private async wikiPageSummary(project: ProjectConfig, id: string): Promise<WikiSummary> {
     if (!WIKI_ID_REGEX.test(id)) {
       throw new BackendDocumentServiceError('INVALID_RESOURCE', 'Wiki id must match W<NNNN>')
+    }
+    const catalog = await registeredCatalog(project, 'wiki')
+    if (catalog) {
+      const item = catalog.entries.find((item) => item.id === id)
+      if (!item) throw new BackendDocumentServiceError('RESOURCE_NOT_FOUND', 'Wiki page not found')
+      return item.summary as unknown as WikiSummary
     }
     const pages = await indexedWikiPages(project, this.policy, { assets: true })
     const cited = pages.filter(
@@ -606,8 +654,16 @@ export class FilesystemDocumentService implements BackendDocumentService {
       fs.readFile(absolutePath, 'utf8'),
       fs.stat(absolutePath),
     ])
+    const { frontmatter, body } = parseWikiFrontmatter(content, summary.path)
+    const current = {
+      ...buildWikiSummary({ location: { ...summary, mtime: stat.mtimeMs }, frontmatter, body }),
+      ...parseContent(content, summary.path, summary.kind).fields,
+      stale: summary.stale,
+      staleSources: summary.staleSources,
+      diagnostics: summary.diagnostics,
+    }
     return {
-      ...wikiSummary(project, summary),
+      ...wikiSummary(project, current),
       mtime: stat.mtimeMs,
       hash: sha1(content),
       content,
@@ -730,10 +786,11 @@ export class FilesystemDocumentService implements BackendDocumentService {
     // published to the derived index (Reports and code reviews are not
     // indexed and publish nothing). A publishing failure never fails the write.
     await publishMutationEvent(
-      { projectRoot: project.root, role: this.indexRole },
+      { projectRoot: project.root, role: this.indexRole, publishSnapshot: true },
       'readme.write',
       [{ path: entry.absolutePath, after: input.content }],
     )
+    if (entry.kind === 'report') await publishReportCatalog(project.root)
     addJournalInvocationDetail({
       kind: 'file-change',
       path: entry.resource,
@@ -777,9 +834,24 @@ export class FilesystemDocumentService implements BackendDocumentService {
    * Reports from the indexed inventory: each document's title is parsed once
    * per fingerprint and its path must stay inside the Project.
    */
-  private async discoverReports(project: ProjectConfig): Promise<DocumentEntry[]> {
+  private async discoverReports(project: ProjectConfig, id?: string): Promise<DocumentEntry[]> {
+    const catalog = await registeredCatalog(project, 'reports')
+    if (catalog)
+      return catalog.entries
+        .filter((item) => !id || item.id === id)
+        .map((item) => ({
+          id: item.id,
+          slug: item.slug,
+          resource: item.resource,
+          absolutePath: join(project.root, item.resource),
+          title: String(item.summary.title ?? item.slug),
+          mtime: Number(item.summary.mtime),
+          kind: 'report' as const,
+          format: item.summary.format as 'bundle' | 'markdown',
+          contentFields: item.summary,
+        }))
     const age = this.policy.listMaxAgeMs
-    const items = await indexedReportInventory(project, this.policy)
+    const items = await indexedReportInventory(project, this.policy, id)
     const entries = await Promise.all(
       items.map(async (item): Promise<DocumentEntry | null> => {
         const absolutePath = join(project.root, ...item.resource.split('/'))

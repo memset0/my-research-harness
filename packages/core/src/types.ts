@@ -765,7 +765,7 @@ export type ProjectFileAccess =
   | { kind: 'filesystem' | 'sshfs'; cache: FileCachePolicy; source?: string }
   | {
       kind: 'agent'
-      cache: 'memory-disk'
+      cache: 'memory' | 'memory-disk'
       connection: string
       project: string
       sourceIdentity: string

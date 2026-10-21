@@ -28,3 +28,5 @@ Do not silently replace a historical Report's data with a live "latest" query.
 Use native evidence, extract only useful fields, verify claims and inspect the
 rendered result and important interactions. Agents own regeneration and service
 startup; memon supplies access. Return the link, evidence horizon and useful limits.
+
+After writing or updating a Report, run `memon refresh` to publish its catalog entry.

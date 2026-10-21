@@ -20,7 +20,6 @@ import {
   type CodeReviewSummary,
   type Config,
   configureFileAgentAdapters,
-  configureProjectFileCache,
   configureProjectFileStore,
   EXPERIMENT_DESCRIPTION_FILE,
   EXPERIMENT_DIR_REGEX,
@@ -271,7 +270,6 @@ async function init(): Promise<Runtime> {
   // Startup-only scheduler configuration for the project file store. Saved
   // settings apply at boot; nothing hot-applies mid-process.
   configureProjectFileStore(config.fileAccess ?? {})
-  await configureProjectFileCache(config.fileCache)
 
   configureFileAgentAdapters(config.fileAgents ?? {}, config.projects)
   // Compatibility containers are empty: startup never scans project storage.

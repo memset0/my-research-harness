@@ -20,7 +20,6 @@ import {
   buildExperimentDocumentView,
   buildExperimentRecord,
   computeMembership,
-  deriveVariantStatus,
   discoverRuns,
   EXPERIMENT_DESCRIPTION_FILE,
   type Experiment,
@@ -38,6 +37,7 @@ import {
   type MembershipResult,
   matchesRunDeprecationFilter,
   type ProjectConfig,
+  parseExperimentReadme,
   parseJournal,
   parseResultFile,
   projectRunPath,
@@ -46,6 +46,7 @@ import {
   RUN_TIMESTAMP_TAIL_REGEX,
   type Run,
   readExperimentDoc,
+  readExperimentManagedDocuments,
   readJournalActivity,
   readProjectJournal,
   readRunDir,
@@ -82,6 +83,7 @@ import {
   runListWindow,
 } from './indexed-runs.js'
 import { missingOrThrow } from './missing-path.js'
+import { registeredCatalog } from './project-catalogs.js'
 import { withAutomaticProjectFileContext } from './project-file-context.js'
 import {
   projectReadIndex,
@@ -479,17 +481,20 @@ export class FilesystemProjectService implements BackendProjectReadService {
   /** Lists legacy documents alone; FS10 adds cached current-generation member facts, never CSV. */
   async listExperiments(projectName: string, options: InventoryListOptions = {}) {
     const project = await this.preparedProject(projectName)
+    const catalog = await registeredCatalog(project, 'experiments')
+    if (catalog)
+      return options.inventoryOnly
+        ? BackendResourceInventoryResponseSchema.parse({
+            items: catalog.entries.map(({ id, slug, resource }) => ({ id, slug, resource })),
+          })
+        : BackendExperimentListResponseSchema.parse({
+            experiments: catalog.entries.map((entry) => ({
+              ...entry.summary,
+              project: project.name,
+            })),
+          })
     const maxAge = this.policy.listMaxAgeMs
     if (options.inventoryOnly) {
-      const snapshot = await registeredProjectSnapshot(project)
-      if (snapshot)
-        return BackendResourceInventoryResponseSchema.parse({
-          items: Object.values(snapshot.experiments).map((entry) => ({
-            id: entry.id,
-            slug: entry.slug,
-            resource: `${entry.dir}/README.md`,
-          })),
-        })
       const { folders, legacy } = await withAutomaticProjectFileContext(() =>
         experimentListing(project, maxAge),
       )
@@ -511,102 +516,6 @@ export class FilesystemProjectService implements BackendProjectReadService {
       })
     }
     const documents = await indexedExperimentDocuments(project, maxAge)
-    const snapshot = await registeredProjectSnapshot(project)
-    if (snapshot)
-      return BackendExperimentListResponseSchema.parse({
-        experiments: documents.map((document) => {
-          const entry = Object.values(snapshot.experiments).find((item) => item.id === document.id)!
-          const members = document.parsed.frontMatter.runs
-            .map((path) => snapshot.runs[path])
-            .filter((item) => !!item)
-          const running = members.filter((run) => run.status === 'RUNNING').length
-          if (entry.format === 'lightweight') {
-            const formal = Object.entries(snapshot.runs).filter(([path]) =>
-              path.startsWith(`logs/${entry.id.slice(0, 5)}/V`),
-            )
-            const ids = [
-              ...new Set(
-                formal.filter(([, run]) => run.row.active).map(([path]) => path.split('/')[2]!),
-              ),
-            ].filter((id) => !entry.variants?.[id]?.deprecated)
-            const selected = formal.filter(
-              ([path, run]) =>
-                ids.includes(path.split('/')[2]!) && run.row.active && !run.deprecated,
-            )
-            const currentRunning = selected.filter(([, run]) => run.status === 'RUNNING').length
-            const completed =
-              ids.length > 0 &&
-              ids.every((id) => {
-                const runs = selected.filter(([path]) => path.split('/')[2] === id)
-                return (
-                  runs.length > 0 &&
-                  runs.every(
-                    ([, run]) =>
-                      run.status === 'FINISHED' && run.row.assessment?.kind !== 'INVALID',
-                  )
-                )
-              })
-            return {
-              ...experimentListRow(
-                project,
-                document,
-                portableReadmeResource(project, document.path),
-              ),
-              displayStatus:
-                entry.status === 'ACTIVE'
-                  ? running
-                    ? 'RUNNING'
-                    : completed
-                      ? 'COMPLETED'
-                      : 'ACTIVE'
-                  : entry.status,
-              requiredVariantCount: ids.length,
-              currentRunningRunCount: currentRunning,
-              runningRunCount: running,
-            }
-          }
-          const variants = Object.entries(entry.variants ?? {}).filter(
-            ([id, variant]) =>
-              id !== 'V0000' &&
-              id !== 'smoke' &&
-              !variant.deprecated &&
-              variant.legacy_status !== 'DROPPED',
-          )
-          const states = variants.map(([, variant]) =>
-            deriveVariantStatus(
-              variant.legacy_status ?? null,
-              variant.active_runs.map((run) => {
-                const record = snapshot.runs[run]
-                return record
-                  ? { status: record.status, deprecated: record.deprecated, stop_reason: null }
-                  : null
-              }),
-              variant.frozen_status ?? null,
-            ),
-          )
-          const completed = states.length > 0 && states.every((state) => state === 'COMPLETED')
-          const currentRunning = variants
-            .flatMap(([, variant]) => variant.active_runs)
-            .filter(
-              (path) =>
-                snapshot.runs[path]?.status === 'RUNNING' && !snapshot.runs[path]?.deprecated,
-            ).length
-          return {
-            ...experimentListRow(project, document, portableReadmeResource(project, document.path)),
-            displayStatus:
-              entry.status === 'ACTIVE'
-                ? currentRunning
-                  ? 'RUNNING'
-                  : completed
-                    ? 'COMPLETED'
-                    : 'ACTIVE'
-                : entry.status,
-            requiredVariantCount: variants.length,
-            currentRunningRunCount: currentRunning,
-            runningRunCount: running,
-          }
-        }),
-      })
     const lookup = declaredRunLookup(project, maxAge)
     const experiments = await mapWithConcurrency(documents, 4, async (document) => ({
       ...experimentListRow(project, document, portableReadmeResource(project, document.path)),
@@ -959,7 +868,25 @@ export class FilesystemProjectService implements BackendProjectReadService {
 
   /** One Experiment bundle, without touching any other Experiment. */
   private async readExperimentDocument(project: ProjectConfig, id: string): Promise<Experiment> {
-    const experiment = await readExperimentDoc(project.root, project.name, id)
+    const catalog = await registeredCatalog(project, 'experiments')
+    let experiment: Experiment | null
+    if (catalog) {
+      const entry = catalog.entries.find((entry) => entry.id === id)
+      if (!entry) throw new BackendProjectServiceError('RESOURCE_NOT_FOUND', 'Experiment not found')
+      const path = await resolveContained(project.root, join(project.root, entry.resource))
+      const [text, stat] = await Promise.all([fs.readFile(path, 'utf8'), fs.stat(path)])
+      const documents = entry.resource.endsWith('/README.md')
+        ? await readExperimentManagedDocuments(dirname(path))
+        : undefined
+      experiment = buildExperimentRecord(parseExperimentReadme(text, id), {
+        id,
+        project: project.name,
+        path,
+        mtime: stat.mtimeMs,
+        readmeMtime: stat.mtimeMs,
+        ...(documents ? { documents } : {}),
+      })
+    } else experiment = await readExperimentDoc(project.root, project.name, id)
     if (!experiment) {
       throw new BackendProjectServiceError('RESOURCE_NOT_FOUND', 'Experiment not found')
     }

@@ -68,12 +68,12 @@ describe('file transport and cache configuration', () => {
       ),
     ).rejects.toThrow(/conflicts/)
   })
-  it('gives SSHFS and agent projects the same two-tier policy', async () => {
+  it('gives SSHFS and agent projects the same memory policy', async () => {
     const config = await load(
       '  - { name: project-a, root: ./project-a, access: { kind: sshfs } }\n  - { name: project-b, access: { kind: agent, connection: agent-a, project: project-b, source_identity: source-a }, read_only: true }',
       agent,
     )
-    expect(config!.projects.map((p) => p.access?.cache)).toEqual(['memory-disk', 'memory-disk'])
+    expect(config!.projects.map((p) => p.access?.cache)).toEqual(['memory', 'memory'])
     expect(config!.projects[1]).toMatchObject({
       root: 'memon-file:/agent-a/project-b',
       readOnly: true,
@@ -106,9 +106,14 @@ describe('file transport and cache configuration', () => {
   ])('rejects %s', async (_label, project) => {
     await expect(load(`  - ${project}`, agent)).rejects.toThrow()
   })
-  it('requires a central dump for a two-tier policy', async () => {
-    await expect(
-      load('  - { name: project-a, root: ./project-a, access: { kind: sshfs } }'),
-    ).rejects.toThrow('dump_path')
+  it('accepts legacy disk selections without requiring or enabling a dump', async () => {
+    const config = await load(
+      '  - { name: project-a, root: ./project-a, access: { kind: sshfs, cache: memory-disk } }',
+    )
+    expect(config!.projects[0]).toMatchObject({
+      access: { kind: 'sshfs', cache: 'memory' },
+      persistentCache: false,
+    })
+    expect(config!.fileCache).toBeUndefined()
   })
 })

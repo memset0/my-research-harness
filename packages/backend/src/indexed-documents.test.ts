@@ -66,7 +66,7 @@ describe('readdir-only inventories', () => {
     expect(readFile).not.toHaveBeenCalled()
   })
 
-  it('touches nothing inside the central list window', async () => {
+  it('does not maintain an extra summary window for legacy direct reads', async () => {
     const documents = new FilesystemDocumentService([project()], {
       readPolicy: CENTRAL_READ_POLICY,
     })
@@ -82,9 +82,8 @@ describe('readdir-only inventories', () => {
       await documents.listWiki('p', { inventoryOnly: true })
       await documents.listCodeReviews('p', { inventoryOnly: true })
     })
-    for (const call of calls) expect(call).not.toHaveBeenCalled()
-    // Only the per-request Project root resolution remains.
-    expect(realpath.mock.calls).toEqual([[root]])
+    expect(calls[1]).toHaveBeenCalled()
+    expect(realpath).toHaveBeenCalled()
   })
 
   it('lists contained code reviews and ignores symlinks that leave the Project', async () => {

@@ -33,3 +33,8 @@ or remove it. Repair references in Experiment, Wiki and Report documents before
 `wiki delete`; it checks these three trees, excluding Experiment runtime caches
 and outputs. It reports blockers and has
 no force bypass. Keep invalidity and superseding-method reasons with the evidence.
+
+After direct edits, run `memon refresh` at the project source. It publishes the
+ignored `.memon/index/{experiments,wiki,reports}.json` catalogs. Agents may read
+these lists directly; the website reads them without rediscovering folders.
+Missing or invalid catalogs need refresh, not a website restart.

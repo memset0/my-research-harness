@@ -426,12 +426,14 @@ The marker is **machine-managed** — don't edit it by hand.
 
 ### `.memon/index/` and `.memon/project.yml`
 
-`.memon/index/` (FS v8) is a derived, rebuildable cache of Run, Experiment and
-wiki summaries. It ignores itself (`.gitignore` containing `*`), every memon
-write adds one event file under `events/`, and central or
-`memon refresh` merges events into `snapshot.json`. Never edit it;
-deleting it is always safe, and `memon refresh` recreates it from the
-project files.
+FS11 publishes `experiments.json`, `wiki.json` and `reports.json` under
+`.memon/index/`. These readable catalogs hold summaries and canonical entry paths,
+not document bodies. Lists and detail lookup share them without directory discovery.
+The directory ignores itself; source documents remain authoritative. `memon refresh`
+publishes direct edits and repairs missing/invalid catalogs. Run lifecycle commands
+republish Experiment summaries. Existing snapshot/events retain Run compatibility.
+After upgrading to 11.13, run `memon refresh` at each existing FS11 source before
+opening it with the new website. Website reads never rebuild catalogs.
 
 `.memon/project.yml` is an optional, git-tracked declaration of the project
 layout — where Run directories live and what discovery skips — shared by
@@ -448,20 +450,18 @@ github:              # GitHub permalink previews: owner/repo -> path in this rep
   - { owner: acme, repo: project-a, path: . }
 ```
 
-Central file access supports four policies: direct native files, native/NFS files
-with a memory cache, SSHFS with memory plus central local disk, and the optional
-[authenticated file agent](packages/file-agent/README.md) with the same two cache
-tiers. Set a project's `access` block in `config.yml`; transport, cache policy,
-shared source budgets and command execution are separate settings. Use `access.source`
-(or legacy `storage_group`) to share a physical-source budget across projects; conflicting
-labels are refused, and unrelated new authorities receive separate opaque defaults. Legacy
-`storage`/`persistent_cache` declarations keep their defaults. Agent projects select
-a configured connection/project and exact source identity, with no fake local mount.
-`host` is an optional namespace for every access mode. Unqualified routes and SSR
-use the same file primitives and preserve their response projections; neither entry
-requires a project warmup or an independent parsed-document poller. Optional source
-operation/byte rates default to 0 (unlimited); concurrency and per-read limits remain
-enforced.
+Central supports direct native files, optional native/NFS memory caching, SSHFS
+and the [authenticated file agent](packages/file-agent/README.md). Cached reads
+share bounded on-demand memory observations for at most 30 seconds; manual refresh
+revalidates. Restart starts empty: no project-file dump is read or written. Legacy
+`memory-disk` and `file_cache` configurations remain accepted but do not enable
+persistence. Old dump files are unused and may be removed by the operator.
+
+Transport, source budgets and command execution remain separate. Set `access.source`
+(or legacy `storage_group`) to share a physical-source budget; unrelated authorities
+remain isolated. Agent projects select a configured connection/project and exact
+source identity. `host` is a namespace, not a transport. Browser HTTP asset caches
+and local user-preference storage are independent of research-file observations.
 
 The domain backend stays in the central Web process. The agent provides only
 versioned file primitives, uses mTLS project grants, and has an independent build

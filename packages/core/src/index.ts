@@ -410,6 +410,7 @@ export {
   type VerifyResultsMigrationResult,
   verifyResultsMigration,
 } from './migrations/v8-to-v9.js'
+export * from './project-catalogs.js'
 export * from './project-declaration/index.js'
 export { prepareProjectFileAccess } from './project-file-store/agent-adapters.js'
 export { throwIfSourceFailure } from './project-file-store/errors.js'

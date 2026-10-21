@@ -27,7 +27,10 @@ describe('guarded Wiki deletion', () => {
     ['docs/experiments/E0001-study/README.md', 'See @W0001.'],
     ['docs/reports/R0001-review.md', 'See [reference](../wiki/note/W0001-alpha/README.md).'],
     ['docs/experiments/E0001-study/details/analysis.md', 'W0001'],
-    ['docs/reports/R0001-review/manifest.json', '{"sources":["W0001"]}'],
+    [
+      'docs/reports/R0001-review/manifest.json',
+      '{"type":"html","title":"References","sources":["W0001"]}',
+    ],
     [
       'docs/reports/R0002-notes/report.html',
       '<a href="../../wiki/note/W0001-alpha/chart.svg">Chart</a>',
@@ -126,7 +129,10 @@ describe('guarded Wiki deletion', () => {
       'docs/reports/R0001-related/data/view.html',
       '<a href="../../../wiki/note/W0001-alpha/README.md">Source</a>',
     ],
-    ['docs/experiments/E0001-study/experiment.json', '{"sources":["W0001"]}'],
+    [
+      'docs/experiments/E0001-study/experiment.json',
+      '{"type":"html","title":"References","sources":["W0001"]}',
+    ],
   ])('checks ordinary document references in %s', async (location, content) => {
     const p = await fixture({ [location]: content })
     await expect(deleteWikiPage({ projectRoot: p.root, page: 'W0001' })).rejects.toMatchObject({

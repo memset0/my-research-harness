@@ -1,3 +1,4 @@
+import { registeredCatalog } from './project-catalogs.js'
 // Document discovery served from the Project summary index.
 //
 // These mirror core's wiki discovery and the document service's former
@@ -275,6 +276,11 @@ export async function indexedReportInventory(
   policy: ReadPolicy,
   id?: string,
 ): Promise<BackendResourceInventoryItem[]> {
+  const catalog = await registeredCatalog(project, 'reports')
+  if (catalog)
+    return catalog.entries
+      .filter((item) => !id || item.id === id)
+      .map(({ id, slug, resource }) => ({ id, slug, resource: ResourceIdSchema.parse(resource) }))
   const directory = join(project.root, 'docs', 'reports')
   if ((await containedReal(project, policy, directory)) === null) return []
   const index = projectReadIndex(project.root)

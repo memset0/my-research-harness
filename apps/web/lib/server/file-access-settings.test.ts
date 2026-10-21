@@ -53,17 +53,17 @@ const VALID_SETTINGS = {
   concurrency: 6,
   heartbeatMs: 4000,
   leaseMs: 12000,
-  fileMinMs: 5000,
+  fileMinMs: 30000,
   fileMaxMs: 30000,
-  directoryMinMs: 15000,
-  directoryMaxMs: 60000,
-  maintenanceMinMs: 300000,
-  maintenanceMaxMs: 900000,
+  directoryMinMs: 30000,
+  directoryMaxMs: 30000,
+  maintenanceMinMs: 30000,
+  maintenanceMaxMs: 30000,
   failureMinMs: 15000,
   failureMaxMs: 300000,
   backoffFactor: 2,
   wikiTtlMs: 30_000,
-  defaultTtlMs: 1_800_000,
+  defaultTtlMs: 30_000,
 }
 
 const CONFIG_WITH_COMMENTS = `# instance config — hand written, comments matter
@@ -124,54 +124,29 @@ describe('saveFileAccessSettings', () => {
     expect(text).toContain('password: "s3cret-not-a-real-value"')
     expect(text).toContain('min_ms: 1000')
     expect(text).toContain('concurrency: 6')
-    expect(text).toContain('maintenanceMaxMs: 900000')
+    expect(text).toContain('maintenanceMaxMs: 30000')
 
     expect(saved.pending).toEqual(VALID_SETTINGS)
     expect(saved.revision).not.toBe(before.revision)
     expect((await stat(configPath)).mode & 0o777).toBe(0o600)
   })
 
-  it('saves cache periods beside the existing dump settings without hot-applying or mixing scheduler keys', async () => {
+  it('keeps old dump config untouched while exposing only the short memory policy', async () => {
     await writeConfig(
-      `${CONFIG_WITH_COMMENTS}\nfile_cache:\n  dump_path: ./.memon-cache/files.dump\n  dump_interval_seconds: 15\n  wiki_ttl_seconds: 30\n  default_ttl_seconds: 1800\n`,
+      `${CONFIG_WITH_COMMENTS}\nfile_cache:\n  dump_path: ./unused.dump\n  default_ttl_seconds: 1800\n`,
     )
     const before = await readPendingFileAccessSettings(configPath)
-    const startup = {
-      fileCache: {
-        dumpPath: join(dir, '.memon-cache', 'files.dump'),
-        dumpIntervalMs: 15_000,
-        wikiTtlMs: 30_000,
-        defaultTtlMs: 1_800_000,
-      },
-    }
-    const saved = await saveFileAccessSettings({
+    expect(before.pending.defaultTtlMs).toBe(30000)
+    await saveFileAccessSettings({
       configPath,
       revision: before.revision,
-      settings: { ...VALID_SETTINGS, wikiTtlMs: 60_000, defaultTtlMs: 3_600_000 },
+      settings: VALID_SETTINGS,
     })
     const document = parseDocument(await fs.readFile(configPath, 'utf8')).toJS()
-    expect(document.file_cache).toEqual({
-      dump_path: './.memon-cache/files.dump',
-      dump_interval_seconds: 15,
-      wiki_ttl_seconds: 60,
-      default_ttl_seconds: 3600,
-    })
-    expect(document.fileAccess).not.toHaveProperty('wikiTtlMs')
-    expect(fileAccessOptionsEqual(resolveFileAccessOptions(startup), saved.pending)).toBe(false)
-    expect((await readPendingFileAccessSettings(configPath)).pending.defaultTtlMs).toBe(3_600_000)
+    expect(document.file_cache).toEqual({ dump_path: './unused.dump', default_ttl_seconds: 1800 })
   })
-
-  it('refuses cache-period edits without an operator-configured dump path', async () => {
-    await writeConfig(CONFIG_WITH_COMMENTS)
-    const before = await readPendingFileAccessSettings(configPath)
-    await expect(
-      saveFileAccessSettings({
-        configPath,
-        revision: before.revision,
-        settings: { ...VALID_SETTINGS, wikiTtlMs: 60_000 },
-      }),
-    ).rejects.toMatchObject({ code: 'CONFIG_SHAPE' })
-    expect(await fs.readFile(configPath, 'utf8')).toBe(CONFIG_WITH_COMMENTS)
+  it('rejects attempts to configure long cache lifetimes', () => {
+    expect(validateFileAccessSettings({ ...VALID_SETTINGS, defaultTtlMs: 1800000 }).ok).toBe(false)
   })
 
   it('creates the block when the config has no fileAccess key yet', async () => {

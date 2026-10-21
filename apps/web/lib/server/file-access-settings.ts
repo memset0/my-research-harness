@@ -154,7 +154,7 @@ export function resolveFileAccessOptions(config: unknown): FileAccessOptionsDto 
   const resolved: FileAccessOptionsDto = {
     ...DEFAULT_FILE_ACCESS_OPTIONS,
     wikiTtlMs: 30_000,
-    defaultTtlMs: 1_800_000,
+    defaultTtlMs: 30_000,
   }
   const view = FileAccessConfigViewSchema.safeParse(config)
   if (!view.success) return resolved
@@ -163,12 +163,15 @@ export function resolveFileAccessOptions(config: unknown): FileAccessOptionsDto 
     const value = block?.[key]
     if (typeof value === 'number' && Number.isFinite(value) && value > 0) resolved[key] = value
   }
-  const cache = view.data.fileCache
-  const raw = view.data.file_cache
-  const wiki = cache?.wikiTtlMs ?? (raw?.wiki_ttl_seconds ?? 30) * 1000
-  const other = cache?.defaultTtlMs ?? (raw?.default_ttl_seconds ?? 1800) * 1000
-  if (Number.isFinite(wiki) && wiki > 0) resolved.wikiTtlMs = wiki
-  if (Number.isFinite(other) && other > 0) resolved.defaultTtlMs = other
+  for (const key of [
+    'fileMinMs',
+    'fileMaxMs',
+    'directoryMinMs',
+    'directoryMaxMs',
+    'maintenanceMinMs',
+    'maintenanceMaxMs',
+  ] as const)
+    resolved[key] = 30_000
   return resolved
 }
 
@@ -262,8 +265,8 @@ const FileAccessOptionsSchema = z
     failureMinMs: periodMs,
     failureMaxMs: periodMs,
     backoffFactor: z.number().finite().gt(1).max(MAX_BACKOFF_FACTOR),
-    wikiTtlMs: z.number().int().min(1000).max(2_592_000_000).multipleOf(1000),
-    defaultTtlMs: z.number().int().min(1000).max(2_592_000_000).multipleOf(1000),
+    wikiTtlMs: z.literal(30_000),
+    defaultTtlMs: z.literal(30_000),
   })
   .strict()
   .superRefine((value, ctx) => {
@@ -278,7 +281,6 @@ const FileAccessOptionsSchema = z
       ['directoryMinMs', 'directoryMaxMs', 'directory list check'],
       ['maintenanceMinMs', 'maintenanceMaxMs', 'maintenance'],
       ['failureMinMs', 'failureMaxMs', 'failure backoff'],
-      ['wikiTtlMs', 'defaultTtlMs', 'persistent SSHFS cache'],
     ] as const
     for (const [minKey, maxKey, label] of ranges) {
       if (value[minKey] > value[maxKey]) {
@@ -468,16 +470,6 @@ async function writeFileAccessSettings(
   }
   for (const key of SCHEDULER_OPTION_KEYS) {
     doc.setIn([FILE_ACCESS_CONFIG_KEY, key], settings[key])
-  }
-  const dumpPath = doc.getIn(['file_cache', 'dump_path'])
-  if (typeof dumpPath === 'string' && dumpPath.trim()) {
-    doc.setIn(['file_cache', 'wiki_ttl_seconds'], settings.wikiTtlMs / 1000)
-    doc.setIn(['file_cache', 'default_ttl_seconds'], settings.defaultTtlMs / 1000)
-  } else if (settings.wikiTtlMs !== 30_000 || settings.defaultTtlMs !== 1_800_000) {
-    throw new FileAccessSettingsError(
-      'CONFIG_SHAPE',
-      'configure a local file_cache.dump_path before changing persistent cache periods',
-    )
   }
   // lineWidth 0 disables re-folding, so untouched long scalars keep their shape.
   const rendered = doc.toString({ lineWidth: 0 })

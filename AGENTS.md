@@ -129,8 +129,9 @@ Other sources of truth — consult these instead of copying lists here:
   See `packages/core/migrations/v10-to-v11.md`. Retirement does not invalidate
   measurement; preserve invalidity, precision and superseding-method reasons.
 - **Derived index** `.memon/index/`: ignored, disposable inventory. FS11 writers
-  merge events and publish `snapshot.json`; normal website inventories read it
-  without recursive walks. Direct edits need explicit `memon refresh`.
+  merge events and publish `snapshot.json`; normal website inventories read the published experiments.json, wiki.json and
+  reports.json catalogs without recursive walks. Central keeps no project-file disk
+  cache; demand observations are reused in memory for at most 30 seconds. Direct edits need explicit `memon refresh`.
   Missing/invalid registration is a repair error, never a silent partial list.
   Legacy projects retain their compatible discovery/index path.
 - **Project declaration** `.memon/project.yml`: optional, git-tracked,
@@ -143,7 +144,7 @@ Other sources of truth — consult these instead of copying lists here:
   `storage_group`, `persistent_cache`, `read_only`, `access`, `execution`). Protected `file_agents`
   connection settings remain central-only. Agent entries select a connection and
   project instead of a local `root`; native `access` selects none/memory caching,
-  SSHFS and agent select memory-disk. Layout
+  SSHFS and agent select memory. Legacy memory-disk normalizes to memory. Layout
   belongs in the project's `.memon/project.yml`; a layout key still in a
   central entry keeps working and wins over the project file, but logs
   `CENTRAL_LAYOUT_DEPRECATED`. Move layout keys into the project deliberately.

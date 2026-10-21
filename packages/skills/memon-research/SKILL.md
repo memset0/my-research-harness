@@ -40,7 +40,9 @@ Default aggregation permits at most one active Run per ordinary Variant;
 smoke never contributes formal results. For multiple inputs or custom logic,
 read [aggregation.md](aggregation.md). Optional names live on the Run.
 
-CLI writes refresh `run.json → result.csv → results.csv` and the index.
+CLI writes refresh `run.json → result.csv → results.csv` and the Experiment catalog.
+Read `.memon/index/experiments.json` for published inventory; run `refresh` after
+direct document edits. Catalogs are ignored by Git and rebuilt at the source.
 Extract only useful fields; retain native evidence. `experiment.json` holds
 presentation columns/groups and optional aggregation settings, not a second plan.
 

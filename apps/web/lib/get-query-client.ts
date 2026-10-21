@@ -15,7 +15,7 @@ function makeQueryClient(): QueryClient {
       queries: {
         // Match the client's defaults so dehydrated data isn't immediately
         // considered stale on the client side.
-        staleTime: 60 * 1000,
+        staleTime: 30 * 1000,
       },
       dehydrate: {
         // Dehydrate even pending queries so server-streamed Suspense queries
@@ -27,7 +27,7 @@ function makeQueryClient(): QueryClient {
   })
 }
 
-let browserQueryClient: QueryClient | undefined = undefined
+let browserQueryClient: QueryClient | undefined
 
 export function getQueryClient(): QueryClient {
   if (isServer) {

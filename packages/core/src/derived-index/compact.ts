@@ -1,3 +1,4 @@
+import { experimentCatalogEntries, writeProjectCatalog } from '../project-catalogs.js'
 // Compaction: merge events into one snapshot under a lease.
 //
 // 1. Take the lease: create `compact.lock` exclusively, content
@@ -219,6 +220,8 @@ export async function writeSnapshot(
   try {
     await fs.writeFile(temporary, `${JSON.stringify(snapshot)}\n`, { encoding: 'utf8', flag: 'wx' })
     await fs.rename(temporary, paths.snapshot)
+    if (snapshot.fs_convention_version >= 11)
+      await writeProjectCatalog(root, 'experiments', experimentCatalogEntries(snapshot), fs)
   } catch (error) {
     await fs.rm(temporary, { force: true }).catch(() => undefined)
     throw error

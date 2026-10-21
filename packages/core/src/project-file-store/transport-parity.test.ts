@@ -59,7 +59,7 @@ describe('four transport/cache modes through one file boundary', () => {
     if (mode === 'agent') await writeFile(nativeJoin(source.root, 'note.txt'), 'first')
     const root = mode === 'agent' ? fileProjectURI('agent-a', 'project-a') : native.root
     const tiered = mode === 'sshfs' || mode === 'agent'
-    // SSHFS exercises the real worker and persistent cache with a simulated mount identity.
+    // SSHFS exercises the real worker and memory cache with a simulated mount identity.
     // It does not claim a real network mount or test SSH transport.
     vi.mocked(readMountTable).mockResolvedValue(
       mode === 'sshfs'
@@ -123,23 +123,14 @@ describe('four transport/cache modes through one file boundary', () => {
     expect(await withProjectFileContext(context, () => projectFs.readFile(path, 'utf8'))).toBe(
       mode === 'none' ? 'other' : 'first',
     )
-    if (tiered) {
-      await new Promise<void>((done) => setImmediate(done))
-      await configureProjectFileCache(undefined)
-      freshStore()
-      await configureProjectFileCache(cache)
-      const restored = await readProjectFile(context, path, { policy: 'cached' })
-      expect(restored).toMatchObject({
-        outcome: 'present',
-        version: first.version,
-        checkedAt: first.checkedAt,
-      })
-      expect(getStore().metricsSnapshot().overall.samples).toBe(0)
-      expect(getStore().metricsSnapshot().queued).toBe(0)
-    } else {
-      await getProjectFileCache()!.flush()
-      await expect(readFile(cache.dumpPath)).rejects.toMatchObject({ code: 'ENOENT' })
-    }
+    freshStore()
+    await configureProjectFileCache(cache)
+    const restarted = await readProjectFile(context, path)
+    expect(restarted.outcome).toBe('present')
+    if (restarted.outcome === 'present')
+      expect(Buffer.from(restarted.content, 'base64').toString()).toBe('other')
+    expect(getProjectFileCache()).toBeNull()
+    await expect(readFile(cache.dumpPath)).rejects.toMatchObject({ code: 'ENOENT' })
     await withProjectFileContext(context, async () => {
       const handle = await projectFs.open(path, 'r')
       try {

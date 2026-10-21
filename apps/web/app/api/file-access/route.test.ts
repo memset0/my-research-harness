@@ -27,20 +27,26 @@ fileAccess:
 `
 
 const VALID_SETTINGS = {
+  operationsPerSecond: 0,
+  operationBurst: 10,
+  bytesPerSecond: 0,
+  byteBurst: 67108864,
+  maxReadBytes: 16777216,
+  backgroundShare: 0.5,
   concurrency: 6,
   heartbeatMs: 30000,
   leaseMs: 90000,
-  fileMinMs: 5000,
+  fileMinMs: 30000,
   fileMaxMs: 30000,
-  directoryMinMs: 15000,
-  directoryMaxMs: 60000,
-  maintenanceMinMs: 300000,
-  maintenanceMaxMs: 900000,
+  directoryMinMs: 30000,
+  directoryMaxMs: 30000,
+  maintenanceMinMs: 30000,
+  maintenanceMaxMs: 30000,
   failureMinMs: 15000,
   failureMaxMs: 300000,
   backoffFactor: 2,
   wikiTtlMs: 30000,
-  defaultTtlMs: 1800000,
+  defaultTtlMs: 30000,
 }
 
 let directory: string

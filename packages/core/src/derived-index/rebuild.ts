@@ -1,3 +1,4 @@
+import { publishReportCatalog, publishWikiCatalog } from '../project-catalogs.js'
 // Full rebuild: a fresh snapshot from the project files alone.
 //
 // Under the compaction lease: resolve the effective `run_dirs` (recording
@@ -256,6 +257,10 @@ export async function rebuildIndex(
     const again = await readDerivedIndex(root, { fs })
     if (again.snapshotState === 'unsupported') return { ...base, status: 'unsupported' }
     await writeSnapshot(root, snapshot, fs)
+    if (snapshot.fs_convention_version >= 11) {
+      await publishWikiCatalog(root, snapshot, fs)
+      await publishReportCatalog(root, fs)
+    }
     const events = resolveIndexPaths(root).events
     for (const name of startEvents) await fs.rm(`${events}/${name}`, { force: true })
     const result = await finish(snapshot, 'rebuilt')

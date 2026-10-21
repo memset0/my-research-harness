@@ -1,9 +1,7 @@
 // project-file-store/state — the in-memory shapes shared by the store, its
-// scheduler and its persistence bridge. Types only: every value here is
+// scheduler. Types only: every value here is
 // memory-only and lost on restart.
 
-import type { MountIdentity } from '../mount-table.js'
-import type { ProjectFileCache } from '../project-file-cache.js'
 import type { FileOperationName, FileOperationOrigin, ObservedOperation } from './contract.js'
 import type { Observation } from './observation.js'
 
@@ -35,22 +33,9 @@ export interface StoreEntry {
   lastAttentionAtWall: number
   /**
    * An explicit refresh (or a write) asked for re-verification and no
-   * physical observation has answered it yet. A row restored from the
-   * persistent cache is not that answer, so it must not cancel the request.
+   * physical observation has answered it yet.
    */
   refreshRequested: boolean
-  /**
-   * Persistent-cache scope for this key, or null when this project is not
-   * persisted. Resolved once, when the entry is first demanded.
-   */
-  persist: PersistScope | null
-  /**
-   * True once the snapshot-backed memory cache has been consulted (or has
-   * deliberately been made irrelevant by an invalidation). Eviction may
-   * permit another lookup; invalidation must not resurrect an old answer.
-   */
-  persistLoaded: boolean
-  persistLoad: Promise<void> | null
 }
 
 export interface ScheduledTask {
@@ -84,16 +69,4 @@ export interface AttentionLease {
   root: string
   expiresAtWall: number
   keys: Set<string>
-}
-
-/**
- * Everything needed to reach a project's snapshot-backed observations: the
- * memory cache and stable namespace for configured root plus mount identity.
- * A root remapped to different storage resolves a different namespace, so
- * observations of the previous storage can never be reused.
- */
-export interface PersistScope {
-  cache: ProjectFileCache
-  namespaceId: string
-  mount: MountIdentity | null
 }

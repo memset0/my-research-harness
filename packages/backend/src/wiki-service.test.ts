@@ -306,7 +306,7 @@ describe('FilesystemDocumentService wiki reads', () => {
     expect(await cite('E0001-alpha')).not.toContain('WIKI_SOURCE_UNRESOLVED')
   })
 
-  it('keeps W0002 composition automatic while refreshing its selected body manually', async () => {
+  it('refreshes Wiki metadata and selected body together on a manual request', async () => {
     const storageGroup = `wiki-detail-${root}`
     const context = { root, storageGroup, persistentCache: true, attentionId: 'wiki-tab' }
     await withProjectFileContext({ ...context, reason: 'automatic' }, () =>
@@ -347,11 +347,8 @@ describe('FilesystemDocumentService wiki reads', () => {
           { samples: 0, cacheHits: 0 },
         )
 
-    // Manual refresh serves the current cache while scheduling verification.
-    // Inventory composition stays automatic; the selected body becomes fresh
-    // after that priority check completes, without another manual refresh.
-    expect(page.title).toBe('Beta note')
-    expect(counters('automatic').cacheHits).toBeGreaterThan(counters('automatic', before).cacheHits)
+    // Manual refresh returns current metadata and body together.
+    expect(page.title).toBe('Changed inventory title')
     expect(counters('human').samples).toBeGreaterThan(counters('human', before).samples)
   })
 
