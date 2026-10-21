@@ -55,6 +55,8 @@ interface Fingerprint {
   size: number
   ino: number
   hash?: string
+  /** Referent bytes when the document itself is a symlink. */
+  contentHash?: string
 }
 interface Scan {
   fingerprints: Fingerprint[]
@@ -117,7 +119,11 @@ async function fingerprint(root: string, path: string, text?: Buffer): Promise<F
     mtime: stat.mtimeMs,
     size: stat.size,
     ino: stat.ino,
-    ...(text ? { hash: hash(text) } : {}),
+    ...(stat.isSymbolicLink()
+      ? { hash: hash(await fs.readlink(path)), ...(text ? { contentHash: hash(text) } : {}) }
+      : text
+        ? { hash: hash(text) }
+        : {}),
   }
 }
 
@@ -251,7 +257,8 @@ async function recheck(root: string, entries: Fingerprint[]): Promise<void> {
         (old.hash !== undefined &&
           hash(
             stat.isSymbolicLink() ? await fs.readlink(old.path) : await fs.readFile(old.path),
-          ) !== old.hash)
+          ) !== old.hash) ||
+        (old.contentHash !== undefined && hash(await fs.readFile(old.path)) !== old.contentHash)
       ) {
         throw new Error('changed')
       }

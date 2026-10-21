@@ -117,6 +117,11 @@ Deletion SHALL hold the common project writer lock, revalidate document fingerpr
 - **WHEN** a Wiki category named cache or a Report asset document contains an inbound reference
 - **THEN** it blocks deletion just like an Experiment README, metadata or details document
 
+#### Scenario: Stable legacy document alias
+- **WHEN** an in-project document symlink and its content remain unchanged
+- **THEN** deletion accepts that alias while checking its references
+- **AND** a changed link target or referent content causes a conflict before removal
+
 #### Scenario: Ambiguous or unreachable source
 - **WHEN** the scan cannot establish complete safe reference coverage or sees a concurrent source change
 - **THEN** deletion fails closed with a readable error and preserves the document

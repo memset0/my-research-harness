@@ -138,6 +138,39 @@ describe('guarded Wiki deletion', () => {
     expect(await fs.readFile(p.path(source), 'utf8')).toBe(page)
   })
 
+  it('accepts an unchanged contained legacy document alias', async () => {
+    const p = await fixture({
+      'docs/experiments/E0001-study/details/contract.md': 'Historical contract.',
+    })
+    await fs.symlink('details/contract.md', p.path('docs/experiments/E0001-study/contract.md'))
+    const result = await deleteWikiPage({ projectRoot: p.root, page: 'W0001' })
+    expect(result.id).toBe('W0001')
+    expect(await fs.readlink(p.path('docs/experiments/E0001-study/contract.md'))).toBe(
+      'details/contract.md',
+    )
+  })
+
+  it('detects referent content changes behind a stable document alias', async () => {
+    const p = await fixture({ 'docs/experiments/E0001-study/details/contract.md': 'No reference.' })
+    const alias = p.path('docs/experiments/E0001-study/contract.md')
+    const referent = p.path('docs/experiments/E0001-study/details/contract.md')
+    await fs.symlink('details/contract.md', alias)
+    const stat = await fs.stat(referent)
+    const read = fs.readFile.bind(fs)
+    let aliasReads = 0
+    vi.spyOn(fs, 'readFile').mockImplementation((async (path, ...rest) => {
+      if (String(path) === alias && ++aliasReads === 2) {
+        await fs.writeFile(referent, 'See @W0001.')
+        await fs.utimes(referent, stat.atime, stat.mtime)
+      }
+      return Reflect.apply(read, fs, [path, ...rest])
+    }) as typeof fs.readFile)
+    await expect(deleteWikiPage({ projectRoot: p.root, page: 'W0001' })).rejects.toMatchObject({
+      code: 'CONFLICT',
+    })
+    expect(await read(p.path(source), 'utf8')).toBe(page)
+  })
+
   it('refuses an escaping link inside Experiment details', async () => {
     const p = await fixture(),
       other = await createTempProject({ files: { 'article.md': 'External' } })
