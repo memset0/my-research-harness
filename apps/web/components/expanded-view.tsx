@@ -4,7 +4,8 @@
 //
 // The state lives in the `expanded=1` URL parameter so a reload keeps it: the
 // URL is replaced through the native History API (which Next mirrors into
-// `useSearchParams`), never pushed, without scrolling or navigating, and other
+// `useSearchParams` only for state without its own `__NA` marker, so pass
+// null and let Next copy its internal state), never pushed, without scrolling or navigating, and other
 // parameters and the fragment are preserved. Bundle pages hand it to their
 // embed's own Expand.
 
@@ -21,7 +22,7 @@ export function useExpandedInUrl(): {
     const url = new URL(window.location.href)
     if (next) url.searchParams.set('expanded', '1')
     else url.searchParams.delete('expanded')
-    window.history.replaceState(window.history.state, '', url)
+    window.history.replaceState(null, '', url)
   }, [])
   return { expanded, setExpanded }
 }

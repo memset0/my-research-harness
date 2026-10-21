@@ -179,12 +179,16 @@ describe('content presentation', () => {
     )
     const props = embedProps.at(-1)!
     expect(props.expanded).toBe(true)
+    const replace = vi.spyOn(window.history, 'replaceState')
     props.onExpandedChange?.(false)
+    // Next mirrors the URL into useSearchParams only for non-Next history state.
+    expect(replace.mock.calls.at(-1)?.[0]).toBeNull()
     expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe(
       '/h/source-a/p/project-a/reports/R0006?tab=notes#top',
     )
     props.onExpandedChange?.(true)
     expect(window.location.search).toBe('?tab=notes&expanded=1')
+    replace.mockRestore()
   })
 
   it('leaves side and embedded views out of the URL', () => {
