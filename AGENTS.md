@@ -21,8 +21,7 @@ repository-specific requirements at the end of this file supplement it.
   `RESUME_READY`/`UNKNOWN` (legacy `PENDING` remains readable);
   Experiment FS10 `ACTIVE`/`PAUSED`/`ARCHIVED`/`RETIRED` (human-only write;
   `RUNNING`/`COMPLETED` are display-only; legacy FS9 retains
-  `OPEN`/`RESOLVED`/`ABANDONED`); Hypothesis
-  `CONFIRMED`/`REFUTED`/`PARTIAL`/`OPEN`/`DEFERRED`.
+  `OPEN`/`RESOLVED`/`ABANDONED`).
 - **Path containment.** Web routes that accept a path parameter MUST pass it
   through `assertWithinProjectRoots()` (`apps/web/lib/server/path-safety.ts`) before
   touching the filesystem. `@memon/backend` services do not use that helper;
@@ -159,7 +158,8 @@ Other sources of truth — consult these instead of copying lists here:
 - **Service forwarding**: owner-only HTTP/WS via native loopback, lazy SSH tunnels,
   or independently granted File Agent service ports. memon never starts/stops
   applications. Authors use relative URLs or honor the displayed base prefix.
-- Hypotheses: `docs/hypotheses.md`.
+- Hypotheses is retired. Existing project files/metadata remain historical content;
+  migration is decided separately for each project. No automatic conversion.
 
 ## 3. Failure modes (rules learned the hard way)
 

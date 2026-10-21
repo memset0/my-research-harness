@@ -96,7 +96,6 @@ export const API_ROUTE_MANIFEST = {
   'experiments/route.ts': backend(['GET', 'POST'], 'project-query', 'mixed'),
   'file-access/restart/route.ts': central(['POST'], 'shell'),
   'file-access/route.ts': central(['GET', 'PUT'], 'mutating'),
-  'hypotheses/route.ts': backend(['GET'], 'project-query', 'read'),
   'hosts/route.ts': central(['GET'], 'read'),
   'journal/history/route.ts': backend(['GET'], 'project-query', 'shell'),
   'journal/route.ts': backend(['GET'], 'project-query', 'read'),

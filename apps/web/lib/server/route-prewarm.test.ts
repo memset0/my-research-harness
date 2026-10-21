@@ -36,11 +36,11 @@ describe('prewarmRoutes', () => {
     const calls = fetchMock.mock.calls.map((c) => String(c[0]))
     expect(calls).toContain('http://localhost:3737/api/projects')
     for (const project of ['project-a', 'project-b']) {
-      for (const sub of ['', '/hypotheses', '/journal', '/reports']) {
+      for (const sub of ['', '/journal', '/reports']) {
         expect(calls).toContain(`http://localhost:3737/p/${project}${sub}`)
       }
     }
-    expect(fetchMock).toHaveBeenCalledTimes(9)
+    expect(fetchMock).toHaveBeenCalledTimes(7)
 
     const expectedHeader = `Basic ${Buffer.from('admin:pw', 'utf8').toString('base64')}`
     for (const [, init] of fetchMock.mock.calls) {
@@ -62,7 +62,7 @@ describe('prewarmRoutes', () => {
     })
     const calls = fetchMock.mock.calls.map((c) => String(c[0]))
     expect(calls).toContain('http://localhost:3737/p/pro%20ject%2Fx')
-    expect(calls).toContain('http://localhost:3737/p/pro%20ject%2Fx/hypotheses')
+    expect(calls).not.toContain('http://localhost:3737/p/pro%20ject%2Fx/hypotheses')
   })
 
   it('does not throw when one fetch rejects', async () => {

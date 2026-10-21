@@ -6,7 +6,6 @@ import {
   BackendAnomaliesResponseSchema,
   BackendExperimentResponseSchema,
   BackendExperimentResultsResponseSchema,
-  BackendHypothesesResponseSchema,
   BackendJournalResponseSchema,
   BackendResourceInventoryResponseSchema,
   BackendRunFilesResponseSchema,
@@ -660,17 +659,13 @@ conclusion
     }
   })
 
-  it('returns strict hypotheses, journal, and computed anomaly DTOs', async () => {
+  it('returns strict journal and computed anomaly DTOs', async () => {
     const service = new FilesystemProjectService([project('project-a')])
-    const hypotheses = BackendHypothesesResponseSchema.parse(
-      await service.getHypotheses('project-a'),
-    )
     const journal = BackendJournalResponseSchema.parse(await service.getJournal('project-a'))
     const anomalies = BackendAnomaliesResponseSchema.parse(await service.getAnomalies('project-a'))
-    expect(hypotheses.project).toBe('project-a')
     expect(journal.project).toBe('project-a')
     expect(Array.isArray(anomalies.anomalies)).toBe(true)
-    expect(forbiddenKeys({ hypotheses, journal, anomalies })).toEqual([])
+    expect(forbiddenKeys({ journal, anomalies })).toEqual([])
   })
 
   it('keeps duplicate resource IDs isolated by the selected Project', async () => {

@@ -12,7 +12,6 @@ import {
   BackendExperimentDeleteResponseSchema,
   BackendExperimentResponseSchema,
   BackendExperimentResultsResponseSchema,
-  BackendHypothesesResponseSchema,
   BackendJournalCountResponseSchema,
   BackendJournalHistoryResponseSchema,
   BackendJournalResponseSchema,
@@ -22,7 +21,6 @@ import {
   BackendResourceInventoryResponseSchema,
   BackendRunFilesResponseSchema,
   BackendRunResponseSchema,
-  BackendRunsResponseSchema,
   BackendStatusMutationRequestSchema,
   BackendWarningMutationRequestSchema,
   BackendWarningMutationResponseSchema,
@@ -40,7 +38,6 @@ import {
   BACKEND_EXPERIMENT_WARNING_ROUTE,
   BACKEND_EXPERIMENT_WARNINGS_ROUTE,
   BACKEND_EXPERIMENTS_ROUTE,
-  BACKEND_HYPOTHESES_ROUTE,
   BACKEND_JOURNAL_HISTORY_ROUTE,
   BACKEND_JOURNAL_ROUTE,
   BACKEND_RUN_ARCHIVE_ROUTE,
@@ -458,13 +455,6 @@ export const RUN_EXPERIMENT_ROUTES: readonly BackendRoute[] = [
     },
     id,
   ),
-  projectDataRoute(BACKEND_HYPOTHESES_ROUTE, projectQuery(), {
-    GET: projectRead(
-      async ({ options, project }) =>
-        BackendHypothesesResponseSchema.parse(await options.projectService!.getHypotheses(project)),
-      always,
-    ),
-  }),
   projectDataRoute(
     BACKEND_JOURNAL_ROUTE,
     projectQuery({

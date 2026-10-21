@@ -6,7 +6,7 @@
 // We intentionally avoid pretty-printing by default — agents pipe the output
 // to `jq` or parse it directly, and noise / colors break that.
 
-import { type Hypothesis, type Run, STATUS_EMOJI } from '@memon/core'
+import { type Run, STATUS_EMOJI } from '@memon/core'
 import { recordCliInvocationFailureSync } from './invocation.js'
 
 export type OutputFormat = 'json' | 'human'
@@ -87,22 +87,11 @@ export function formatExperimentRow(exp: Run): string {
   const emoji = STATUS_EMOJI[exp.frontMatter.status]
   const created = exp.frontMatter.createdAt || '?'
   const tags = exp.frontMatter.tags.join(',') || '-'
-  const hypotheses = exp.frontMatter.hypotheses.join(',') || '-'
-  return `${emoji} ${exp.frontMatter.status.padEnd(8)} ${exp.id.padEnd(40)} ${created.padEnd(28)} ${tags.padEnd(20)} ${hypotheses}`
+  return `${emoji} ${exp.frontMatter.status.padEnd(8)} ${exp.id.padEnd(40)} ${created.padEnd(28)} ${tags.padEnd(20)}`
 }
 
 export function formatExperimentTable(exps: Run[]): string {
   if (exps.length === 0) return '(no experiments)'
-  const header = `   ${'STATUS'.padEnd(8)} ${'ID'.padEnd(40)} ${'CREATED'.padEnd(28)} ${'TAGS'.padEnd(20)} HYPOTHESES`
+  const header = `   ${'STATUS'.padEnd(8)} ${'ID'.padEnd(40)} ${'CREATED'.padEnd(28)} ${'TAGS'.padEnd(20)}`
   return [header, ...exps.map(formatExperimentRow)].join('\n')
-}
-
-export function formatHypothesisRow(h: Hypothesis): string {
-  return `${h.id.padEnd(6)} ${h.status.padEnd(10)} ${h.statement.slice(0, 80)}`
-}
-
-export function formatHypothesisTable(hs: Hypothesis[]): string {
-  if (hs.length === 0) return '(no hypotheses)'
-  const header = `${'ID'.padEnd(6)} ${'STATUS'.padEnd(10)} STATEMENT`
-  return [header, ...hs.map(formatHypothesisRow)].join('\n')
 }

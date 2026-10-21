@@ -30,10 +30,8 @@ import {
   LEGACY_RESULTS_FILE,
   loadConfig,
   MANAGED_DOCUMENT_FILE_NAMES,
-  type ParsedHypotheses,
   type ParsedJournal,
   Poller,
-  parseHypotheses,
   parseJournal,
   projectRunPath,
   REPORT_FILENAME_REGEX,
@@ -106,7 +104,6 @@ export class Runtime {
     public readonly index: RunIndex,
     public readonly poller: Poller,
     public readonly events: EventEmitter,
-    public readonly hypothesesCache: FileCache<ParsedHypotheses>,
     public readonly journalCache: FileCache<ParsedJournal>,
     public readonly reportsCache: DirCache<ReportSummary>,
     public readonly codeReviewsCache: DirCache<CodeReviewSummary>,
@@ -178,12 +175,6 @@ export class Runtime {
     return null
   }
 
-  /** Path to <project>/docs/hypotheses.md for the given project name (or null). */
-  hypothesesPath(project: string): string | null {
-    const p = this.config.projects.find((x) => x.name === project)
-    return p ? join(p.root, 'docs', 'hypotheses.md') : null
-  }
-
   /** Path to <project>/docs/journal.md for the given project name (or null). */
   journalPath(project: string): string | null {
     const p = this.config.projects.find((x) => x.name === project)
@@ -204,7 +195,7 @@ export class Runtime {
   getCodeReviewsList(project: string): CodeReviewSummary[] {
     const p = this.config.projects.find((x) => x.name === project)
     if (!p) return []
-    const prefix = join(p.root, 'docs') + '/'
+    const prefix = `${join(p.root, 'docs')}/`
     return this.codeReviewsCache
       .getAllList()
       .filter((s) => s.path.startsWith(prefix))
@@ -288,11 +279,6 @@ async function init(): Promise<Runtime> {
   const index = new RunIndex()
   const events = new EventEmitter()
   events.setMaxListeners(50)
-  const hypothesesCache = new FileCache<ParsedHypotheses>({
-    name: 'hypotheses',
-    paths: [],
-    parse: parseHypotheses,
-  })
   const journalCache = new FileCache<ParsedJournal>({
     name: 'journal',
     paths: [],
@@ -320,8 +306,6 @@ async function init(): Promise<Runtime> {
     context: () => ({
       experiments: [],
       runs: [],
-      hypothesisIds: [],
-      hypothesesMtime: null,
       reportIds: [],
     }),
   })
@@ -339,7 +323,6 @@ async function init(): Promise<Runtime> {
     index,
     poller,
     events,
-    hypothesesCache,
     journalCache,
     reportsCache,
     codeReviewsCache,

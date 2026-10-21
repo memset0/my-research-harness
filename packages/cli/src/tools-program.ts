@@ -257,7 +257,7 @@ export function registerToolsCommands(program: Command): void {
     .option('--date <YYYY-MM-DD>', 'optional event date')
     .option(
       '--source <artifact>',
-      'cite an Experiment / Variant / Hypothesis / run (repeatable)',
+      'cite an Experiment / Variant / run (repeatable)',
       collectOption,
       [],
     )

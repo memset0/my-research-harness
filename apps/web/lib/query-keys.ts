@@ -17,13 +17,7 @@ function scope(project: ProjectTarget | undefined) {
   return project ? projectQueryKey(project) : ([] as const)
 }
 
-export type TabCollectionKind =
-  | 'experiments'
-  | 'hypotheses'
-  | 'journal'
-  | 'reports'
-  | 'code-review'
-  | 'wiki'
+export type TabCollectionKind = 'experiments' | 'journal' | 'reports' | 'code-review' | 'wiki'
 
 export const queryKeys = {
   // Global
@@ -49,8 +43,7 @@ export const queryKeys = {
   experimentsInventory: (project: ProjectTarget) =>
     ['experiments-inventory', ...projectQueryKey(project)] as const,
 
-  // Hypotheses and journal
-  hypotheses: (project: ProjectTarget) => ['hypotheses', ...projectQueryKey(project)] as const,
+  // Journal
   journal: (project: ProjectTarget) => ['journal', ...projectQueryKey(project)] as const,
   journalHistory: (project: ProjectTarget) =>
     ['journal-history', ...projectQueryKey(project)] as const,
@@ -138,8 +131,6 @@ export const queryKeys = {
     switch (kind) {
       case 'experiments':
         return queryKeys.experimentsInventory(project)
-      case 'hypotheses':
-        return queryKeys.hypotheses(project)
       case 'journal':
         return queryKeys.journalCount(project)
       case 'reports':

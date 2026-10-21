@@ -1,4 +1,4 @@
-// Bulk read of a project root: runs + hypotheses.
+// Bulk read of a project root: runs.
 //
 // One call replaces separate API hits (or separate CLI invocations) so skills
 // can take a single snapshot and decide offline.
@@ -7,15 +7,14 @@
 // neither read nor returned here. Callers that want legacy history call
 // `readProjectJournal` explicitly.
 
-import { join, resolve } from '@memon/file-protocol/paths'
+import { resolve } from '@memon/file-protocol/paths'
 import { discoverRuns, runArchivedFromRun } from '../discovery/discover.js'
 import { matchesRunDeprecationFilter } from '../discovery/index.js'
 import { readRunDir } from '../discovery/read.js'
 import { isStaleRunning } from '../discovery/stale.js'
-import { parseHypotheses } from '../hypotheses/parse.js'
 import { projectFs as fs } from '../project-file-store.js'
 import { formatIsoLocal } from '../time.js'
-import type { ParsedHypotheses, Run } from '../types.js'
+import type { Run } from '../types.js'
 
 export interface IndexedRun extends Run {
   /**
@@ -37,7 +36,6 @@ export interface ProjectSnapshot {
   projectRoot: string
   scannedAt: string
   experiments: IndexedRun[]
-  hypotheses: { path: string | null } & ParsedHypotheses
 }
 
 export interface ScanOptions {
@@ -137,35 +135,9 @@ export async function scanProjectRoot(
     String(b.frontMatter.createdAt).localeCompare(String(a.frontMatter.createdAt)),
   )
 
-  const hypothesesPath = join(abs, 'docs', 'hypotheses.md')
-  const hypotheses = await tryParseHypotheses(hypothesesPath)
-
   return {
     projectRoot: abs,
     scannedAt: formatIsoLocal(new Date()),
     experiments,
-    hypotheses: { path: hypotheses ? hypothesesPath : null, ...emptyOr(hypotheses, EMPTY_HYP) },
-  }
-}
-
-const EMPTY_HYP: ParsedHypotheses = {
-  legendBlock: null,
-  summaryTableBlock: null,
-  entries: [],
-  parseErrors: [],
-  parseWarnings: [],
-}
-
-function emptyOr<T>(value: T | null, fallback: T): T {
-  return value ?? fallback
-}
-
-async function tryParseHypotheses(path: string): Promise<ParsedHypotheses | null> {
-  try {
-    const content = await fs.readFile(path, 'utf8')
-    return parseHypotheses(content)
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw err
   }
 }

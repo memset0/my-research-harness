@@ -45,7 +45,6 @@ export function ExperimentList({ project }: { project: string }) {
         e.frontMatter.name,
         e.frontMatter.project, // sub-project label
         ...e.frontMatter.tags,
-        ...e.frontMatter.hypotheses,
       ]
       return fields.some((f) => f.toLowerCase().includes(needle))
     })
@@ -56,7 +55,7 @@ export function ExperimentList({ project }: { project: string }) {
       <div className="flex flex-wrap items-center gap-2">
         <Input
           type="search"
-          placeholder="filter by id / name / tag / hypothesis…"
+          placeholder="filter by id / name / tag…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="flex-1 min-w-[12rem]"
@@ -109,8 +108,7 @@ function ExperimentRow({ project, exp }: { project: string; exp: IndexedRun }) {
   // project (set from config.yml). Empty or equal: render nothing.
   const subProject = exp.frontMatter.project
   const showSubProject = subProject !== '' && subProject !== exp.project
-  const hasChips =
-    exp.frontMatter.hypotheses.length > 0 || exp.frontMatter.tags.length > 0 || noReadme
+  const hasChips = exp.frontMatter.tags.length > 0 || noReadme
   return (
     <Link
       href={`/p/${encodeURIComponent(project)}/experiments/${encodeURIComponent(exp.id)}`}
@@ -144,12 +142,9 @@ function ExperimentRow({ project, exp }: { project: string; exp: IndexedRun }) {
             <TimestampLocal value={new Date(exp.mtime).toISOString()} />
           </div>
         </div>
-        {/* Chip line: hypotheses → tags → no-README warning. Hidden when empty. */}
+        {/* Chip line: tags → no-README warning. Hidden when empty. */}
         {hasChips && (
           <div className="mt-1 flex flex-wrap items-center gap-1">
-            {exp.frontMatter.hypotheses.map((h) => (
-              <Badge key={h}>{h}</Badge>
-            ))}
             {exp.frontMatter.tags.map((t) => (
               <Badge key={t} variant="outline">
                 {t}

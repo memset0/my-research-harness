@@ -1,6 +1,6 @@
-import type { Hypothesis, Run } from '@memon/core'
+import type { Run } from '@memon/core'
 import { describe, expect, it } from 'vitest'
-import { formatExperimentTable, formatHypothesisTable } from './output.js'
+import { formatExperimentTable } from './output.js'
 
 function makeExp(overrides: Partial<Run['frontMatter']> = {}): Run {
   return {
@@ -57,31 +57,9 @@ describe('formatExperimentTable', () => {
   it('renders header + row with status emoji', () => {
     const out = formatExperimentTable([makeExp()])
     expect(out).toContain('STATUS')
+    expect(out).not.toContain('HYPOTHESES')
+    expect(out).not.toContain('H0001')
     expect(out).toContain('🟢')
     expect(out).toContain('foo-260501-100000')
-  })
-})
-
-describe('formatHypothesisTable', () => {
-  const h: Hypothesis = {
-    id: 'H0001',
-    slug: 'foo',
-    statement: 'something is true',
-    origin: '',
-    status: 'CONFIRMED',
-    experiments: [],
-    runs: [],
-    evidence: [],
-    caveats: [],
-    lastVerified: null,
-  }
-  it('renders empty state', () => {
-    expect(formatHypothesisTable([])).toBe('(no hypotheses)')
-  })
-  it('renders header + row', () => {
-    const out = formatHypothesisTable([h])
-    expect(out).toContain('H0001')
-    expect(out).toContain('CONFIRMED')
-    expect(out).toContain('something is true')
   })
 })

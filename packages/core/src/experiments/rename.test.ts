@@ -1,6 +1,6 @@
 // Unit tests for renameExperiment — runs against a temp project root
 // rather than mocking fs so the multi-file cascade (folder rename + exp
-// README + bound runs + hypotheses + JOURNAL) is realistic.
+// README + bound runs + JOURNAL) is realistic.
 
 import { promises as fs } from 'node:fs'
 import { mkdtemp } from 'node:fs/promises'
@@ -149,7 +149,7 @@ describe('renameExperiment', () => {
     await fs.rm(root, { recursive: true, force: true })
   })
 
-  it('happy path: rewrites folder, README, bound runs, hypotheses, JOURNAL', async () => {
+  it('renames current records while preserving retired hypothesis data', async () => {
     await seedProject(root, {
       exps: [{ id: 'E0001-foo', slug: 'foo', runs: ['foo-260501-100000', 'foo-260502-110000'] }],
       runs: [
@@ -199,11 +199,9 @@ describe('renameExperiment', () => {
     expect(run1).not.toContain('experiment: E0001-zero-snr')
     expect(run2).not.toContain('experiment: E0001-zero-snr')
 
-    // Hypotheses substituted.
+    // Retired project content is not implicitly migrated.
     const hyps = await fs.readFile(join(root, 'docs', 'hypotheses.md'), 'utf8')
-    expect(hyps).not.toContain('E0001-foo')
-    expect(hyps).toContain('E0001-zero-snr')
-    expect(hyps).toContain('E0002-bar') // unrelated id untouched
+    expect(hyps).toBe(HYPOTHESES_BASE)
 
     // JOURNAL append.
     const journal = await fs.readFile(join(root, 'docs', 'journal.md'), 'utf8')

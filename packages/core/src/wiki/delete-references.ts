@@ -88,7 +88,6 @@ function identity(raw: string, target: WikiDeleteTarget): boolean {
     wikiLegacyIds: target.legacyId ? [target.legacyId] : [],
     experimentIds: [],
     runIds: [],
-    hypothesisIds: [],
   })
 }
 

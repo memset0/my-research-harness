@@ -16,3 +16,5 @@ never infer them from checkout mtimes. Respect mtime/hash conflicts by rereading
 Keep secrets outside research files. Use polling, not filesystem watchers.
 Report failed commands and any incomplete publication; do not fabricate results
 or add a manual journal entry for every action. Follow project Git rules.
+
+Hypotheses is retired. Preserve historical files; agree any migration per project.

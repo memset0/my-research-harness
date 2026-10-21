@@ -111,7 +111,6 @@ describe('content metadata', () => {
     const projection = buildWikiProject(await discoverWikiPages(project.root), {
       experiments: [],
       runs: [],
-      hypothesesMtime: null,
     })
     expect(projection.byId.get('W0001')?.stale).toBe(false)
   })

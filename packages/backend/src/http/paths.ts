@@ -12,7 +12,6 @@ export const BACKEND_RUNS_ROUTE = `${BACKEND_API_PREFIX}/runs`
 export const BACKEND_RUN_ROUTE = `${BACKEND_API_PREFIX}/runs/[id]`
 export const BACKEND_EXPERIMENTS_ROUTE = `${BACKEND_API_PREFIX}/experiments`
 export const BACKEND_EXPERIMENT_ROUTE = `${BACKEND_API_PREFIX}/experiments/[id]`
-export const BACKEND_HYPOTHESES_ROUTE = `${BACKEND_API_PREFIX}/hypotheses`
 /** Legacy `docs/journal.md` read; stays inside the existing viewer scope. */
 export const BACKEND_JOURNAL_ROUTE = `${BACKEND_API_PREFIX}/journal`
 /** Owner-only merged diagnostics: legacy history plus invocation receipts. */

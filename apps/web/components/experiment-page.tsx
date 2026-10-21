@@ -11,7 +11,6 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, File, Folder, FolderOpen } from 'lucide-react'
-import Link from 'next/link'
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import {
   type ExperimentDisplaySection,
@@ -24,7 +23,6 @@ import {
   projectHost,
   projectName,
   projectQueryKey,
-  projectWebPath,
 } from '../lib/api'
 import type { ExperimentDocDetail } from '../lib/dto/experiments'
 import { queryKeys } from '../lib/query-keys'
@@ -140,16 +138,6 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
             ))}
           </div>
           <h1 className="text-xl font-semibold">{exp.frontMatter.title}</h1>
-          {exp.frontMatter.hypotheses.length > 0 && (
-            <div className="flex flex-wrap gap-1 text-xs">
-              <span className="text-muted-foreground">Hypotheses:</span>
-              {exp.frontMatter.hypotheses.map((h) => (
-                <Link key={h} href={projectWebPath(project, '/hypotheses')} className="underline">
-                  {h}
-                </Link>
-              ))}
-            </div>
-          )}
           <div className="flex flex-wrap items-center gap-2 pt-1">
             <ExperimentStatusEdit
               project={project}
@@ -786,18 +774,6 @@ function RunFrontmatterStripe({ run, project }: { run: FullExperiment; project: 
               <Badge key={t} variant="outline" className="text-[10px]">
                 #{t}
               </Badge>
-            ))}
-          </div>
-        </div>
-      )}
-      {fm.hypotheses.length > 0 && (
-        <div className="col-span-2 md:col-span-4">
-          <FmLabel>hypotheses</FmLabel>
-          <div className="flex flex-wrap gap-1">
-            {fm.hypotheses.map((h) => (
-              <Link key={h} href={`${projectWebPath(project, '/hypotheses')}#${h}`}>
-                <Badge className="text-[10px]">{h}</Badge>
-              </Link>
             ))}
           </div>
         </div>

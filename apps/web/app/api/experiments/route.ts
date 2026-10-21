@@ -57,7 +57,6 @@ interface PostBody {
   project?: string
   slug: string
   title?: string
-  hypotheses?: string[]
   tags?: string[]
   fromRun?: string | null
 }
@@ -90,7 +89,6 @@ async function scopedPOST(req: NextRequest) {
       ...(await createStandaloneExperiment(runtime, project, {
         slug: body.slug,
         title: body.title,
-        hypotheses: body.hypotheses,
         tags: body.tags,
         fromRun: body.fromRun ?? null,
       })),

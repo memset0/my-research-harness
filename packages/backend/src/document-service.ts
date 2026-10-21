@@ -171,9 +171,6 @@ export interface BackendWikiArtifacts {
   experimentIds: readonly string[]
   /** Every Run directory name the discovery walk found. */
   runIds: readonly string[]
-  /** `docs/hypotheses.md` mtime in epoch ms; null when the file is absent. */
-  hypothesesMtime: number | null
-  hypothesisIds: readonly string[]
 }
 
 /** What the wiki's declared sources ask the artifact provider to load. */
@@ -567,7 +564,7 @@ export class FilesystemDocumentService implements BackendDocumentService {
   ): Promise<WikiProjectProjection> {
     // An empty wiki must not cost a Project scan or a git invocation.
     if (pages.length === 0) {
-      return buildWikiProject([], { experiments: [], runs: [], hypothesesMtime: null })
+      return buildWikiProject([], { experiments: [], runs: [] })
     }
     const references = wikiArtifactReferences(
       cited.flatMap((page) =>
@@ -586,8 +583,6 @@ export class FilesystemDocumentService implements BackendDocumentService {
       runs: artifacts.runs,
       experimentIds: artifacts.experimentIds,
       runIds: artifacts.runIds,
-      hypothesesMtime: artifacts.hypothesesMtime,
-      hypothesisIds: artifacts.hypothesisIds,
       reportIds,
     })
   }

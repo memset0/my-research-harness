@@ -273,8 +273,6 @@ Notes.
     const projection = buildWikiProject(pages, {
       experiments: [makeExperiment('E0017-fused-attention', '2026-09-03T09:00:00+08:00')],
       runs: [],
-      hypothesesMtime: Date.parse('2026-08-15T09:00:00+08:00'),
-      hypothesisIds: ['H0003'],
     })
 
     expect(projection.sourceTargetsResolved).toBe(true)
@@ -354,7 +352,6 @@ text
     const projection = buildWikiProject(await discoverWikiPages(root), {
       experiments: [],
       runs: [],
-      hypothesesMtime: null,
     })
     for (const page of projection.summaries) {
       expect(page.diagnostics.map((entry) => entry.code)).toContain('WIKI_SLUG_DUPLICATE')

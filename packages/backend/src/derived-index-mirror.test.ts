@@ -133,7 +133,7 @@ describe('seeding from the derived index (3.1)', () => {
       await projects.listExperiments('p'),
     ).experiments
     expect(experiments.map((row) => [row.id, row.runCount, row.hypothesisCount])).toEqual([
-      ['E0001-big', 13, 2],
+      ['E0001-big', 13, 0],
     ])
     const runs = BackendRunsPageResponseSchema.parse(await projects.listRuns('p')).runs
     // The deprecated member is excluded by default; the orphan is listed.
@@ -322,13 +322,12 @@ describe('cold reads after a restart (stale-while-revalidate)', () => {
     expect(checked.size).toBe(26)
   })
 
-  it('keeps the home page warm read at the 7.4.0 cost', async () => {
+  it('keeps warm home reads free of document I/O with bounded containment checks', async () => {
     await agedIndex(30)
     const { projects, documents } = centralServices()
     const home = async () => {
       await Promise.all([
         projects.listExperiments('p', { inventoryOnly: true }),
-        projects.getHypotheses('p'),
         projects.getJournalCount('p'),
         documents.listReports('p', { inventoryOnly: true }),
         documents.listCodeReviews('p', { inventoryOnly: true }),
@@ -348,8 +347,22 @@ describe('cold reads after a restart (stale-while-revalidate)', () => {
     files.reset()
     await home()
     await new Promise((resolve) => setTimeout(resolve, 50))
-    const calls = Object.values(files.under('')).flat()
-    expect(calls.length).toBeLessThanOrEqual(5)
+    const calls = files.under('')
+    expect([
+      ...calls.stat,
+      ...calls.readFile,
+      ...calls.readdir,
+      ...calls.access,
+      ...calls.lstat,
+    ]).toEqual([])
+    // Request-local containment remains necessary even with cached document data.
+    const containedPaths = new Set([
+      root,
+      join(root, '.memon/version.json'),
+      join(root, 'docs/wiki/note/W0001-cites.md'),
+    ])
+    expect(calls.realpath.every((path) => containedPaths.has(path))).toBe(true)
+    expect(calls.realpath.length).toBeLessThanOrEqual(13)
   })
 })
 

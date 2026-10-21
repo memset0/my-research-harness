@@ -8,7 +8,6 @@ import {
   BackendExperimentResultsResponseSchema,
   type BackendExperimentSummary,
   BackendExperimentSummarySchema,
-  BackendHypothesesResponseSchema,
   BackendJournalHistoryResponseSchema,
   BackendJournalResponseSchema,
   type BackendResourceInventoryItem,
@@ -38,9 +37,7 @@ import {
   isStaleRunning,
   type MembershipResult,
   matchesRunDeprecationFilter,
-  type ParsedHypotheses,
   type ProjectConfig,
-  parseHypotheses,
   parseJournal,
   parseResultFile,
   projectRunPath,
@@ -115,15 +112,6 @@ export class BackendProjectServiceError extends Error {
   }
 }
 
-/** The shape `docs/hypotheses.md` projects to when the file does not exist. */
-const EMPTY_HYPOTHESES: ParsedHypotheses = {
-  legendBlock: null,
-  summaryTableBlock: null,
-  entries: [],
-  parseErrors: [],
-  parseWarnings: [],
-}
-
 /**
  * Explicit-inspection selector for a Run collection. Absent means the
  * research default: deprecated Runs are not part of the collection.
@@ -164,7 +152,6 @@ export interface BackendProjectReadService {
   getExperiment(project: string, id: string): Promise<unknown>
   getExperimentResults(project: string, id: string, researchVersion?: number): Promise<unknown>
   getRunFiles(project: string, id: string, depth: number): Promise<unknown>
-  getHypotheses(project: string): Promise<unknown>
   getJournal(project: string): Promise<unknown>
   getJournalCount?(project: string): Promise<{ totalEvents: number }>
   getJournalHistory(project: string, limit?: number): Promise<unknown>
@@ -301,19 +288,8 @@ export class FilesystemProjectService implements BackendProjectReadService {
     const age = this.policy.listMaxAgeMs
     const runWindow = runListWindow(this.policy)
     return withAutomaticProjectFileContext(async () => {
-      const index = projectReadIndex(project.root)
-      const [listing, hypotheses] = await Promise.all([
-        experimentListing(project, age),
-        index.file(
-          join(project.root, 'docs', 'hypotheses.md'),
-          'wiki-hypotheses',
-          age,
-          (content, stat) => ({
-            ids: parseHypotheses(content).entries.map((entry) => entry.id),
-            mtime: stat.mtimeMs,
-          }),
-        ),
-      ])
+      const _index = projectReadIndex(project.root)
+      const listing = await experimentListing(project, age)
       const experimentIds = experimentIdentities(listing)
 
       // A citation may name an Experiment by its numeric id alone; resolution
@@ -407,8 +383,6 @@ export class FilesystemProjectService implements BackendProjectReadService {
         runs,
         experimentIds,
         runIds,
-        hypothesesMtime: hypotheses?.mtime ?? null,
-        hypothesisIds: hypotheses?.ids ?? [],
       }
     })
   }
@@ -850,26 +824,6 @@ export class FilesystemProjectService implements BackendProjectReadService {
       truncated,
       entries: count,
       tree: tree ?? { type: 'dir', resource: '.', children: [] },
-    })
-  }
-
-  /** Depends on `docs/hypotheses.md` alone, parsed once per fingerprint. */
-  async getHypotheses(projectName: string) {
-    const project = this.requireProject(projectName)
-    const hypotheses =
-      (await projectReadIndex(project.root).file(
-        join(project.root, 'docs', 'hypotheses.md'),
-        'hypotheses',
-        this.policy.listMaxAgeMs,
-        (content) => parseHypotheses(content),
-      )) ?? EMPTY_HYPOTHESES
-    return BackendHypothesesResponseSchema.parse({
-      project: projectName,
-      legendBlock: hypotheses.legendBlock,
-      summaryTableBlock: hypotheses.summaryTableBlock,
-      entries: hypotheses.entries,
-      parseErrors: hypotheses.parseErrors,
-      parseWarnings: hypotheses.parseWarnings,
     })
   }
 

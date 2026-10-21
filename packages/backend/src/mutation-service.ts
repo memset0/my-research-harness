@@ -195,7 +195,6 @@ export interface BackendMutationService {
 export interface ExperimentCreateInput {
   slug: string
   title?: string
-  hypotheses?: string[]
   tags?: string[]
   fromRun?: string | null
   fromRunExpectedMtime?: number
@@ -647,7 +646,6 @@ export class FilesystemMutationService implements BackendMutationService {
           projectName,
           slug: input.slug,
           ...(input.title === undefined ? {} : { title: input.title }),
-          hypotheses: input.hypotheses ?? [],
           tags: input.tags ?? [],
           importedRun,
           ...(importedRun

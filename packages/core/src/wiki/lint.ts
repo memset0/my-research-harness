@@ -34,7 +34,6 @@ const LINK_REFERENCE_REGEX = /\]\(\s*@([^)\s]+?)\s*\)/g
 /** Bare `@ref` mentions; the leading guard keeps `mail@example.com` out. */
 const BARE_REFERENCE_REGEX =
   /(^|[^\w`/@.])@([A-Za-z0-9][A-Za-z0-9._-]*(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)?)/g
-const HYPOTHESIS_REF_REGEX = /^H\d{4}$/
 /** Canonical project-relative Run path, the unambiguous form of a Run reference. */
 const RUN_PATH_REF_REGEX = RUN_PATH_SHAPE_REGEX
 
@@ -47,7 +46,6 @@ export interface WikiArtifactInventory {
   /** Canonical `E<NNNN>-<slug>` ids. */
   experimentIds: readonly string[]
   runIds: readonly string[]
-  hypothesisIds: readonly string[]
   reportIds?: readonly string[]
 }
 
@@ -123,7 +121,7 @@ export function lintWikiPage(page: WikiLintPage, ctx: WikiLintContext = {}): Wik
     diagnostics.push({
       code: 'WIKI_SOURCE_UNRESOLVED',
       severity: 'warn',
-      message: `source "${source}" does not resolve to an Experiment, Variant, Hypothesis, wiki page, or run directory`,
+      message: `source "${source}" does not resolve to an Experiment, Variant, wiki page, or run directory`,
     })
   }
 
@@ -237,7 +235,6 @@ export function resolvesWikiReference(ref: string, inventory: WikiArtifactInvent
       : inventory.experimentIds.includes(head)
   }
   if (variant !== undefined) return false
-  if (HYPOTHESIS_REF_REGEX.test(ref)) return inventory.hypothesisIds.includes(ref)
   if (WIKI_LEGACY_ID_REGEX.test(ref)) {
     return (
       (inventory.reportIds ?? []).includes(ref) || (inventory.wikiLegacyIds ?? []).includes(ref)
@@ -345,13 +342,15 @@ function lintSourceSyntax(
     return
   }
   for (const source of sources) {
-    if (typeof source === 'string' && wikiSourceKind(source) !== null) continue
+    // Old H references remain inert source text until project-specific migration.
+    if (typeof source === 'string' && (wikiSourceKind(source) !== null || /^H\d{4}$/.test(source)))
+      continue
     diagnostics.push({
       code: 'WIKI_SOURCE_UNRESOLVED',
       severity: 'error',
       message:
         typeof source === 'string'
-          ? `source "${source}" is not a valid Experiment, Variant, Hypothesis, wiki page, or run reference`
+          ? `source "${source}" is not a valid Experiment, Variant, wiki page, or run reference`
           : `source entries must be strings; got ${JSON.stringify(source)}`,
     })
   }
@@ -416,7 +415,7 @@ function lintLinks(
     diagnostics.push({
       code: 'WIKI_LINK_UNRESOLVED',
       severity: 'warn',
-      message: `@${reference.ref} does not resolve to a wiki page, Experiment, Report, Hypothesis, or run`,
+      message: `@${reference.ref} does not resolve to a wiki page, Experiment, Report, or run`,
       line: offset + reference.line,
     })
   }

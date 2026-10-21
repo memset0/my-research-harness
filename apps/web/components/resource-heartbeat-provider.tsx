@@ -68,7 +68,6 @@ const RESOURCE_QUERY_ROOTS: Record<string, true> = {
   'experiments-inventory': true,
   'file-access': true,
   hosts: true,
-  hypotheses: true,
   journal: true,
   'journal-count': true,
   'journal-history': true,

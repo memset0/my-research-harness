@@ -1,7 +1,6 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import Link from 'next/link'
 import { useIsDesktop } from '@/hooks/use-is-desktop'
 import { type FullExperiment, fetchExperiment } from '../lib/api'
 import { queryKeys } from '../lib/query-keys'
@@ -154,18 +153,6 @@ function ExperimentDetailLayout({ exp, project }: { exp: FullExperiment; project
                       <Badge key={t} variant="outline">
                         {t}
                       </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {fm.hypotheses.length > 0 && (
-                <div className="col-span-2 md:col-span-4">
-                  <FieldLabel>hypotheses</FieldLabel>
-                  <div className="flex flex-wrap gap-1">
-                    {fm.hypotheses.map((h) => (
-                      <Link key={h} href={`/p/${encodeURIComponent(project)}/hypotheses#${h}`}>
-                        <Badge>{h}</Badge>
-                      </Link>
                     ))}
                   </div>
                 </div>

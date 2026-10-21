@@ -20,29 +20,19 @@ export function createResearchProgram() {
       'create an Experiment (FS11: README.md + experiment.json; existing legacy projects retain their format)',
     )
     .option('--title <text>', 'human-readable title')
-    .option('--hypotheses <list>', 'comma-separated H<NNNN> ids')
     .option(
       '--from-run <run-dir>',
       'declare an existing run (project-relative path or unique id) as the first member',
     )
-    .action(
-      async (slug: string, opts: { title?: string; hypotheses?: string; fromRun?: string }) => {
-        const g = readGlobals()
-        const hyps = opts.hypotheses
-          ? opts.hypotheses
-              .split(',')
-              .map((s) => s.trim())
-              .filter(Boolean)
-          : []
-        await runExperimentCreate({
-          ...g,
-          slug,
-          title: opts.title,
-          hypotheses: hyps,
-          fromRun: opts.fromRun,
-        })
-      },
-    )
+    .action(async (slug: string, opts: { title?: string; fromRun?: string }) => {
+      const g = readGlobals()
+      await runExperimentCreate({
+        ...g,
+        slug,
+        title: opts.title,
+        fromRun: opts.fromRun,
+      })
+    })
 
   const run = program.command('run').description('Run execution metadata and results')
 

@@ -133,9 +133,6 @@ export interface WikiProjectContext extends WikiProjectionContext {
   /** Metadata for the cited artifacts; unreferenced ones need not be loaded. */
   experiments: readonly Experiment[]
   runs: readonly Run[]
-  /** `docs/hypotheses.md` mtime in epoch ms; null when the file is absent. */
-  hypothesesMtime: number | null
-  hypothesisIds?: readonly string[]
   /** Report ids that still exist under `docs/reports/`. */
   reportIds?: readonly string[]
   /**
@@ -213,7 +210,6 @@ export function buildWikiProject(
           sourceContext.experimentIds ??
           sourceContext.experiments.map((experiment) => experiment.id),
         runIds: sourceContext.runIds ?? sourceContext.runs.map((run) => run.id),
-        hypothesisIds: sourceContext.hypothesisIds ?? [],
         reportIds: sourceContext.reportIds ?? [],
       }
     : undefined
@@ -232,8 +228,6 @@ export function buildWikiProject(
         {
           experiments: sourceContext.experiments,
           runs: sourceContext.runs,
-          hypothesesMtime: sourceContext.hypothesesMtime,
-          ...(sourceContext.hypothesisIds ? { hypothesisIds: sourceContext.hypothesisIds } : {}),
         },
       )
     : null

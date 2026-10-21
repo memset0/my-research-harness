@@ -105,12 +105,12 @@ describe('serializeReadme', () => {
     expect(out).toContain('H0007: warmup matters.')
   })
 
-  it('throws on non-canonical hypothesis ref when building a document', () => {
+  it('does not validate retired hypothesis metadata', () => {
     const parsed = parseReadme(SAMPLE)
     parsed.frontMatter.hypotheses = ['H0001', 'H3']
     expect(() =>
       serializeReadme({ frontMatter: parsed.frontMatter, sections: parsed.sections }),
-    ).toThrowError(/H3/)
+    ).not.toThrow()
   })
 
   it('drops legacy v2 fields (project / hypotheses / tags) when building a document', () => {

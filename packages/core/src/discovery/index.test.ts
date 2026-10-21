@@ -105,13 +105,13 @@ describe('RunIndex', () => {
     expect(idx.list({ project: 'recipe-x' })).toEqual([])
   })
 
-  it('search matches across name, tags, and hypotheses by default', () => {
+  it('search uses current metadata and ignores retired hypothesis associations', () => {
     const idx = new RunIndex()
     idx.set(makeExp({ id: 'a-260501-100000', name: 'overlap-test', tags: ['moe'] }))
     idx.set(makeExp({ id: 'b-260502-100000', name: 'rt-bench', hypotheses: ['H0007'] }))
 
     expect(idx.search('moe').map((e) => e.id)).toEqual(['a-260501-100000'])
-    expect(idx.search('H0007').map((e) => e.id)).toEqual(['b-260502-100000'])
+    expect(idx.search('H0007').map((e) => e.id)).toEqual([])
   })
 
   it('search hits both top-level project and frontMatter sub-project', () => {

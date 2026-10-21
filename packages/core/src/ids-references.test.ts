@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest'
 import { computeMembership } from './experiments/membership.js'
 import { parseExperimentReadme } from './experiments/parse.js'
 import { isRunPath as runPathIsRunPath } from './experiments/run-path.js'
-import { parseExperimentRefList } from './hypotheses/parse.js'
 import {
   EXPERIMENT_DIR_REGEX,
   EXPERIMENT_REF_REGEX,
@@ -77,34 +76,6 @@ describe('ids.ts validators accept the discovery corpus', () => {
   })
 })
 
-describe('hypotheses references', () => {
-  it('Runs lists name every discoverable Run', () => {
-    for (const name of DISCOVERABLE_RUNS) {
-      expect(parseExperimentRefList(`**Runs**: ${name}`).runs).toContain(
-        // A name whose suffix is itself a legacy token keeps the legacy extraction.
-        /[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*-\d{6}-\d{6}/.exec(name)?.[0] ?? name,
-      )
-    }
-    expect(parseExperimentRefList('模型-260501-100000, `数据-260502-150000`').runs).toEqual([
-      '模型-260501-100000',
-      '数据-260502-150000',
-    ])
-  })
-
-  it('keeps previously extracted prose tokens unchanged', () => {
-    expect(
-      parseExperimentRefList('foo-260501-100000 (data) → bar-260502-150000 (analysis)'),
-    ).toEqual({ experiments: [], runs: ['foo-260501-100000', 'bar-260502-150000'] })
-  })
-
-  it('Experiments lists name one-character slugs', () => {
-    expect(parseExperimentRefList('E0002-a, E0001-foo').experiments).toEqual([
-      'E0002-a',
-      'E0001-foo',
-    ])
-  })
-})
-
 describe('extractRunMentions', () => {
   it('only adds whole tokens where the legacy token found nothing', () => {
     expect(extractRunMentions('see (模型-260501-100000). and foo-260501-100000')).toEqual([
@@ -131,7 +102,6 @@ describe('wiki references', () => {
         wikiSlugs: [],
         experimentIds: [],
         runIds: [name, `logs/a/${name}`],
-        hypothesisIds: [],
       }
       expect(resolvesWikiReference(name, inventory)).toBe(true)
       expect(resolvesWikiReference(`logs/a/${name}`, inventory)).toBe(true)

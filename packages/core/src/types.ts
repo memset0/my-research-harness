@@ -1,7 +1,7 @@
 import type { ContentFields } from './content.js'
 // Core type definitions for memon
 //
-// Mirrors specs/experiment-readme, specs/hypotheses, specs/journal.
+// Mirrors specs/experiment-readme and specs/journal.
 // YAML on disk uses snake_case; we convert to camelCase at the parse boundary
 // so internal code is idiomatic TypeScript.
 
@@ -76,24 +76,6 @@ export const EXPERIMENT_STATUS_EMOJI: Readonly<Record<ExperimentStatus, string>>
   PAUSED: '⏸️',
   ARCHIVED: '📦',
   RETIRED: '⚫',
-}
-
-export type HypothesisStatus = 'CONFIRMED' | 'REFUTED' | 'PARTIAL' | 'OPEN' | 'DEFERRED'
-
-export const HYPOTHESIS_STATUS_VALUES: readonly HypothesisStatus[] = [
-  'CONFIRMED',
-  'REFUTED',
-  'PARTIAL',
-  'OPEN',
-  'DEFERRED',
-] as const
-
-export const HYPOTHESIS_STATUS_EMOJI: Readonly<Record<HypothesisStatus, string>> = {
-  CONFIRMED: '✅',
-  REFUTED: '❌',
-  PARTIAL: '🟡',
-  OPEN: '🔵',
-  DEFERRED: '⚪',
 }
 
 export type JournalEventTag =
@@ -186,11 +168,7 @@ export interface RunFrontMatter {
   entry: string
   command: string
   wandb: string | null
-  /**
-   * Related hypothesis IDs in canonical 4-digit zero-padded form. Legacy
-   * v2 field; the v3 parser leaves it `[]` by default and steers users
-   * toward the parent experiment doc's `hypotheses[]`.
-   */
+  /** Inert legacy metadata; preserved only for old document round-trips. */
   hypotheses: string[]
   /**
    * Legacy v2 tags. v3 carries tags on the experiment doc, not the run.
@@ -360,7 +338,7 @@ export interface ExperimentFrontMatter {
   archived: boolean
   /** Run dir base names that this experiment claims as members. */
   runs: string[]
-  /** Hypothesis IDs in canonical 4-digit padded form (`H0001`, `H0003`, ...). */
+  /** Inert legacy metadata; new documents omit it. */
   hypotheses: string[]
   tags: string[]
   /** ISO8601 with offset; when the doc was first created. */
@@ -723,36 +701,6 @@ export interface CodeReview extends CodeReviewSummary {
   body: string
   /** sha1 hex of the full file content (for optimistic locking). */
   hash: string
-}
-
-// ---------- Hypothesis ----------
-
-export interface Hypothesis {
-  /** Canonical 4-digit zero-padded id, e.g. `'H0001'`. */
-  id: string
-  slug: string // 'per-step-bf16-param-delta-is-sparse'
-  statement: string
-  origin: string
-  status: HypothesisStatus
-  /**
-   * v3 experiment doc ids (e.g. `E0001-foo`). Tokens that look like run
-   * directory names get split into the parallel `runs` field below; the
-   * parser emits `MIGRATE_HYPOTHESIS_REFS` for back-compat.
-   */
-  experiments: string[]
-  /** v3-added: run dir names referenced from `Runs:` or back-compat split. */
-  runs: string[]
-  evidence: string[]
-  caveats: string[]
-  lastVerified: string | null // YYYY-MM-DD
-}
-
-export interface ParsedHypotheses {
-  legendBlock: string | null // raw markdown of "## Status legend" if present
-  summaryTableBlock: string | null // raw markdown of "## Summary table" if present
-  entries: Hypothesis[]
-  parseErrors: ParseIssue[]
-  parseWarnings: ParseIssue[]
 }
 
 // ---------- Journal ----------

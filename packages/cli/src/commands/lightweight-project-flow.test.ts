@@ -28,6 +28,12 @@ it('creates fresh research and publishes prepared parameters and native measurem
   const experiment = await cli('experiment', 'create', 'study')
   expect(experiment.exitCode).toBe(0)
   const id = 'E0001-study'
+  expect(await fs.readFile(project.path('docs/experiments', id, 'README.md'), 'utf8')).not.toMatch(
+    /hypothes/i,
+  )
+  expect((await cli('experiment', 'create', 'retired', '--hypotheses', 'H0001')).exitCode).not.toBe(
+    0,
+  )
   const marker = JSON.parse(await fs.readFile(project.path('.memon/version.json'), 'utf8'))
   expect(marker.fs_convention_version).toBe(11)
   expect(marker.installed_at).toMatch(/[+-]\d{2}:\d{2}$/)
@@ -35,6 +41,8 @@ it('creates fresh research and publishes prepared parameters and native measurem
     'README.md',
     'experiment.json',
   ])
+  const history = '## H0001. Old claim\n\nHistorical evidence.\n'
+  await fs.writeFile(project.path('docs/hypotheses.md'), history)
   const created = await cli(
     'run',
     'create',
@@ -78,6 +86,7 @@ it('creates fresh research and publishes prepared parameters and native measurem
     ]),
   )
   expect(await table()).not.toContain('smoke,')
+  expect(await fs.readFile(project.path('docs/hypotheses.md'), 'utf8')).toBe(history)
 })
 
 it('does not relabel unmarked old research or overwrite a malformed marker', async () => {

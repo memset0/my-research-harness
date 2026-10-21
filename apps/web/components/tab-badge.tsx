@@ -5,23 +5,20 @@ import { useQuery } from '@tanstack/react-query'
 import {
   fetchCodeReviewsInventory,
   fetchExperimentsInventory,
-  fetchHypotheses,
   fetchJournalCount,
   fetchReportsInventory,
   fetchWikiInventory,
-  type HypothesesResponse,
   type JournalCountResponse,
   type ProjectTarget,
-  projectQueryKey,
 } from '../lib/api'
 import { queryKeys } from '../lib/query-keys'
 import { cn } from '../lib/utils'
 
-export type TabKind = 'experiments' | 'hypotheses' | 'journal' | 'reports' | 'code-review' | 'wiki'
+export type TabKind = 'experiments' | 'journal' | 'reports' | 'code-review' | 'wiki'
 
 /**
  * Small count badge rendered next to AppBar tab labels. File-backed
- * collections use identity-only inventories; Hypotheses still needs its
+ * collections use identity-only inventories; Journal uses its
  * content projection and Journal keeps its count-only endpoint.
  * Loading: renders a skeleton pulse (avoids a flash of "0").
  * Resolved: renders the count in tabular-nums.
@@ -89,15 +86,12 @@ function useTabCount(kind: TabKind, project: ProjectTarget): TabCountResult {
 type TabCollection =
   | BackendResourceInventoryResponse
   | BackendWikiInventoryResponse
-  | HypothesesResponse
   | JournalCountResponse
 
 function fetchTabCollection(kind: TabKind, project: ProjectTarget): Promise<TabCollection> {
   switch (kind) {
     case 'experiments':
       return fetchExperimentsInventory(project)
-    case 'hypotheses':
-      return fetchHypotheses(project)
     case 'journal':
       return fetchJournalCount(project)
     case 'reports':
@@ -111,7 +105,6 @@ function fetchTabCollection(kind: TabKind, project: ProjectTarget): Promise<TabC
 
 function countTabCollection(data: TabCollection): number {
   if ('items' in data) return data.items.length
-  if ('entries' in data) return data.entries.length
   if ('totalEvents' in data) return data.totalEvents
   if ('pages' in data) return data.pages.length
   return 0

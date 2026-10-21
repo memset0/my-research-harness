@@ -308,7 +308,6 @@ export type {
   ReadGitSubmodulesOptions,
 } from './git/submodules.js'
 export { readGitSubmodules } from './git/submodules.js'
-export { parseExperimentRefList, parseHypotheses } from './hypotheses/parse.js'
 export type { IdPrefix, ParsedId } from './ids.js'
 export {
   EXPERIMENT_REF_REGEX,

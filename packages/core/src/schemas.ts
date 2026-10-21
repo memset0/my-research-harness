@@ -46,7 +46,7 @@ export const RunFrontMatterRawSchema = z.object({
   entry: z.string().optional(),
   command: z.string().optional(),
   wandb: z.union([z.string(), z.null()]).optional(),
-  hypotheses: z.array(z.string()).optional(),
+  hypotheses: z.unknown().optional(),
   tags: z.array(z.string()).optional(),
   // v4-added: human-managed archive flag. Optional; absence means false
   // (the parser reports the declared-key set so the migration-window
@@ -78,7 +78,7 @@ export const ExperimentFrontMatterRawSchema = z.object({
   // run-side `archived`.
   archived: z.boolean().optional(),
   runs: z.array(z.string()).optional(),
-  hypotheses: z.array(z.string()).optional(),
+  hypotheses: z.unknown().optional(),
   tags: z.array(z.string()).optional(),
   created_at: z.string().min(1),
   updated_at: z.string().min(1),

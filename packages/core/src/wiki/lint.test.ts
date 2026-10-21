@@ -16,7 +16,6 @@ const INVENTORY: WikiArtifactInventory = {
   wikiLegacyIds: ['R0009'],
   experimentIds: ['E0002-zero-snr-eval', 'E0017-fused-attention'],
   runIds: ['zero-snr-eval-260902-110000'],
-  hypothesisIds: ['H0003'],
   reportIds: ['R0007'],
 }
 
@@ -231,7 +230,7 @@ updated_at: "2026-09-01T09:00:00+08:00"
         code: 'WIKI_SOURCE_UNRESOLVED',
         severity: 'warn',
         message:
-          'source "E9999" does not resolve to an Experiment, Variant, Hypothesis, wiki page, or run directory',
+          'source "E9999" does not resolve to an Experiment, Variant, wiki page, or run directory',
       },
     ])
   })
@@ -405,14 +404,21 @@ describe('extractWikiReferences / resolvesWikiReference', () => {
       'E0002',
       'E0002-zero-snr-eval',
       'E0017-fused-attention/V0068',
-      'H0003',
       'R0007',
       'R0009',
       'zero-snr-eval-260902-110000',
     ]) {
       expect(resolvesWikiReference(ref, INVENTORY), ref).toBe(true)
     }
-    for (const ref of ['W0099', 'old-slug', 'E0099', 'E0002-wrong-slug', 'H0007', 'R0042']) {
+    for (const ref of [
+      'W0099',
+      'old-slug',
+      'E0099',
+      'E0002-wrong-slug',
+      'H0003',
+      'H0007',
+      'R0042',
+    ]) {
       expect(resolvesWikiReference(ref, INVENTORY), ref).toBe(false)
     }
   })

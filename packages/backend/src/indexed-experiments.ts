@@ -91,7 +91,7 @@ export function experimentReadmeKey(path: string, stem: string): string {
 
 function rowCounts(parsed: ParsedExperiment): ExperimentRowCounts {
   return {
-    hypotheses: parsed.frontMatter.hypotheses.length,
+    hypotheses: 0,
     openWarnings: parsed.warnings.filter((warning) => warning.status === 'OPEN').length,
   }
 }
@@ -254,7 +254,7 @@ export function experimentListRow(
       updatedAt: frontMatter.updatedAt,
     },
     runCount: frontMatter.runs.length,
-    hypothesisCount: document.counts.hypotheses,
+    hypothesisCount: 0,
     openWarningCount: document.counts.openWarnings,
     parseErrors: document.parsed.parseErrors,
     parseWarnings: [...document.parsed.parseWarnings, ...document.discoveryWarnings],

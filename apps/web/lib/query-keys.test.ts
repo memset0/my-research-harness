@@ -48,7 +48,6 @@ describe('queryKeys', () => {
         "gitStatus",
         "gitStatusFiles",
         "hosts",
-        "hypotheses",
         "journal",
         "journalCount",
         "journalHistory",
@@ -209,22 +208,6 @@ describe('queryKeys', () => {
     expect(queryKeys.experimentsInventory(HOSTED)).toMatchInlineSnapshot(`
       [
         "experiments-inventory",
-        "host-a",
-        "project-a",
-      ]
-    `)
-  })
-
-  it('hypotheses', () => {
-    expect(queryKeys.hypotheses(STANDALONE)).toMatchInlineSnapshot(`
-      [
-        "hypotheses",
-        "project-a",
-      ]
-    `)
-    expect(queryKeys.hypotheses(HOSTED)).toMatchInlineSnapshot(`
-      [
-        "hypotheses",
         "host-a",
         "project-a",
       ]
@@ -742,17 +725,13 @@ describe('queryKeys', () => {
 
   it('maps every tab to its collection key', () => {
     expect(
-      (['experiments', 'hypotheses', 'journal', 'reports', 'code-review'] as const).map((kind) =>
+      (['experiments', 'journal', 'reports', 'code-review'] as const).map((kind) =>
         queryKeys.tabCollection(kind, STANDALONE),
       ),
     ).toMatchInlineSnapshot(`
       [
         [
           "experiments-inventory",
-          "project-a",
-        ],
-        [
-          "hypotheses",
           "project-a",
         ],
         [

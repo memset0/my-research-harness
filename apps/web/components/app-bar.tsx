@@ -37,12 +37,6 @@ export function AppBar({ project }: { project: ProjectTarget }) {
         p === `${projectBase}/experiments`,
     },
     {
-      name: 'Hypotheses',
-      kind: 'hypotheses',
-      href: `${projectBase}/hypotheses`,
-      matches: (p) => p.startsWith(`${projectBase}/hypotheses`),
-    },
-    {
       name: 'Journal',
       kind: 'journal',
       href: `${projectBase}/journal`,

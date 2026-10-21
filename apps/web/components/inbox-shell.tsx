@@ -75,7 +75,7 @@ interface FullItem extends ContentFields {
 const EMPTY_COPY = {
   reports: {
     rail: 'no reports yet',
-    body: 'No reports yet. Reports are written by `memon-write-report`; pick a hypothesis or set of experiments and ask the skill to summarize.',
+    body: 'No reports yet. Reports are written by `memon-write-report`; pick a research question or set of experiments and ask the skill to summarize.',
   },
 } as const
 

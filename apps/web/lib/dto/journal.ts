@@ -1,11 +1,10 @@
-// Response DTOs: Hypotheses and journal bodies (`/api/hypotheses`, `/api/journal/**`).
+// Response DTOs: Journal bodies (`/api/journal/**`).
 // Shared by the route handlers that build these bodies and the client
 // fetchers in `lib/api.ts`. Types and pure helpers only — no server imports.
 
-import type { JournalEvent, ParsedHypotheses, ParsedJournal } from '@memon/core'
+import type { JournalEvent, ParsedJournal } from '@memon/core'
 
 /** Named response contracts for content-bearing project collections. */
-export type HypothesesResponse = { path?: string } & ParsedHypotheses
 
 export interface JournalCountResponse {
   totalEvents: number

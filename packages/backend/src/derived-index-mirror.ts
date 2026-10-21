@@ -186,7 +186,7 @@ export function runSummaryFromEntry(
     entry: row.entry,
     command: row.command,
     wandb: row.wandb,
-    hypotheses: [...row.hypotheses],
+    hypotheses: [],
     tags: [...row.tags],
     experiment: entry.owner,
     archived: frontMatterArchived,
@@ -268,7 +268,7 @@ export function experimentReadmeFromEntry(entry: ExperimentIndexEntry, stem: str
   return {
     parsed,
     mtime: row.readme_mtime,
-    counts: { hypotheses: row.hypothesis_count, openWarnings: row.open_warning_count },
+    counts: { hypotheses: 0, openWarnings: row.open_warning_count },
   }
 }
 

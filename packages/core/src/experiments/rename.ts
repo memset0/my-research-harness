@@ -171,9 +171,6 @@ export async function renameExperiment(
     }
   }
 
-  // ── Step 4: hypotheses substitution ──────────────────────────────
-  await substituteHypothesesId(projectRoot, oldId, newId)
-
   // ── Step 5: JOURNAL append ───────────────────────────────────────
   await appendJournalEvent({
     path: join(projectRoot, 'docs', 'journal.md'),
@@ -197,27 +194,4 @@ export async function renameExperiment(
     warnings,
     ...(indexWarnings.length > 0 ? { indexWarnings } : {}),
   }
-}
-
-async function substituteHypothesesId(
-  projectRoot: string,
-  oldId: string,
-  newId: string,
-): Promise<void> {
-  const hypothesesPath = join(projectRoot, 'docs', 'hypotheses.md')
-  let content: string
-  try {
-    content = await fs.readFile(hypothesesPath, 'utf8')
-  } catch (err) {
-    const e = err as NodeJS.ErrnoException
-    if (e.code === 'ENOENT') return
-    throw err
-  }
-  // Word-boundary aware: forbid alphanumeric or `-` on either side so
-  // `E0001-foo` cannot match a substring of e.g. `E0001-foo-bar`.
-  const escaped = oldId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const re = new RegExp(`(?<![A-Za-z0-9-])${escaped}(?![A-Za-z0-9-])`, 'g')
-  const next = content.replace(re, newId)
-  if (next === content) return
-  await writeFileAtomic(hypothesesPath, next)
 }

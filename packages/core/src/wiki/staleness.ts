@@ -3,11 +3,11 @@ import { EXPERIMENT_REF_REGEX, isRunDirName, isRunPath } from '../ids.js'
 // Evidence resolution: `sources` -> project artifacts -> staleness + backlinks.
 //
 // A source is one of `E<NNNN>[-<slug>]`, `E<NNNN>[-<slug>]/V<NNNN>` (a Variant
-// row of that Experiment's results.yaml), `H<NNNN>`, `W<NNNN>`, or a run
+// row of that Experiment's results), `W<NNNN>`, or a run
 // directory base name. Each resolved source has a last-change time — the
 // Experiment's effective updated time (frontmatter joined with its member
-// runs, mirroring the experiment detail projection), the hypotheses file
-// mtime, the cited page's `updated_at`, or the run's `updated_at` (README
+// runs, mirroring the experiment detail projection), the cited page's
+// `updated_at`, or the run's `updated_at` (README
 // mtime when absent). A page is stale when any resolved source changed after
 // its own `updated_at`; a deprecated page never goes stale.
 
@@ -16,15 +16,13 @@ import { WIKI_ID_REGEX } from './types.js'
 
 /** `E<NNNN>`, optional `-<slug>`, optional `/V<NNNN>`. */
 const EXPERIMENT_SOURCE_REGEX = EXPERIMENT_REF_REGEX
-const HYPOTHESIS_SOURCE_REGEX = /^H\d{4}$/
 
-export type WikiSourceKind = 'experiment' | 'variant' | 'hypothesis' | 'wiki' | 'run'
+export type WikiSourceKind = 'experiment' | 'variant' | 'wiki' | 'run'
 
 /** Classify source syntax without looking up the referenced target. */
 export function wikiSourceKind(source: string): WikiSourceKind | null {
   const experiment = EXPERIMENT_SOURCE_REGEX.exec(source)
   if (experiment) return experiment[3] === undefined ? 'experiment' : 'variant'
-  if (HYPOTHESIS_SOURCE_REGEX.test(source)) return 'hypothesis'
   if (WIKI_ID_REGEX.test(source)) return 'wiki'
   if (isRunDirName(source) || isRunPath(source)) return 'run'
   return null
@@ -41,9 +39,8 @@ export interface WikiSourceReferences {
 /**
  * Partition declared sources into the lookups `resolveWikiSources` performs,
  * so a caller can load metadata for exactly the cited targets instead of
- * every Experiment and Run in the project. Hypotheses and wiki pages are
- * absent by design: those resolve against one file's mtime and the pages the
- * caller already holds.
+ * every Experiment and Run in the project. Wiki pages are
+ * absent by design: those resolve against pages the caller already holds.
  */
 export function collectWikiSourceReferences(sources: Iterable<string>): WikiSourceReferences {
   const experiments = new Set<string>()
@@ -62,14 +59,6 @@ export function collectWikiSourceReferences(sources: Iterable<string>): WikiSour
 export interface WikiSourceContext {
   experiments: readonly Experiment[]
   runs: readonly Run[]
-  /** `docs/hypotheses.md` mtime in epoch ms; null when the file is absent. */
-  hypothesesMtime: number | null
-  /**
-   * Hypothesis ids declared in `docs/hypotheses.md`. When omitted every
-   * well-formed `H<NNNN>` resolves (the file mtime is the only signal a
-   * Backend without a parsed hypotheses index has).
-   */
-  hypothesisIds?: readonly string[]
 }
 
 export interface WikiSourcePage {
@@ -116,7 +105,7 @@ export interface WikiSourceIndex {
 
 /**
  * Resolve every page's declared `sources` against the project's Experiments,
- * Runs, Hypotheses, and wiki pages.
+ * Runs and wiki pages.
  */
 export function resolveWikiSources(
   pages: readonly WikiSourcePage[],
@@ -133,7 +122,6 @@ export function resolveWikiSources(
     if (!experimentsByNumericId.has(numeric)) experimentsByNumericId.set(numeric, experiment)
   }
   const pagesById = new Map(pages.map((page) => [page.id, page]))
-  const hypothesisIds = ctx.hypothesisIds ? new Set(ctx.hypothesisIds) : null
   const experimentUpdated = new Map<string, number | null>()
 
   const result: WikiSourceIndex = { pages: new Map(), backlinks: new Map() }
@@ -151,8 +139,6 @@ export function resolveWikiSources(
         experimentUpdated,
         runsById,
         pagesById,
-        hypothesisIds,
-        hypothesesMtime: ctx.hypothesesMtime,
       })
       if (!resolution.kind) {
         unresolvedSources.push(token)
@@ -207,8 +193,6 @@ interface ResolveDeps {
   experimentUpdated: Map<string, number | null>
   runsById: Map<string, Run>
   pagesById: Map<string, WikiSourcePage>
-  hypothesisIds: Set<string> | null
-  hypothesesMtime: number | null
 }
 
 function resolveSource(
@@ -237,17 +221,6 @@ function resolveSource(
       kind: variantId === undefined ? 'experiment' : 'variant',
       artifact: variantId === undefined ? experiment.id : `${experiment.id}/${variantId}`,
       lastChangedAt,
-    }
-  }
-
-  if (HYPOTHESIS_SOURCE_REGEX.test(source)) {
-    if (deps.hypothesisIds && !deps.hypothesisIds.has(source)) return unresolved
-    if (!deps.hypothesisIds && deps.hypothesesMtime === null) return unresolved
-    return {
-      source,
-      kind: 'hypothesis',
-      artifact: source,
-      lastChangedAt: deps.hypothesesMtime,
     }
   }
 

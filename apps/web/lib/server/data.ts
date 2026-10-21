@@ -13,7 +13,6 @@ import { BackendProjectServiceError } from '@memon/backend'
 import {
   BackendCodeReviewResponseSchema,
   BackendCodeReviewsResponseSchema,
-  BackendHypothesesResponseSchema,
   BackendJournalResponseSchema,
   BackendReportResponseSchema,
   BackendReportsResponseSchema,
@@ -73,26 +72,6 @@ export async function getExperimentData(
     )
       return null
     throw error
-  }
-}
-
-const EMPTY_HYPS = {
-  legendBlock: null,
-  summaryTableBlock: null,
-  entries: [],
-  parseErrors: [],
-  parseWarnings: [],
-} as const
-
-export async function getHypothesesData(project: string) {
-  const rt = await getRuntime()
-  const path = rt.hypothesesPath(project)
-  if (!path) return { path: '', ...EMPTY_HYPS }
-  return {
-    path,
-    ...BackendHypothesesResponseSchema.parse(
-      await standaloneServices(rt.config).projects.getHypotheses(project),
-    ),
   }
 }
 

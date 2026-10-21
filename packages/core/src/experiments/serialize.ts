@@ -1,4 +1,3 @@
-import { isId } from '../ids.js'
 import type { ExperimentFrontMatter, ExperimentRawSection, ExperimentSections } from '../types.js'
 import { isExperimentLifecycle } from '../types.js'
 import { CANONICAL_EXPERIMENT_SECTION_HEADINGS, MANAGED_SECTION_POINTERS } from './documents.js'
@@ -92,14 +91,7 @@ function renderFrontMatter(fm: ExperimentFrontMatter): string {
   lines.push(`status: ${fm.status}`)
   if (!isExperimentLifecycle(fm.status)) lines.push(`archived: ${fm.archived ? 'true' : 'false'}`)
   lines.push(`runs: ${renderStringArray(fm.runs)}`)
-  for (const ref of fm.hypotheses) {
-    if (!isId(ref, 'H')) {
-      throw new Error(
-        `serializeExperimentReadme: hypotheses[] element "${ref}" is not canonical (expected H<NNNN>)`,
-      )
-    }
-  }
-  lines.push(`hypotheses: ${renderStringArray(fm.hypotheses)}`)
+  if (fm.hypotheses.length) lines.push(`hypotheses: ${renderStringArray(fm.hypotheses)}`)
   lines.push(`tags: ${renderStringArray(fm.tags)}`)
   lines.push(`created_at: ${quoteIfNeeded(fm.createdAt)}`)
   lines.push(`updated_at: ${quoteIfNeeded(fm.updatedAt)}`)

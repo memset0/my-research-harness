@@ -26,7 +26,6 @@ export type PatchableRunFrontMatterKey =
   | 'entry'
   | 'command'
   | 'wandb'
-  | 'hypotheses'
   | 'tags'
   | 'status'
   | 'archived'

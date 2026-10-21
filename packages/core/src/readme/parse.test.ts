@@ -61,18 +61,18 @@ describe('parseReadme', () => {
     expect(parsed.sections.newHypotheses).toContain('H0007')
   })
 
-  it('drops invalid hypothesis refs from frontmatter array with per-element warning', () => {
+  it('preserves legacy hypothesis strings without domain validation', () => {
     const mixed = VALID_README.replace(
       'hypotheses: [H0001, H0003]',
       'hypotheses: [H0001, H3, H0042]',
     )
     const parsed = parseReadme(mixed)
-    expect(parsed.frontMatter.hypotheses).toEqual(['H0001', 'H0042'])
+    expect(parsed.frontMatter.hypotheses).toEqual(['H0001', 'H3', 'H0042'])
     expect(
       parsed.parseWarnings.some(
         (w) => w.field === 'hypotheses' && /INVALID_HYPOTHESIS_REF.*H3/.test(w.message),
       ),
-    ).toBe(true)
+    ).toBe(false)
   })
 
   it('warns when status is lowercase', () => {

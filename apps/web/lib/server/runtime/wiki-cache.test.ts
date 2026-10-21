@@ -12,7 +12,6 @@ let changes: string[]
 const EMPTY_CONTEXT: WikiProjectContext = {
   experiments: [],
   runs: [],
-  hypothesesMtime: null,
 }
 
 function page(id: string, kind: string, title: string, extra = ''): string {

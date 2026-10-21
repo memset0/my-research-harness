@@ -69,7 +69,7 @@ export function runRowFromRun(run: Run): RunRow {
     entry: fm.entry,
     command: fm.command,
     wandb: fm.wandb,
-    hypotheses: [...fm.hypotheses],
+    hypotheses: [], // Reserved legacy cache slot; no hypothesis indexing.
     tags: [...fm.tags],
     parse_errors: run.parseErrors.map((issue) => ({ ...issue })),
     parse_warnings: run.parseWarnings.map((issue) => ({ ...issue })),
@@ -299,7 +299,7 @@ export async function deriveExperimentEntry(
         tags: [...fm.tags],
         created_at: fm.createdAt,
         updated_at: fm.updatedAt,
-        hypothesis_count: fm.hypotheses.length,
+        hypothesis_count: 0,
         open_warning_count: parsed.warnings.filter((warning) => warning.status === 'OPEN').length,
         parse_errors: parsed.parseErrors.map((issue) => ({ ...issue })),
         parse_warnings: parsed.parseWarnings.map((issue) => ({ ...issue })),

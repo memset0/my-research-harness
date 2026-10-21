@@ -1575,32 +1575,6 @@ export const BackendRunFilesResponseSchema = z
   })
   .strict()
 
-const BackendHypothesisSchema = z
-  .object({
-    id: z.string(),
-    slug: z.string(),
-    statement: z.string(),
-    origin: z.string(),
-    status: z.string(),
-    experiments: z.array(z.string()),
-    runs: z.array(z.string()),
-    evidence: z.array(z.string()),
-    caveats: z.array(z.string()),
-    lastVerified: z.string().nullable(),
-  })
-  .strict()
-
-export const BackendHypothesesResponseSchema = z
-  .object({
-    project: ProjectNameSchema,
-    legendBlock: z.string().nullable(),
-    summaryTableBlock: z.string().nullable(),
-    entries: z.array(BackendHypothesisSchema).max(10_000),
-    parseErrors: z.array(BackendParseIssueSchema),
-    parseWarnings: z.array(BackendParseIssueSchema),
-  })
-  .strict()
-
 const BackendJournalEventSchema = z
   .object({
     timestamp: z.string(),
@@ -2459,7 +2433,6 @@ export const BackendExperimentCreateRequestSchema = z
       .max(96)
       .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/),
     title: z.string().min(1).max(512).optional(),
-    hypotheses: z.array(BackendOpaqueResourceIdSchema).max(1024).optional(),
     tags: z.array(z.string().min(1).max(128)).max(1024).optional(),
     fromRun: BackendOpaqueResourceIdSchema.nullable().optional(),
     fromRunExpectedMtime: z.number().finite().nonnegative().optional(),

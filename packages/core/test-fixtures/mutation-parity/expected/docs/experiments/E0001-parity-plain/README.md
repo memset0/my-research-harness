@@ -5,7 +5,6 @@ title: Parity plain
 status: RESOLVED
 archived: false
 runs: [logs/other-260901-130000]
-hypotheses: []
 tags: []
 created_at: "{{NOW}}"
 updated_at: "{{NOW}}"

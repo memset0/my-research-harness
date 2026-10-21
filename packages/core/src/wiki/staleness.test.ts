@@ -170,8 +170,6 @@ const RUNS = [makeRun('zero-snr-eval-260902-110000', '2026-09-02T11:00:00+08:00'
 const CTX = {
   experiments: EXPERIMENTS,
   runs: RUNS,
-  hypothesesMtime: Date.parse('2026-08-15T09:00:00+08:00'),
-  hypothesisIds: ['H0003'],
 }
 
 describe('resolveWikiSources', () => {
@@ -183,7 +181,7 @@ describe('resolveWikiSources', () => {
     expect(result.pages.get('W0004')).toMatchObject({
       stale: true,
       staleSources: ['E0017'],
-      unresolvedSources: [],
+      unresolvedSources: ['H0003'],
     })
   })
 

@@ -6,7 +6,6 @@ import {
   BackendAnomaliesResponseSchema,
   type BackendCapabilities,
   BackendExperimentResponseSchema,
-  BackendHypothesesResponseSchema,
   BackendJournalCountResponseSchema,
   BackendJournalHistoryResponseSchema,
   BackendJournalResponseSchema,
@@ -109,11 +108,9 @@ describe('Backend initial Project data routes', () => {
     })
     expect(experimentDetail).not.toHaveProperty('experiment')
     expect(experimentDetail).not.toHaveProperty('path')
-    BackendHypothesesResponseSchema.parse(
-      await (
-        await request('/api/backend/v1/hypotheses?project=project-a', { actor: owner })
-      ).json(),
-    )
+    expect(
+      (await request('/api/backend/v1/hypotheses?project=project-a', { actor: owner })).status,
+    ).toBe(404)
     BackendJournalResponseSchema.parse(
       await (
         await request('/api/backend/v1/journal?project=project-a&limit=2', { actor: owner })

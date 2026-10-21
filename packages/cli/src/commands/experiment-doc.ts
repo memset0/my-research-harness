@@ -83,7 +83,6 @@ export interface ExperimentCreateInput {
   cwd: string
   slug: string
   title?: string
-  hypotheses?: string[]
   fromRun?: string | undefined
 }
 
@@ -113,7 +112,6 @@ export async function runExperimentCreate(input: ExperimentCreateInput): Promise
         projectName,
         slug: input.slug,
         ...(input.title === undefined ? {} : { title: input.title }),
-        hypotheses: input.hypotheses ?? [],
         importedRun,
         ...(input.fromRun ? { importedRunLabel: input.fromRun } : {}),
       }),

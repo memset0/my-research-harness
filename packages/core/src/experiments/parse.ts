@@ -15,7 +15,7 @@ import matter from 'gray-matter'
 import type { ZodError } from 'zod'
 
 import { RUN_DIR_REGEX } from '../ids.js'
-import { stringArray, stringOr, validatedHypothesisRefs } from '../readme/fields.js'
+import { stringArray, stringOr } from '../readme/fields.js'
 import { splitH2Sections } from '../readme/sections.js'
 import { ExperimentFrontMatterRawSchema } from '../schemas.js'
 import { normalizeExperimentStatus } from '../status.js'
@@ -129,8 +129,8 @@ export function parseExperimentReadme(content: string, filenameStem: string): Pa
   // Validate run dir refs in `runs[]` (drop bad ones with warnings)
   const runs = validatedRunRefs(raw.runs, warnings)
 
-  // Validate hypothesis refs (drop bad ones with warnings)
-  const hypotheses = validatedHypothesisRefs(raw.hypotheses, warnings)
+  // Preserve retired metadata only; it has no managed semantics.
+  const hypotheses = stringArray(raw.hypotheses)
 
   // v4-added: ExperimentStatus. Missing → OPEN with parse warning.
   let status: ExperimentFrontMatter['status']
@@ -246,18 +246,6 @@ export function parseExperimentReadme(content: string, filenameStem: string): Pa
       if (heading === 'Method' || heading === 'Plan' || heading === 'Caveats') {
         // Continue with duplicate checks below.
       } else {
-        // Carry-over from v2: the legacy `New Hypotheses` section is no longer
-        // part of the experiment doc schema. Surface a structured warning so
-        // the user moves the content into Motivation / Conclusion.
-        if (heading === 'New Hypotheses') {
-          warnings.push({
-            field: 'section.New Hypotheses',
-            message:
-              'legacy `## New Hypotheses` section in experiment doc — relocate into Motivation/Conclusion',
-            severity: 'warning',
-          })
-          continue
-        }
         warnings.push({
           field: `section.${heading}`,
           message: `UNKNOWN_H2_SECTION: heading "## ${heading}" is not in the canonical experiment doc section list; content is preserved verbatim but not categorised`,

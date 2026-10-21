@@ -5,7 +5,6 @@
 // Metadata-only reserialization patches the source YAML and preserves the
 // complete body, comments, unknown fields and unmodified legacy values.
 
-import { isId } from '../ids.js'
 import type { ArtifactEntry, ParsedReadme, RunFrontMatter, RunSections } from '../types.js'
 import {
   type PatchableRunFrontMatterKey,
@@ -59,11 +58,6 @@ const HEADING_FOR: Record<(typeof SECTION_ORDER)[number], string> = {
 export interface SerializeReadmeInput {
   frontMatter: RunFrontMatter
   sections: RunSections
-  /**
-   * If true, emit the optional `New Hypotheses` heading even when its body is
-   * empty/null. Default: false (omit when empty).
-   */
-  includeNewHypothesesWhenEmpty?: boolean
 }
 
 export function serializeReadme(input: SerializeReadmeInput): string {
@@ -72,8 +66,7 @@ export function serializeReadme(input: SerializeReadmeInput): string {
   for (const key of SECTION_ORDER) {
     if (key !== 'artifacts' && WHEN_POPULATED.includes(key)) {
       const value = input.sections[key]
-      const forced = key === 'newHypotheses' && input.includeNewHypothesesWhenEmpty === true
-      if (!forced && (value === null || value.trim() === '')) continue
+      if (value === null || value.trim() === '') continue
     }
     bodyParts.push(`## ${HEADING_FOR[key]}`)
     if (key === 'artifacts') {
@@ -200,16 +193,6 @@ function renderFrontMatter(fm: RunFrontMatter): string {
   // but a fresh serialize emits the canonical v3 shape only. The
   // motivation is that these now belong on the parent experiment doc;
   // duplicating them per run drifts (see openspec spec rationale §F1).
-  // Validate any caller-supplied hypothesis refs would be canonical, so
-  // existing tooling that still passes them in detects malformed values
-  // even though we no longer emit the line.
-  for (const ref of fm.hypotheses) {
-    if (!isId(ref, 'H')) {
-      throw new Error(
-        `serializeReadme: hypotheses[] element "${ref}" is not canonical (expected H<NNNN>, e.g. H0003)`,
-      )
-    }
-  }
   return `${lines.join('\n')}\n`
 }
 
@@ -287,7 +270,7 @@ function renderMinimalFrontMatter(fm: RunFrontMatter): string {
 function quoteIfNeeded(value: string): string {
   // YAML strings that look like other types or contain : need quoting
   if (value === '') return "''"
-  if (/[:#&*!|>'"%@`,\[\]\{\}]/.test(value)) return JSON.stringify(value)
+  if (/[:#&*!|>'"%@`,[\]{}]/.test(value)) return JSON.stringify(value)
   if (/^(true|false|null|~|yes|no|on|off)$/i.test(value)) return JSON.stringify(value)
   if (/^-?\d/.test(value)) return JSON.stringify(value)
   if (value.startsWith(' ') || value.endsWith(' ')) return JSON.stringify(value)

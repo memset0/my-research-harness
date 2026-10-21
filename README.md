@@ -198,12 +198,16 @@ surface and `--help` define supported invocations.
 
 ## Web dashboard
 
+Hypotheses is retired: no dedicated page, API, CLI option, background read or
+automatic reference maintenance. Existing project documents remain untouched;
+choose any migration separately for each project.
+
 - **/p/[project]** — vertical-stack experiment-card grid (one card per
   exp doc), each card embedding its member runs as a compact table with
   status pills, plus a pinned anomaly banner at the top when the
   `/api/anomalies` endpoint reports any.
 - **/p/[project]/e/[id]** — exp doc detail page: header (id + title +
-  tags + hypotheses) + Edit markdown action; Runs section with collapsible
+  tags) + Edit markdown action; Runs section with collapsible
   per-run panels (default folded, persisted in localStorage); all canonical v6
   sections in README order; YAML-rendered Implementation / Investigation /
   Results; compatibility diagnostics that keep unknown/duplicate/conflicting
@@ -211,8 +215,6 @@ surface and `--help` define supported invocations.
 - **/p/[project]/r/[id]** — legacy URL; redirects to the parent exp's
   detail page with `?run=<id>` so the corresponding run panel is
   auto-expanded.
-- **/p/[project]/hypotheses** — summary table + per-entry cards with
-  experiment cross-links.
 - **/p/[project]/journal** — reverse-chronological timeline, filter by
   tag and experiment id, browser-tz timestamps.
 - **/p/[project]/reports** — index pages for single-file or directory-bundle

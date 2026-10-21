@@ -5,7 +5,6 @@
 import type {
   BackendResourceInventoryResponse,
   BackendWikiInventoryResponse,
-  Hypothesis,
   JournalEvent,
   Run,
   WarningRecord,
@@ -105,19 +104,13 @@ export type {
 import type { WarningsConflict, WarningsListResponse, WarningsOpResponse } from './dto/warnings'
 
 export type {
-  HypothesesResponse,
   JournalCountResponse,
   JournalHistoryResponse,
   JournalInvocationRecordView,
   JournalResponse,
 } from './dto/journal'
 
-import type {
-  HypothesesResponse,
-  JournalCountResponse,
-  JournalHistoryResponse,
-  JournalResponse,
-} from './dto/journal'
+import type { JournalCountResponse, JournalHistoryResponse, JournalResponse } from './dto/journal'
 
 export type {
   FullReport,
@@ -335,10 +328,6 @@ export async function fetchExperiments(project?: ProjectTarget): Promise<RunsRes
 
 export async function fetchExperiment(project: ProjectTarget, id: string): Promise<FullExperiment> {
   return jsonFetch(projectQueryUrl(`/api/runs/${encodeURIComponent(id)}`, project))
-}
-
-export async function fetchHypotheses(project: ProjectTarget): Promise<HypothesesResponse> {
-  return jsonFetch(projectQueryUrl('/api/hypotheses', project))
 }
 
 /** Preserved legacy `docs/journal.md` history. Read-only after the cutover. */
@@ -824,7 +813,6 @@ export async function createExperimentDoc(
   input: {
     slug: string
     title?: string
-    hypotheses?: string[]
     tags?: string[]
     fromRun?: string | null
     fromRunExpectedMtime?: number
@@ -1163,7 +1151,7 @@ export async function deleteCommitMark(
 }
 
 // Re-exports for convenience
-export type { Hypothesis, JournalEvent, Run, WarningRecord }
+export type { JournalEvent, Run, WarningRecord }
 
 /** Explicitly recompute one or more executable component blocks. */
 export async function runComponents(

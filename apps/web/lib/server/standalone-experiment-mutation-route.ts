@@ -26,7 +26,6 @@ export async function createStandaloneExperiment(
   input: {
     slug: string
     title?: string
-    hypotheses?: string[]
     tags?: string[]
     fromRun?: string | null
   },

@@ -141,7 +141,6 @@ function matchesQuery(exp: Run, needle: string, scope: SearchScope): boolean {
     if (haystackContains(exp.frontMatter.project, needle)) return true
     if (haystackContains(exp.frontMatter.command, needle)) return true
     for (const t of exp.frontMatter.tags) if (haystackContains(t, needle)) return true
-    for (const h of exp.frontMatter.hypotheses) if (haystackContains(h, needle)) return true
   }
   if (scope === 'all' || scope === 'body') {
     if (haystackContains(exp.body, needle)) return true

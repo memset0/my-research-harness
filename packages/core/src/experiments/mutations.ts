@@ -376,7 +376,6 @@ export interface ExperimentBundleInput {
   id: string
   slug: string
   title?: string
-  hypotheses?: string[]
   tags?: string[]
   /** ISO8601 with offset; written as both `created_at` and `updated_at`. */
   timestamp: string
@@ -434,7 +433,7 @@ export function buildExperimentBundle(input: ExperimentBundleInput): ExperimentB
       status: input.researchVersioned ? 'ACTIVE' : 'OPEN',
       archived: false,
       runs: imported ? [imported.path] : [],
-      hypotheses: input.hypotheses ?? [],
+      hypotheses: [],
       tags: input.tags ?? [],
       createdAt: input.timestamp,
       updatedAt: input.timestamp,
@@ -475,7 +474,7 @@ export function buildLightweightExperimentBundle(
       status: 'ACTIVE',
       archived: false,
       runs: [],
-      hypotheses: input.hypotheses ?? [],
+      hypotheses: [],
       tags: input.tags ?? [],
       createdAt: input.timestamp,
       updatedAt: input.timestamp,
@@ -494,7 +493,6 @@ export interface CreateExperimentInput extends MutationBase {
   projectName: string
   slug: string
   title?: string
-  hypotheses?: string[]
   tags?: string[]
   importedRun?: MutationRun | null
   /** Label naming the imported Run in messages (defaults to its id). */
@@ -625,7 +623,6 @@ export async function createExperiment(
       id,
       slug,
       ...(input.title === undefined ? {} : { title: input.title }),
-      hypotheses: input.hypotheses ?? [],
       tags: input.tags ?? [],
       timestamp: stamp,
       importedRun:

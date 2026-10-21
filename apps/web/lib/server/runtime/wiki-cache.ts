@@ -52,7 +52,7 @@ export interface WikiCacheDeps {
   projects: readonly WikiCacheProject[]
   /**
    * Live projection inputs for one project (Experiment index, run index,
-   * hypotheses mtime, report ids). Called on every projection rebuild and
+   * report ids). Called on every projection rebuild and
    * MUST only read in-memory state.
    */
   context: (project: WikiCacheProject) => WikiProjectContext

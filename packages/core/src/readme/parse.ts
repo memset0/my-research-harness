@@ -22,7 +22,7 @@ import { normalizeStatus } from '../status.js'
 import type { ParsedReadme, ParseIssue, RunFrontMatter, RunSections } from '../types.js'
 import { matterOptions } from '../yaml-engine.js'
 import { parseArtifacts } from './artifacts.js'
-import { stringArray, stringOr, validatedHypothesisRefs } from './fields.js'
+import { stringArray, stringOr } from './fields.js'
 import { splitH2Sections } from './sections.js'
 import { parseWarningsBody } from './warnings.js'
 
@@ -114,7 +114,7 @@ export function parseReadme(content: string): ParsedReadme {
     entry: stringOr(raw.entry, ''),
     command: stringOr(raw.command, ''),
     wandb: nullableString(raw.wandb),
-    hypotheses: validatedHypothesisRefs(raw.hypotheses, warnings),
+    hypotheses: stringArray(raw.hypotheses),
     tags: stringArray(raw.tags),
     archived,
     deprecated,
