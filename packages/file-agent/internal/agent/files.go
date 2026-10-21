@@ -68,6 +68,7 @@ func (l Limits) valid() bool {
 }
 
 type ProjectConfig struct {
+	ServicePorts                  []int  `json:"servicePorts,omitempty"`
 	Root                          string `json:"root"`
 	SourceIdentity                string `json:"sourceIdentity"`
 	ReadOnly                      bool   `json:"readOnly"`

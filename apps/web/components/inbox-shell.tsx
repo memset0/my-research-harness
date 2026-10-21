@@ -8,6 +8,7 @@ import { BodyTranslation } from './body-translation'
 // a right-side Sheet showing the rail; tapping Edit opens a full-viewport
 // bottom Sheet with Monaco.
 
+import type { ContentFields } from '@memon/core'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, List, PanelLeftClose, PanelLeftOpen, Pencil, X } from 'lucide-react'
 import Link from 'next/link'
@@ -20,7 +21,6 @@ import {
   type ProjectTarget,
   projectHost,
   projectName,
-  projectQueryKey,
   projectWebPath,
   putReport,
   type ReportListItem,
@@ -29,6 +29,15 @@ import { splitFrontmatter } from '../lib/frontmatter'
 import { queryKeys } from '../lib/query-keys'
 import { useUserPreferenceState } from '../lib/use-user-preference-state'
 import { cn } from '../lib/utils'
+import {
+  ContentBadges,
+  ContentFilters,
+  ContentMetadata,
+  ContentPresentation,
+  emptyContentFilter,
+  matchesContentFilter,
+  ServiceAvailability,
+} from './content-presentation'
 import { DocumentArtifactLinkProvider } from './document-artifact-link-provider'
 import { FrontmatterPanel } from './frontmatter-panel'
 import { Markdown } from './markdown'
@@ -42,7 +51,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from './ui
 
 export type InboxKind = 'reports'
 
-interface CommonItem {
+interface CommonItem extends ContentFields {
   id: string
   path?: string
   resource?: string
@@ -52,7 +61,7 @@ interface CommonItem {
   subLabel: string
 }
 
-interface FullItem {
+interface FullItem extends ContentFields {
   id: string
   path?: string
   resource?: string
@@ -87,11 +96,16 @@ export function InboxShell({
   selectedId: string | null
 }) {
   const {
-    items,
+    items: allItems,
     isLoading: itemsLoading,
     error: itemsError,
     refetch: refetchItems,
   } = useItemsList(kind, project)
+  const [contentFilter, setContentFilter] = useState(emptyContentFilter)
+  const items = allItems.filter((item) => matchesContentFilter(item, contentFilter))
+  const contentFilters = (
+    <ContentFilters items={allItems} value={contentFilter} onChange={setContentFilter} />
+  )
   const selected = useSelectedItem(kind, project, selectedId)
   const [storedReportRailOpen, setReportRailOpen] = useUserPreferenceState<boolean>(
     REPORT_PICKER_PREFERENCE_KEY,
@@ -117,6 +131,7 @@ export function InboxShell({
             count={items.length}
             onHideReports={kind === 'reports' ? () => setReportRailOpen(false) : undefined}
           />
+          <div className="border-b p-2">{contentFilters}</div>
           <div className="flex-1 overflow-y-auto">
             <RailList
               kind={kind}
@@ -160,6 +175,7 @@ export function InboxShell({
 
       {/* Mobile FAB → drawer with the rail */}
       <MobileRailDrawer
+        filters={contentFilters}
         kind={kind}
         project={project}
         items={items}
@@ -186,6 +202,7 @@ function useItemsList(
     if (kind === 'reports') {
       const reports: ReportListItem[] = reportsQ.data?.reports ?? []
       return reports.map((r) => ({
+        ...r,
         id: r.id,
         path: r.path,
         resource: r.resource,
@@ -346,10 +363,21 @@ function RailList({
                 <span className="font-mono text-[10px] tabular-nums">{it.id}</span>
                 <span className="truncate text-[10px] text-muted-foreground">{it.subLabel}</span>
               </div>
+              <div className="mt-1">
+                <ContentBadges content={it} />
+              </div>
+              {it.description && (
+                <p className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">
+                  {it.description}
+                </p>
+              )}
               <div className="mt-0.5 truncate text-[11px]">
                 {it.title ?? <span className="italic text-muted-foreground/60">(no title)</span>}
               </div>
             </Link>
+            {it.presentation === 'service' && (
+              <ServiceAvailability project={project} kind="report" id={it.id} />
+            )}
           </li>
         )
       })}
@@ -477,6 +505,7 @@ function SelectedItemPane({
             <RenderedItem
               kind={kind}
               content={data.content}
+              metadata={data}
               project={project}
               sourceDocumentPath={data.path ?? data.resource}
               sourceSurface={kind === 'reports' ? 'full-report' : 'left'}
@@ -588,8 +617,10 @@ export function RenderedItem({
   sourceDocumentPath,
   sourceSurface,
   sourceReportId,
+  metadata,
 }: {
   kind: InboxKind
+  metadata?: ContentFields
   content: string
   project: ProjectTarget
   resourceBaseUrl?: string
@@ -598,8 +629,25 @@ export function RenderedItem({
   sourceReportId?: string
 }) {
   const { frontmatter, body } = useMemo(() => splitFrontmatter(content), [content])
+  if (
+    metadata?.presentation === 'html' ||
+    metadata?.presentation === 'service' ||
+    metadata?.contentError
+  )
+    return (
+      <div>
+        <ContentMetadata content={metadata} />
+        <ContentPresentation
+          content={metadata}
+          project={project}
+          kind="report"
+          id={sourceReportId ?? ''}
+        />
+      </div>
+    )
   const rendered = (
     <>
+      {metadata && <ContentMetadata content={metadata} />}
       {frontmatter && (
         <FrontmatterPanel
           data={frontmatter}
@@ -758,6 +806,7 @@ function InboxEditor({
 }
 
 function MobileRailDrawer({
+  filters,
   kind,
   project,
   items,
@@ -766,6 +815,7 @@ function MobileRailDrawer({
   onRetry,
   selectedId,
 }: {
+  filters?: React.ReactNode
   kind: InboxKind
   project: ProjectTarget
   items: CommonItem[]
@@ -793,6 +843,7 @@ function MobileRailDrawer({
             {projectName(project)}
           </SheetTitle>
         </SheetHeader>
+        <div className="border-b p-2">{filters}</div>
         <RailList
           kind={kind}
           project={project}

@@ -1688,8 +1688,24 @@ export const BackendDocumentSchema = BackendDocumentSummarySchema.extend({
   content: z.string().max(4 * 1024 * 1024),
 }).strict()
 
+const ContentFieldsShape = {
+  description: z.string().max(4096).nullable().optional(),
+  presentation: z.enum(['markdown', 'html', 'service']).optional(),
+  category: z.string().max(128).optional(),
+  freshness: z.enum(['CURRENT', 'STALE']).optional(),
+  staleReason: z.string().max(4096).optional(),
+  asOf: z.string().max(64).optional(),
+  sourceCommits: z.record(z.string(), z.string().regex(/^[a-f0-9]{40}$/i)).optional(),
+  createdAt: z.string().max(64).optional(),
+  updatedAt: z.string().max(64).optional(),
+  servicePort: z.number().int().min(1).max(65535).optional(),
+  contentEntry: z.string().max(2048).optional(),
+  contentError: z.string().max(8192).optional(),
+}
+
 export const BackendReportSummarySchema = z
   .object({
+    ...ContentFieldsShape,
     id: z.string().regex(/^R\d{4}$/),
     project: ProjectNameSchema,
     resource: BackendOpaqueResourceIdSchema,
@@ -1744,6 +1760,7 @@ const BackendWikiDeprecationSchema = z
 
 export const BackendWikiSummarySchema = z
   .object({
+    ...ContentFieldsShape,
     id: BackendWikiIdSchema,
     project: ProjectNameSchema,
     resource: BackendOpaqueResourceIdSchema,

@@ -126,6 +126,9 @@ export const queryKeys = {
   projectShares: (project: ProjectTarget) =>
     ['project-shares', ...projectQueryKey(project)] as const,
 
+  contentHealth: (project: ProjectTarget, kind: 'wiki' | 'report', id: string) =>
+    ['content-health', ...projectQueryKey(project), kind, id] as const,
+
   // Document component cache files
   docAsset: (project: string, host: string | null, cachePath: string) =>
     ['doc-asset', project, host, cachePath] as const,

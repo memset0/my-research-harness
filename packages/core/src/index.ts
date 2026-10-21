@@ -47,6 +47,7 @@ export {
   SERVICE_CONFIG_FILE_MODE,
 } from './config/permissions.js'
 export { projectSourceGroup } from './config/source-group.js'
+export * from './content.js'
 export * from './derived-index/index.js'
 export type {
   DeprecationResult,
@@ -548,4 +549,12 @@ export {
   parseMemonReleaseMajor,
   VERSION,
 } from './version.js'
+export {
+  deleteWikiPage,
+  WikiDeleteError,
+  type WikiDeleteInput,
+  type WikiDeleteResult,
+} from './wiki/delete.js'
+export { reserveWikiId } from './wiki/id-watermark.js'
 export * from './wiki/index.js'
+export { prepareWikiInventory, publishWikiInventory } from './wiki/publish.js'

@@ -10,6 +10,7 @@ import type { WikiListItem } from '../lib/api'
 import { formatRelativeTime } from '../lib/format-relative-time'
 import { cn } from '../lib/utils'
 import { wikiKinds } from '../lib/wiki-kinds'
+import { ContentBadges } from './content-presentation'
 import { Badge } from './ui/badge'
 
 export { wikiKindOrder as WIKI_KIND_ORDER } from '../lib/wiki-kinds'
@@ -141,10 +142,15 @@ export function WikiPageCard({
       )}
     >
       <div className="flex flex-wrap items-center gap-1">
-        <WikiKindBadge kind={page.kind} />
+        {page.category !== page.kind && <WikiKindBadge kind={page.kind} />}
         <WikiStatusBadge status={page.status} />
-        <WikiStaleIndicator stale={page.stale} staleSources={page.staleSources} />
+        {!page.freshness && (
+          <WikiStaleIndicator stale={page.stale} staleSources={page.staleSources} />
+        )}
         <WikiDeprecatedBadge deprecated={page.deprecated} />
+      </div>
+      <div className="mt-1">
+        <ContentBadges content={page} />
       </div>
       <div className="mt-1 truncate text-[13px] font-medium text-foreground">
         {page.title || <span className="italic text-muted-foreground/60">(no title)</span>}

@@ -9,6 +9,7 @@
 // place.
 
 import yaml from 'js-yaml'
+import { parseContent } from '../content.js'
 import { splitFrontmatter } from '../frontmatter.js'
 import type { WikiDeprecation, WikiFrontmatter } from './types.js'
 
@@ -28,7 +29,16 @@ export interface ParsedWikiFrontmatter {
  * frontmatter is missing or broken still yields its body so the reader can
  * show it, and the caller turns `frontmatter === null` into diagnostics.
  */
-export function parseWikiFrontmatter(content: string): ParsedWikiFrontmatter {
+export function parseWikiFrontmatter(content: string, path?: string): ParsedWikiFrontmatter {
+  if (path?.endsWith('/manifest.json')) {
+    const parsed = parseContent(content, path)
+    return {
+      frontmatter: parsed.metadata as WikiFrontmatter,
+      body: '',
+      raw: '',
+      ...(parsed.errors.length ? { error: parsed.errors.join('; ') } : {}),
+    }
+  }
   const split = splitFrontmatter(content)
   if (split.status !== 'ok')
     return { frontmatter: null, body: content, raw: '', error: 'missing frontmatter' }

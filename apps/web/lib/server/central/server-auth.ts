@@ -15,7 +15,7 @@ import type { MappedBackendRoute } from './backend-route'
 
 export interface CentralServerAuthOptions {
   request: IncomingMessage
-  route: MappedBackendRoute
+  route: Pick<MappedBackendRoute, 'ownership'> & { manifestRoute: string }
   /**
    * Resolves viewer share tokens for the selected Host+Project. A registered
    * peer Host validates over the Backend API; a directly served Project
@@ -74,7 +74,7 @@ function requestIsHttps(request: IncomingMessage): boolean {
 }
 
 function effectiveAuthClass(
-  route: MappedBackendRoute,
+  route: Pick<MappedBackendRoute, 'ownership'> & { manifestRoute: string },
   method: string,
 ): 'read' | 'mutating' | 'shell' {
   if (route.ownership.auth === 'mixed') return method.toUpperCase() === 'GET' ? 'read' : 'mutating'
@@ -88,7 +88,10 @@ function exactSelector(search: URLSearchParams, name: string): string | null {
   return values.length === 1 ? values[0]! : null
 }
 
-function projectFromPath(route: MappedBackendRoute, pathname: string): string | null {
+function projectFromPath(
+  route: Pick<MappedBackendRoute, 'ownership'> & { manifestRoute: string },
+  pathname: string,
+): string | null {
   const routeSegments = route.manifestRoute.replace(/\/route\.ts$/, '').split('/')
   const pathSegments = pathname
     .replace(/^\/api\//, '')
@@ -103,7 +106,10 @@ function projectFromPath(route: MappedBackendRoute, pathname: string): string | 
   }
 }
 
-function selectedProjectRef(route: MappedBackendRoute, requestUrl: URL): ProjectRef | null {
+function selectedProjectRef(
+  route: Pick<MappedBackendRoute, 'ownership'> & { manifestRoute: string },
+  requestUrl: URL,
+): ProjectRef | null {
   const hostValue = exactSelector(requestUrl.searchParams, 'host')
   const host = HostIdSchema.safeParse(hostValue)
   if (!host.success) return null

@@ -141,12 +141,15 @@ async function readBundlePage(
   const match = WIKI_PAGE_NAME_REGEX.exec(entryName)
   if (!match) return null
   const bundleDir = path.join(kindDir, entryName)
-  const absolutePath = path.join(bundleDir, 'README.md')
-  const read = await readPageFile(absolutePath)
+  const manifestPath = path.join(bundleDir, 'manifest.json')
+  const manifest = await readPageFile(manifestPath)
+  const absolutePath = manifest ? manifestPath : path.join(bundleDir, 'README.md')
+  const read = manifest ?? (await readPageFile(absolutePath))
   if (!read) return null
-  const { assets, newestMtime } = inventoryOnly
-    ? { assets: [], newestMtime: read.mtime }
-    : await listBundleAssets(bundleDir)
+  const { assets, newestMtime } =
+    inventoryOnly || manifest
+      ? { assets: [], newestMtime: read.mtime }
+      : await listBundleAssets(bundleDir)
   return {
     id: match[1]!,
     slug: match[2]!,

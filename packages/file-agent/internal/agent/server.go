@@ -17,6 +17,7 @@ import (
 )
 
 type Config struct {
+	ServiceGrants   map[string]map[string]bool   `json:"serviceGrants,omitempty"`
 	Listen          string                       `json:"listen"`
 	Certificate     string                       `json:"certificate"`
 	Key             string                       `json:"key"`
@@ -27,20 +28,22 @@ type Config struct {
 	Limits          Limits                       `json:"limits"`
 }
 type snapshot struct {
-	projects map[string]*Project
-	grants   map[string]map[string]string
-	tls      *tls.Config
-	refs     int
-	retired  bool
+	serviceGrants map[string]map[string]bool
+	projects      map[string]*Project
+	grants        map[string]map[string]string
+	tls           *tls.Config
+	refs          int
+	retired       bool
 }
 type Server struct {
-	mu        sync.Mutex
-	current   *snapshot
-	limits    Limits
-	capacity  chan struct{}
-	replay    *ReplayStore
-	groupCaps map[string]int
-	handles   *readHandles
+	serviceCapacity chan struct{}
+	mu              sync.Mutex
+	current         *snapshot
+	limits          Limits
+	capacity        chan struct{}
+	replay          *ReplayStore
+	groupCaps       map[string]int
+	handles         *readHandles
 }
 
 func LoadConfig(name string) (Config, error) {
@@ -70,7 +73,7 @@ func loadSnapshot(cfg Config, previous *snapshot) (*snapshot, error) {
 	if !pool.AppendCertsFromPEM(pem) {
 		return nil, fail("BAD_REQUEST")
 	}
-	state := &snapshot{projects: map[string]*Project{}, grants: cfg.Grants, tls: &tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{cert}, ClientCAs: pool, ClientAuth: tls.RequireAndVerifyClientCert}}
+	state := &snapshot{projects: map[string]*Project{}, grants: cfg.Grants, serviceGrants: cfg.ServiceGrants, tls: &tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{cert}, ClientCAs: pool, ClientAuth: tls.RequireAndVerifyClientCert}}
 	for id, project := range cfg.Projects {
 		if id == "" {
 			state.close()
@@ -109,6 +112,22 @@ func loadSnapshot(cfg Config, previous *snapshot) (*snapshot, error) {
 			}
 		}
 	}
+	for principal, grants := range cfg.ServiceGrants {
+		for project, enabled := range grants {
+			if enabled && (state.projects[project] == nil || state.grants[principal][project] == "") {
+				state.close()
+				return nil, fail("BAD_REQUEST")
+			}
+		}
+	}
+	for _, project := range cfg.Projects {
+		for _, port := range project.ServicePorts {
+			if port < 1 || port > 65535 {
+				state.close()
+				return nil, fail("BAD_REQUEST")
+			}
+		}
+	}
 	return state, nil
 }
 func (st *snapshot) close() {
@@ -137,7 +156,7 @@ func NewServer(cfg Config) (*Server, error) {
 	for name := range groups {
 		groups[name] = max(1, cfg.Limits.MaxConcurrent/max(1, len(groups)))
 	}
-	return &Server{current: state, limits: cfg.Limits, capacity: make(chan struct{}, cfg.Limits.MaxConcurrent*4), replay: replay, groupCaps: groups, handles: newReadHandles()}, nil
+	return &Server{serviceCapacity: make(chan struct{}, cfg.Limits.MaxConcurrent), current: state, limits: cfg.Limits, capacity: make(chan struct{}, cfg.Limits.MaxConcurrent*4), replay: replay, groupCaps: groups, handles: newReadHandles()}, nil
 }
 func (s *Server) Reload(cfg Config) error {
 	if cfg.Limits != s.limits {
@@ -307,6 +326,10 @@ func (s *Server) perform(st *snapshot, r *http.Request, q query, readLimit int64
 	}
 }
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/v1/services/") {
+		s.serveService(w, r)
+		return
+	}
 	select {
 	case s.capacity <- struct{}{}:
 		defer func() { <-s.capacity }()
@@ -327,7 +350,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("X-Memon-Source-Identity", state.projects[q.Project].Identity())
 		if r.URL.Path == "/v1/capabilities" {
-			respond(w, map[string]any{"protocolMajor": ProtocolMajor, "writerLockVersion": WriterLockVersion, "sourceIdentity": state.projects[q.Project].Identity(), "capabilities": []string{"read", "list", "stat", "lstat", "resolve", "range", "mutate", "batch", "replay", "directory-guards-v1", "read-handles-v1"}, "limits": s.advertisedLimits()})
+			respond(w, map[string]any{"protocolMajor": ProtocolMajor, "writerLockVersion": WriterLockVersion, "sourceIdentity": state.projects[q.Project].Identity(), "capabilities": []string{"read", "list", "stat", "lstat", "resolve", "range", "mutate", "batch", "replay", "directory-guards-v1", "read-handles-v1", "services-v1"}, "limits": s.advertisedLimits()})
 			return
 		}
 		q.Operation = strings.TrimPrefix(r.URL.Path, "/v1/")

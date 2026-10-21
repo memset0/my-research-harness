@@ -8,6 +8,7 @@ import type { Duplex } from 'node:stream'
 import next from 'next'
 import { servesProjectsDirectly } from './lib/server/central/direct-projects'
 import type { CentralGatewayHandler } from './lib/server/central/node-http'
+import { createContentServiceGateway } from './lib/server/content-service-gateway'
 import { prewarmRoutes } from './lib/server/route-prewarm'
 import { getRuntime } from './lib/server/runtime'
 import { createMemonServer } from './lib/server/server-core'
@@ -93,11 +94,22 @@ if (runtime.config.central) {
             return false
           }
 }
+const contentGateway = createContentServiceGateway(runtime.config, runtime.auth)
 const server = createMemonServer({
+  contentGateway,
   handle,
   upgradeHandler,
   ...(centralGateway ? { centralGateway } : {}),
 })
+
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.once(signal, () => {
+    contentGateway.stop()
+    server.close(() => process.exit(0))
+    server.closeAllConnections()
+    setTimeout(() => process.exit(0), 3000).unref()
+  })
+}
 
 if (stopFleet) {
   process.once('SIGINT', () => void stopFleet())

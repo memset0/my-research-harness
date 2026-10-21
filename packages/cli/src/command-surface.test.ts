@@ -22,7 +22,7 @@ function leaves(program: Command, prefix = ''): string[] {
     .sort()
 }
 
-it('keeps all 19 retained commands in one memon tree without duplicate groups', async () => {
+it('keeps all 20 commands in one memon tree without duplicate groups', async () => {
   const program = createResearchProgram()
   const registered = leaves(program)
   const expected = [
@@ -42,6 +42,7 @@ it('keeps all 19 retained commands in one memon tree without duplicate groups', 
     'update',
     'wiki create',
     'wiki move',
+    'wiki delete',
     'experiment archive',
     'experiment unarchive',
     'run record',
@@ -78,9 +79,9 @@ it('shares root options and invocation handling across routine and optional comm
   expect(wiki.exitCode, wiki.stderr).toBe(0)
   expect(wiki.stdout).toContain('W0001')
   expect(wiki.stdout.trim()).not.toMatch(/^\{/)
-  expect(await fs.readFile(project.path('docs/wiki/note/W0001-summary.md'), 'utf8')).toContain(
-    'Summary',
-  )
+  expect(
+    await fs.readFile(project.path('docs/wiki/note/W0001-summary/README.md'), 'utf8'),
+  ).toContain('Summary')
   expect((await cli('json', 'experiment', 'archive', 'E0001')).exitCode).toBe(0)
   expect((await cli('json', 'experiment', 'unarchive', 'E0001')).exitCode).toBe(0)
   const invalid = await cli('invalid', 'show', 'E0001')

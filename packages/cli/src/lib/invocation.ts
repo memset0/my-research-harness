@@ -83,6 +83,7 @@ export const CLI_LEDGER_CLASSES: Readonly<Record<string, CliLedgerClass>> = {
   'share revoke': 'project',
   'wiki create': 'project',
   'wiki move': 'project',
+  'wiki delete': 'project',
   'components run': 'project',
   'experiment archive': 'project',
   'experiment unarchive': 'project',

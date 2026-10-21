@@ -16,7 +16,7 @@ import {
   WIKI_PAGE_NAME_REGEX,
 } from '@memon/core'
 import { join, relative, sep } from '@memon/file-protocol/paths'
-import { isContained } from './containment.js'
+import { isContained, resolveContained } from './containment.js'
 import { digest, type ListedEntry, projectReadIndex, type ReadPolicy } from './read-index.js'
 import { realProjectRoot } from './request-scope.js'
 
@@ -36,7 +36,7 @@ const byName = (left: { name: string }, right: { name: string }) =>
 export async function indexedWikiPages(
   project: ProjectConfig,
   policy: ReadPolicy,
-  options: { assets: boolean },
+  options: { assets: boolean; id?: string },
 ): Promise<DiscoveredWikiPage[]> {
   const index = projectReadIndex(project.root)
   const age = policy.listMaxAgeMs
@@ -53,7 +53,11 @@ export async function indexedWikiPages(
         const entries = (await index.listing(kindDir, age)) ?? []
         return Promise.all(
           entries
-            .filter((entry) => !entry.name.endsWith(COMPONENT_ASSETS_SUFFIX))
+            .filter(
+              (entry) =>
+                !entry.name.endsWith(COMPONENT_ASSETS_SUFFIX) &&
+                (!options.id || entry.name.startsWith(`${options.id}-`)),
+            )
             .sort(byName)
             .map((entry) => indexedWikiPage(project, policy, kind, kindDir, entry, options.assets)),
         )
@@ -80,7 +84,17 @@ async function indexedWikiPage(
   const match = stem === null ? null : WIKI_PAGE_NAME_REGEX.exec(stem)
   if (!match) return null
   const bundleDir = bundle ? join(kindDir, entry.name) : null
-  const absolutePath = bundleDir ? join(bundleDir, 'README.md') : join(kindDir, entry.name)
+  const children = bundleDir
+    ? await projectReadIndex(project.root).listing(bundleDir, policy.listMaxAgeMs)
+    : null
+  const manifest = children?.some(
+    (child) => child.name === 'manifest.json' && child.type === 'file',
+  )
+  const absolutePath = bundleDir
+    ? join(bundleDir, manifest ? 'manifest.json' : 'README.md')
+    : join(kindDir, entry.name)
+  if ((await resolveContained(project.root, absolutePath, { allowMissing: true })) === null)
+    return null
   const page = await projectReadIndex(project.root).file(
     absolutePath,
     'wiki-page',
@@ -89,7 +103,9 @@ async function indexedWikiPage(
   )
   if (!page) return null
   const assets =
-    bundleDir && withAssets ? await indexedBundleAssets(project, policy, bundleDir) : null
+    bundleDir && withAssets && !manifest
+      ? await indexedBundleAssets(project, policy, bundleDir)
+      : null
   return {
     id: match[1]!,
     slug: match[2]!,
@@ -257,23 +273,39 @@ const REPORT_BUNDLE = /^R(\d{4})-([a-z0-9][a-z0-9-]*)$/
 export async function indexedReportInventory(
   project: ProjectConfig,
   policy: ReadPolicy,
+  id?: string,
 ): Promise<BackendResourceInventoryItem[]> {
   const directory = join(project.root, 'docs', 'reports')
   if ((await containedReal(project, policy, directory)) === null) return []
-  const entries =
-    (await projectReadIndex(project.root).listing(directory, policy.listMaxAgeMs)) ?? []
+  const index = projectReadIndex(project.root)
   const items: BackendResourceInventoryItem[] = []
-  for (const entry of entries) {
-    const file = entry.type === 'file' ? REPORT_FILE.exec(entry.name) : null
-    const bundle = entry.type === 'dir' ? REPORT_BUNDLE.exec(entry.name) : null
-    const match = file ?? bundle
-    if (!match) continue
-    items.push({
-      id: `R${match[1]}`,
-      slug: match[2]!,
-      resource: ResourceIdSchema.parse(`docs/reports/${entry.name}${bundle ? '/README.md' : ''}`),
-    })
+  const collect = async (dir: string, prefix: string, categories: boolean) => {
+    for (const entry of (await index.listing(dir, policy.listMaxAgeMs)) ?? []) {
+      const file = entry.type === 'file' ? REPORT_FILE.exec(entry.name) : null
+      const bundle = entry.type === 'dir' ? REPORT_BUNDLE.exec(entry.name) : null
+      const match = file ?? bundle
+      if (!match) {
+        if (categories && entry.type === 'dir')
+          await collect(join(dir, entry.name), `${prefix}/${entry.name}`, false)
+        continue
+      }
+      if (id && `R${match[1]}` !== id) continue
+      const children = bundle
+        ? await index.listing(join(dir, entry.name), policy.listMaxAgeMs)
+        : null
+      const manifest = children?.some(
+        (child) => child.name === 'manifest.json' && child.type === 'file',
+      )
+      items.push({
+        id: `R${match[1]}`,
+        slug: match[2]!,
+        resource: ResourceIdSchema.parse(
+          `${prefix}/${entry.name}${bundle ? (manifest ? '/manifest.json' : '/README.md') : ''}`,
+        ),
+      })
+    }
   }
+  await collect(directory, 'docs/reports', true)
   return items.sort(
     (left, right) => right.id.localeCompare(left.id) || left.resource.localeCompare(right.resource),
   )

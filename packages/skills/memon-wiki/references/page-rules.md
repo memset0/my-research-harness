@@ -7,11 +7,9 @@ backlinks stay useful. Use the existing page kind and language unless the task
 changes them. A page title and short description help navigation; a fixed
 section outline is not required for good prose.
 
-A `## Maintenance rules for agents` section, when present, carries the owner's
-standing instructions. Keep it last, as compact list items with their recorded
-date; preserve agent-specific scope. Merge duplicates without weakening the
-owner's requirements. Research conclusions belong in the body, not that section.
-Do not add policies merely to record an agent mistake.
+Preserve the owner's standing instructions and agent-specific scope where they
+already live. No special heading or list format is required. Do not add policy
+boilerplate to record an agent mistake.
 
 Retain useful historical context with `[!DEPRECATED]-` callouts. Invalidation
 requires a specific reason; retirement alone does not invalidate a result.

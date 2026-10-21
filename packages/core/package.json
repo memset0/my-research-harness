@@ -25,22 +25,25 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@memon/file-protocol": "workspace:*",
     "fast-glob": "^3.3.2",
     "gray-matter": "^4.0.3",
     "js-yaml": "^4.1.0",
     "lru-cache": "^11.5.2",
+    "parse5": "7.3.0",
     "pino": "^9.5.0",
+    "remark-gfm": "4.0.1",
+    "remark-math": "6.0.0",
     "remark-parse": "^11.0.0",
     "unified": "^11.0.5",
     "yaml": "^2.9.0",
-    "zod": "^3.23.8",
-    "@memon/file-protocol": "workspace:*"
+    "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@memon/test-utils": "workspace:*",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.0.0",
     "typescript": "^5.6.0",
-    "vitest": "^2.1.0",
-    "@memon/test-utils": "workspace:*"
+    "vitest": "^2.1.0"
   }
 }

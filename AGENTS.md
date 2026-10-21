@@ -82,7 +82,7 @@ packages' source, never their `dist/`, so no build is needed first.
 |---|---|
 | `packages/core` | Shared domain library: types and enums (`src/types.ts`), README/experiment/wiki parsers and serializers, discovery and indexing, polling, project file store, time helpers, release policy (`src/version.ts`: `FS_CONVENTION_VERSION`, `MEMON_RELEASE`), Web/backend wire protocol (`src/backend-protocol.ts`). |
 | `packages/file-protocol` | Minimal file contracts, conditional validators, mTLS client and logical path helpers; no business parsers. CLI updates build this JavaScript dependency without Go. |
-| `packages/file-agent` | Optional independent Go source kernel: mTLS grants, contained file primitives, common writer locks and bounded replay. No domain parsing, watchers, execution or subscriptions; install/upgrade separately from central releases. |
+| `packages/file-agent` | Optional independent Go source kernel: mTLS grants, contained file primitives, common writer locks and bounded replay. No domain parsing, watchers, execution or subscriptions; optional separately granted loopback HTTP/WS forwarding; install/upgrade separately from central releases. |
 | `packages/backend` | Framework-agnostic domain service layer (project, document, mutation, stream, git, slurm, wiki services behind `createBackendHandler`). Its only runtime consumer is the central Web process, which calls it in-process (`apps/web/lib/server/central/direct-runtime.ts`). No daemon or remote listener. |
 | `packages/cli` | The `memon` CLI. Command surface: `memon --help` / `memon <cmd> --help` and `packages/cli/src/index.ts`. |
 | `packages/skills` | Bundled `memon-*` agent skills distributed to research projects. |
@@ -99,8 +99,8 @@ Other sources of truth — consult these instead of copying lists here:
 
 - `FS_CONVENTION_VERSION` lives in `packages/core/src/version.ts`.
 - **CLI**: routine leaves are `experiment create`, `run create`, `run update`,
-  `refresh`, `show` and `install-skills`. Another 13 optional leaves remain
-  under `memon` (19 total); independent entrypoints are deferred. No hidden retired aliases. Migration executors live under
+  `refresh`, `show` and `install-skills`. Another 14 optional leaves remain
+  under `memon` (20 total); independent entrypoints are deferred. No hidden retired aliases. Migration executors live under
   `packages/core/migrations/scripts/` and are invoked through their guides/Skill.
 - **FS11 Experiment**: `docs/experiments/E<NNNN>-<slug>/README.md` and
   `experiment.json` with `format: "lightweight"`, optional groups/columns and
@@ -148,8 +148,17 @@ Other sources of truth — consult these instead of copying lists here:
   belongs in the project's `.memon/project.yml`; a layout key still in a
   central entry keeps working and wins over the project file, but logs
   `CENTRAL_LAYOUT_DEPRECATED`. Move layout keys into the project deliberately.
-- **Wiki**: `<projectRoot>/docs/wiki/<kind>/W<NNNN>-<slug>.md` or
-  `…/W<NNNN>-<slug>/README.md` (bundle).
+- **Wiki/Report**: new content is a folder under `docs/wiki/<category>/W<NNNN>-<slug>/`
+  or `docs/reports/[<category>/]R<NNNN>-<slug>/`. Markdown uses README.md; HTML/service
+  uses manifest.json (`type`, `title`, optional maintenance metadata; service `port`).
+  Manifests take precedence. Legacy standalone Markdown remains readable. Wiki
+  stays current; Report records `as_of` and `source_commits`. Explicit CURRENT/STALE
+  is separate from measurement validity and service availability. No mandatory
+  body templates. User-authorized `wiki delete` refuses inbound links, updates the
+  inventory and retains an ID high-water mark; agents repair links first.
+- **Service forwarding**: owner-only HTTP/WS via native loopback, lazy SSH tunnels,
+  or independently granted File Agent service ports. memon never starts/stops
+  applications. Authors use relative URLs or honor the displayed base prefix.
 - Hypotheses: `docs/hypotheses.md`.
 
 ## 3. Failure modes (rules learned the hard way)

@@ -2,9 +2,9 @@
 // Shared by the route handlers that build these bodies and the client
 // fetchers in `lib/api.ts`. Types and pure helpers only — no server imports.
 
-import type { ReportSummary } from '@memon/core'
+import type { ContentFields, ReportSummary } from '@memon/core'
 
-export interface FullReport {
+export interface FullReport extends ContentFields {
   id: string
   slug: string
   /** Standalone-only absolute path; central Backend responses deliberately omit it. */

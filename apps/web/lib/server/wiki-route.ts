@@ -81,7 +81,7 @@ export function wikiPageDto(
   content: string,
   hash: string,
 ): WikiPageDto {
-  const componentProjection = wikiComponentProjection(content)
+  const componentProjection = wikiComponentProjection(content, summary.path)
   return {
     ...summary,
     project,
@@ -100,8 +100,9 @@ export function wikiPageDto(
  */
 export function wikiComponentProjection(
   content: string,
+  path?: string,
 ): Pick<WikiPage, 'components'> & { diagnostics: WikiDiagnostic[] } {
-  const parsed = parseWikiFrontmatter(content)
+  const parsed = parseWikiFrontmatter(content, path)
   const lineOffset = (
     content.slice(0, Math.max(0, content.length - parsed.body.length)).match(/\n/g) ?? []
   ).length

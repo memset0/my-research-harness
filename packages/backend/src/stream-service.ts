@@ -13,10 +13,11 @@ import {
 } from '@memon/core'
 import { basename, dirname, extname, join } from '@memon/file-protocol/paths'
 import { isContained, PathContainmentError, resolveContained } from './containment.js'
+import { indexedReportInventory } from './indexed-documents.js'
 import { missingOrThrow } from './missing-path.js'
+import { STRICT_READ_POLICY } from './read-index.js'
 
 const LOG_EXTENSIONS = new Set(['.log', '.txt', '.out', '.err'])
-const REPORT_BUNDLE_PATTERN = /^R(\d{4})-([a-z0-9][a-z0-9-]*)$/
 const WIKI_BUNDLE_PATTERN = /^W(\d{4})-([a-z0-9][a-z0-9-]*)$/
 const DEFAULT_LOG_STREAM_POLL_MS = 1500
 const MAX_LOG_STREAM_LINES = 2000
@@ -206,18 +207,14 @@ export class FilesystemStreamService implements BackendStreamService {
     if (resource.toLowerCase() === 'readme.md') {
       throw new BackendStreamServiceError('RESOURCE_NOT_FOUND', 'Report README is not an asset')
     }
-    const entries = await readDirectoryEntries(join(project.root, 'docs', 'reports'))
-    const matches = entries.filter((entry) => {
-      const match = entry.isDirectory() ? REPORT_BUNDLE_PATTERN.exec(entry.name) : null
-      return match && `R${match[1]}` === reportId
-    })
-    if (matches.length === 0) {
+    const matches = (await indexedReportInventory(project, STRICT_READ_POLICY)).filter(
+      (entry) => entry.id === reportId && /\/(README\.md|manifest\.json)$/.test(entry.resource),
+    )
+    if (matches.length === 0)
       throw new BackendStreamServiceError('RESOURCE_NOT_FOUND', 'Report bundle not found')
-    }
-    if (matches.length > 1) {
+    if (matches.length > 1)
       throw new BackendStreamServiceError('AMBIGUOUS_RESOURCE', 'Report bundle is ambiguous')
-    }
-    return this.resolveBundleAsset(project, `docs/reports/${matches[0]!.name}`, resource)
+    return this.resolveBundleAsset(project, matches[0]!.resource.replace(/\/[^/]+$/, ''), resource)
   }
 
   /**

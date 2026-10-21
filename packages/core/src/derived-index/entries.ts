@@ -331,7 +331,7 @@ export async function deriveWikiEntry(
   const fs = input.fs ?? defaultIndexFs
   const stat = await statOrNull(fs, input.page.absolutePath)
   if (!stat?.isFile()) return null
-  const { frontmatter, body } = parseWikiFrontmatter(input.page.content)
+  const { frontmatter, body } = parseWikiFrontmatter(input.page.content, input.page.path)
   const summary = buildWikiSummary({
     location: { ...input.page, mtime: stat.mtimeMs },
     frontmatter,

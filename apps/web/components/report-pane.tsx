@@ -5,13 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ArrowUpRight, ChevronDown, PanelRight, PanelRightClose, Rows3, X } from 'lucide-react'
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
-import {
-  fetchReport,
-  fetchReportsInventory,
-  type ProjectTarget,
-  projectQueryKey,
-  projectWebPath,
-} from '../lib/api'
+import { fetchReport, fetchReportsInventory, type ProjectTarget, projectWebPath } from '../lib/api'
 import { queryKeys } from '../lib/query-keys'
 import { cn } from '../lib/utils'
 import { RenderedItem, reportResourceBaseUrl } from './inbox-shell'
@@ -139,6 +133,7 @@ export function ReportPane({
             <RenderedItem
               kind="reports"
               content={detail.data.content}
+              metadata={detail.data}
               project={project}
               sourceDocumentPath={detail.data.path ?? detail.data.resource}
               sourceSurface="side-report"

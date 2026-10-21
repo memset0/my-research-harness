@@ -1,29 +1,32 @@
-// Wiki reads and optional allocation and move. Source targets are not hydrated.
+// Optional Wiki authoring and guarded deletion; ordinary show avoids target hydration.
 
 import { promises as fs } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 
 import {
   buildWikiProject,
   type DiscoveredWikiPage,
+  deleteWikiPage,
   discoverWikiPages,
   formatIsoLocal,
-  getWikiKind,
   isWikiLanguage,
+  loadConfig,
   padId,
+  parseContent,
   parseId,
   parseWikiFrontmatter,
+  prepareWikiInventory,
+  publishWikiInventory,
+  reserveWikiId,
   serializeWikiPage,
   updateWikiFrontmatter,
   WIKI_DIR_RELPATH,
   WIKI_ID_REGEX,
-  WIKI_KINDS,
   WIKI_LANGUAGES,
   WIKI_PAGE_NAME_REGEX,
-  WIKI_RECOMMENDED_SECTIONS,
-  WIKI_RESERVED_KINDS,
   WIKI_SLUG_REGEX,
   WIKI_STATUS_BY_KIND,
+  WikiDeleteError,
   type WikiDiagnostic,
   type WikiFrontmatter,
   type WikiKind,
@@ -36,6 +39,7 @@ import {
 
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
+import { withCliWriterLock } from '../lib/invocation.js'
 import { emitJson } from '../lib/output.js'
 
 const WIKI_BUNDLE_MAX_DEPTH = 8
@@ -120,31 +124,21 @@ function discovered(ctx: WikiContext, summary: WikiSummary): DiscoveredWikiPage 
 }
 
 function assertKind(kind: string): WikiKind {
-  if ((WIKI_RESERVED_KINDS as readonly string[]).includes(kind)) {
+  if (!kind.trim() || /[/\\\0]/.test(kind) || ['.', '..', 'assets'].includes(kind))
     emitErrorAndExit(
       'BAD_REQUEST',
-      `"${kind}" is a reserved kind: code reviews are authored by \`memon-write-code-review\` until they are consolidated into the wiki`,
+      'category must be one directory name; assets is reserved for shared files',
     )
-  }
-  if (!(WIKI_KINDS as readonly string[]).includes(kind)) {
-    emitErrorAndExit(
-      'BAD_REQUEST',
-      `unknown wiki kind "${kind}"; expected one of ${WIKI_KINDS.join(', ')}`,
-    )
-  }
   return kind as WikiKind
 }
 
-/** Validate `status` against a kind's vocabulary; default to its first value. */
+/** Validate a supplied status; absence does not create a maintenance obligation. */
 function resolveStatus(kind: WikiKind, status: string | undefined): string | undefined {
-  const vocabulary = WIKI_STATUS_BY_KIND[kind] ?? []
+  if (status === undefined) return undefined
+  const vocabulary = Object.hasOwn(WIKI_STATUS_BY_KIND, kind) ? WIKI_STATUS_BY_KIND[kind]! : []
   if (vocabulary.length === 0) {
-    if (status !== undefined) {
-      emitErrorAndExit('BAD_REQUEST', `\`${kind}\` pages carry no status; drop --status`)
-    }
-    return undefined
+    return status
   }
-  if (status === undefined) return vocabulary[0]
   if (!vocabulary.includes(status)) {
     emitErrorAndExit(
       'BAD_REQUEST',
@@ -161,7 +155,7 @@ function assertSlug(slug: string): string {
   return slug
 }
 
-/** `--language` on `create` / `set`: the declared content language, if any. */
+/** The declared content language on creation, if any. */
 function assertLanguage(value: string | undefined): WikiLanguage | undefined {
   if (value === undefined) return undefined
   if (!isWikiLanguage(value)) {
@@ -183,8 +177,8 @@ function assertSlugFree(ctx: WikiContext, slug: string, allowId?: string): void 
   }
 }
 
-/** `padId('W', max + 1)` across file-name and frontmatter ids. */
-function nextWikiId(ctx: WikiContext): string {
+/** Allocate above existing IDs and the persisted high-water mark. */
+async function nextWikiId(ctx: WikiContext): Promise<string> {
   let max = 0
   const consider = (value: string | undefined): void => {
     const parsed = value ? parseId(value) : null
@@ -192,11 +186,11 @@ function nextWikiId(ctx: WikiContext): string {
   }
   for (const page of ctx.pages) {
     consider(page.id)
-    const { frontmatter } = parseWikiFrontmatter(page.content)
+    const { frontmatter } = parseWikiFrontmatter(page.content, page.path)
     consider(typeof frontmatter?.id === 'string' ? frontmatter.id : undefined)
   }
   if (max >= 9999) emitErrorAndExit('CONFLICT', 'wiki id space exhausted (W9999 allocated)')
-  return padId('W', max + 1)
+  return padId('W', await reserveWikiId(ctx.projectRoot, max))
 }
 
 type CliWikiSummary = Omit<WikiSummary, 'mtime' | 'stale' | 'staleSources'>
@@ -221,7 +215,7 @@ export async function runWikiShow(input: WikiShowInput): Promise<void> {
   const ctx = await loadWiki(input)
   const summary = resolvePage(ctx, input.page)
   const page = discovered(ctx, summary)
-  const { body } = parseWikiFrontmatter(page.content)
+  const { body } = parseWikiFrontmatter(page.content, page.path)
   const content = input.bodyOnly === true ? body : page.content
 
   if (format === 'json') {
@@ -291,6 +285,11 @@ export interface WikiCreateInput extends WikiCommonInput {
 }
 
 export async function runWikiCreate(input: WikiCreateInput): Promise<void> {
+  const root = singleProjectRoot(await resolveContext(input))
+  return withCliWriterLock(root, () => createWikiLocked(input))
+}
+
+async function createWikiLocked(input: WikiCreateInput): Promise<void> {
   const format = readFormat(input)
   const kind = assertKind(input.kind)
   const slug = assertSlug(input.slug)
@@ -298,12 +297,6 @@ export async function runWikiCreate(input: WikiCreateInput): Promise<void> {
     emitErrorAndExit('BAD_REQUEST', '--title is required and must be a non-empty string')
   }
   const status = resolveStatus(kind, input.status)
-  if (
-    getWikiKind(kind)?.policy.dateRequired &&
-    (input.date === undefined || input.date.trim() === '')
-  ) {
-    emitErrorAndExit('BAD_REQUEST', `\`${kind}\` pages require --date <YYYY-MM-DD>`)
-  }
   if (input.date !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(input.date)) {
     emitErrorAndExit('BAD_REQUEST', `--date must be YYYY-MM-DD; got "${input.date}"`)
   }
@@ -311,7 +304,8 @@ export async function runWikiCreate(input: WikiCreateInput): Promise<void> {
 
   const ctx = await loadWiki(input)
   assertSlugFree(ctx, slug)
-  const id = nextWikiId(ctx)
+  await prepareWikiInventory(ctx.projectRoot)
+  const id = await nextWikiId(ctx)
   const now = formatIsoLocal(new Date())
 
   const frontmatter: WikiFrontmatter = {
@@ -328,22 +322,16 @@ export async function runWikiCreate(input: WikiCreateInput): Promise<void> {
     updated_at: now,
   }
 
-  const sections = WIKI_RECOMMENDED_SECTIONS[kind] ?? []
-  const body = [
-    '',
-    `# ${frontmatter.title}`,
-    '',
-    ...sections.flatMap((section) => [`## ${section}`, '']),
-  ].join('\n')
+  const body = `\n# ${frontmatter.title}\n`
 
   const kindDir = join(ctx.projectRoot, WIKI_DIR_RELPATH, kind)
   const name = `${id}-${slug}`
   const relative =
-    input.bundle === true
+    input.bundle !== false
       ? `${WIKI_DIR_RELPATH}/${kind}/${name}/README.md`
       : `${WIKI_DIR_RELPATH}/${kind}/${name}.md`
   const absolute = join(ctx.projectRoot, relative)
-  await fs.mkdir(input.bundle === true ? join(kindDir, name) : kindDir, { recursive: true })
+  await fs.mkdir(input.bundle !== false ? join(kindDir, name) : kindDir, { recursive: true })
   try {
     await fs.writeFile(absolute, serializeWikiPage(frontmatter, body), {
       encoding: 'utf8',
@@ -356,6 +344,7 @@ export async function runWikiCreate(input: WikiCreateInput): Promise<void> {
     throw err
   }
 
+  await publishWikiInventory(ctx.projectRoot)
   await emitPageResult(ctx, format, relative, { absolutePath: absolute })
 }
 
@@ -365,7 +354,7 @@ async function readWikiPageAt(
 ): Promise<DiscoveredWikiPage | null> {
   const parts = relative.split('/')
   if (parts[0] !== 'docs' || parts[1] !== 'wiki' || parts.length < 4) return null
-  const format = relative.endsWith('/README.md') ? 'bundle' : 'markdown'
+  const format = /\/(README\.md|manifest\.json)$/.test(relative) ? 'bundle' : 'markdown'
   const name = format === 'bundle' ? parts.at(-2)! : parts.at(-1)!.replace(/\.md$/, '')
   const match = WIKI_PAGE_NAME_REGEX.exec(name)
   if (!match) return null
@@ -376,7 +365,10 @@ async function readWikiPageAt(
       fs.stat(absolutePath),
     ])
     const bundleDir = format === 'bundle' ? dirname(absolutePath) : null
-    const assets = bundleDir === null ? [] : await listWikiBundleFiles(bundleDir)
+    const assets =
+      bundleDir === null || relative.endsWith('/manifest.json')
+        ? []
+        : await listWikiBundleFiles(bundleDir)
     return {
       id: match[1]!,
       slug: match[2]!,
@@ -443,6 +435,11 @@ export interface WikiMoveInput extends WikiCommonInput {
 }
 
 export async function runWikiMove(input: WikiMoveInput): Promise<void> {
+  const root = singleProjectRoot(await resolveContext(input))
+  return withCliWriterLock(root, () => moveWikiLocked(input))
+}
+
+async function moveWikiLocked(input: WikiMoveInput): Promise<void> {
   const format = readFormat(input)
   const [rawKind, rawSlug, ...rest] = input.target.split('/')
   if (rest.length > 0 || rawKind === undefined || rawKind === '') {
@@ -459,7 +456,7 @@ export async function runWikiMove(input: WikiMoveInput): Promise<void> {
   const slug = rawSlug === undefined ? summary.slug : assertSlug(rawSlug)
   assertSlugFree(ctx, slug, summary.id)
 
-  const vocabulary = WIKI_STATUS_BY_KIND[kind] ?? []
+  const vocabulary = Object.hasOwn(WIKI_STATUS_BY_KIND, kind) ? WIKI_STATUS_BY_KIND[kind]! : []
   let status: string | undefined
   if (input.status !== undefined) {
     status = resolveStatus(kind, input.status)
@@ -468,10 +465,7 @@ export async function runWikiMove(input: WikiMoveInput): Promise<void> {
     // rather than leaving an ignored one behind.
     status = undefined
   } else if (summary.status === null || !vocabulary.includes(summary.status)) {
-    emitErrorAndExit(
-      'BAD_REQUEST',
-      `status ${JSON.stringify(summary.status)} is not valid for \`${kind}\`; pass --status <${vocabulary.join('|')}>`,
-    )
+    status = undefined
   } else {
     status = summary.status
   }
@@ -479,11 +473,12 @@ export async function runWikiMove(input: WikiMoveInput): Promise<void> {
   const name = `${summary.id}-${slug}`
   const newRelative =
     summary.format === 'bundle'
-      ? `${WIKI_DIR_RELPATH}/${kind}/${name}/README.md`
+      ? `${WIKI_DIR_RELPATH}/${kind}/${name}/${summary.path.endsWith('/manifest.json') ? 'manifest.json' : 'README.md'}`
       : `${WIKI_DIR_RELPATH}/${kind}/${name}.md`
   if (newRelative === summary.path) {
     emitErrorAndExit('BAD_REQUEST', `page ${summary.id} is already at ${summary.path}`)
   }
+  await prepareWikiInventory(ctx.projectRoot)
 
   const oldRoot = summary.format === 'bundle' ? page.bundleDir! : page.absolutePath
   const newRoot =
@@ -494,20 +489,81 @@ export async function runWikiMove(input: WikiMoveInput): Promise<void> {
   if (await exists(newRoot)) {
     emitErrorAndExit('CONFLICT', `${newRelative} already exists`)
   }
+  if (
+    (await fs.stat(page.absolutePath)).mtimeMs !== page.mtime ||
+    wikiContentHash(await fs.readFile(page.absolutePath, 'utf8')) !== wikiContentHash(page.content)
+  ) {
+    emitErrorAndExit('CONFLICT', 'Wiki source changed before move')
+  }
   await fs.rename(oldRoot, newRoot)
 
   const readme = join(ctx.projectRoot, newRelative)
   const raw = await fs.readFile(readme, 'utf8')
-  const parsed = parseWikiFrontmatter(raw)
+  if (
+    wikiContentHash(raw) !== wikiContentHash(page.content) ||
+    (await fs.stat(readme)).mtimeMs !== page.mtime
+  ) {
+    await fs.rename(newRoot, oldRoot)
+    emitErrorAndExit('CONFLICT', 'Wiki source changed while moving')
+  }
+  const parsed = parseWikiFrontmatter(raw, newRelative)
   if (parsed.frontmatter) {
     const patch: Record<string, unknown> = { kind, updated_at: formatIsoLocal(new Date()) }
-    if (vocabulary.length === 0) patch.status = undefined
+    if (status === undefined) patch.status = undefined
     else if (status !== undefined) patch.status = status
     await writeFileAtomic(
       readme,
-      serializeWikiPage(updateWikiFrontmatter(parsed.frontmatter, patch), parsed.body),
+      newRelative.endsWith('/manifest.json')
+        ? `${JSON.stringify({ ...parseContent(raw, newRelative).metadata, ...patch }, null, 2)}\n`
+        : serializeWikiPage(updateWikiFrontmatter(parsed.frontmatter, patch), parsed.body),
     )
   }
 
+  await publishWikiInventory(ctx.projectRoot)
   await emitPageResult(ctx, format, newRelative, { oldPath: summary.path, newPath: newRelative })
+}
+
+export interface WikiDeleteInput extends WikiCommonInput {
+  page: string
+}
+
+export async function runWikiDelete(input: WikiDeleteInput): Promise<void> {
+  const format = readFormat(input)
+  const context = await resolveContext(input)
+  const root = singleProjectRoot(context)
+  try {
+    const local = await loadConfig({ cwd: input.cwd }).catch(() => null)
+    const realRoot = await fs.realpath(root)
+    const projectNames: string[] = []
+    const otherProjectNames: string[] = []
+    const hosts: Array<string | null> = []
+    for (const project of local?.projects ?? []) {
+      const same = await fs.realpath(project.root).then(
+        (path) => path === realRoot,
+        () => null,
+      )
+      if (same) {
+        projectNames.push(project.name)
+        hosts.push(project.host ?? null)
+      } else if (same === false) otherProjectNames.push(project.name)
+    }
+    const result = await withCliWriterLock(root, () =>
+      deleteWikiPage({
+        projectRoot: root,
+        page: input.page,
+        projectName: projectNames[0] ?? basename(realRoot),
+        projectNames,
+        otherProjectNames,
+        ...(hosts.length === 1 ? { host: hosts[0] } : {}),
+      }),
+    )
+    if (format === 'json') emitJson({ ok: true, ...result })
+    else
+      process.stdout.write(
+        `Deleted ${result.id}: ${result.deleted.join(', ')}\n${result.cleanupPending.length ? `Cleanup pending: ${result.cleanupPending.join(', ')}\n` : ''}${result.warnings.map((warning) => `${warning}\n`).join('')}`,
+      )
+  } catch (error) {
+    if (error instanceof WikiDeleteError) emitErrorAndExit(error.code, error.message, error.details)
+    throw error
+  }
 }

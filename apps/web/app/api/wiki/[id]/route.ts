@@ -24,7 +24,7 @@ type RouteContext = { params: Promise<{ id: string }> }
 
 function projectPage(value: unknown) {
   const page = BackendWikiDocumentSchema.parse(value)
-  const projection = wikiComponentProjection(page.content)
+  const projection = wikiComponentProjection(page.content, page.resource)
   return {
     ...page,
     path: page.resource,

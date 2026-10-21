@@ -49,7 +49,7 @@ logs/E0001/
     ...                 # native configs, logs, checkpoints and scripts
   smoke/<run-id>/        # program/environment checks; excluded from formal evidence
 docs/wiki/<kind>/
-  W0001-summary.md       # readable findings and links; bundles can include HTML/assets
+  W0001-summary/README.md # free-form knowledge; HTML/service folders use manifest.json
 ```
 
 No Run README is needed. Directory placement determines Experiment and Variant
@@ -102,10 +102,27 @@ Create them only when explicitly requested. Update research prose when understan
 changes, rather than appending a bullet for every execution. Wiki pages have no
 Git-backed human-review workflow; use normal project Git conventions.
 
+Wiki and Reports share small folder bundles. Wiki stays current; Reports record an
+`as_of` evidence cutoff and `source_commits`. Markdown uses README.md frontmatter;
+static HTML and running applications use manifest.json (`type: html|service`,
+`title`, optional category/freshness and explicit-offset timestamps). HTML defaults
+to index.html; a service declares its source loopback port. Agents own rendering,
+regeneration and application lifecycle. memon only displays/proxies content.
+
+The document viewer filters category, CURRENT/STALE and presentation, and checks
+service reachability on demand. Native, SSHFS (configured SSH target) and separately
+granted File Agent forwarding support HTTP and WebSockets. Dynamic applications
+are owner-only and use the displayed base URL / X-Forwarded-Prefix; no arbitrary
+application code rewriting occurs. Static content retains project sharing.
+
+For user-authorized retirement, repair inbound references and then use
+`memon wiki delete W0001`. Blocking references are reported with locations; there
+is no force bypass or automatic Report conversion. IDs are not recycled.
+
 ## CLI
 
 Daily research uses **six routine commands**. The single `memon` binary retains
-19 command leaves in total; there are no hidden retired aliases:
+20 command leaves in total; there are no hidden retired aliases:
 
 | Command | Purpose |
 |---|---|
@@ -135,15 +152,15 @@ Direct edits are not automatically observed until publication.
 
 ### Optional commands and migrations
 
-The single `memon` binary also retains 13 optional leaves: `serve`, `update`,
-`share create/list/revoke`, `wiki create/move`, `components run`, `mock seed`,
+The single `memon` binary also retains 14 optional leaves: `serve`, `update`,
+`share create/list/revoke`, `wiki create/move/delete`, `components run`, `mock seed`,
 `journal read`, `experiment archive/unarchive` and `run record`.
 Independent operational entrypoints remain deferred.
 
 Migration is handled by the concise `memon-migrate-fs` Skill and the guides and
 executors under [packages/core/migrations](packages/core/migrations/README.md).
 The 11 old version/schema/binding/Variant/Run-rename/Run-archive leaves and the
-two migration leaves are removed, bringing the original 90 commands to 19.
+two migration leaves are removed, bringing the original 90 commands to 19 retained leaves; guarded Wiki deletion adds one new leaf.
 Historical readers remain available; old data does not require retaining its
 old write workflow. Scripts preserve selected scope, native evidence, historical
 timestamps and recovery records. No migration runs as a deployment side effect.
@@ -158,7 +175,7 @@ timestamps and recovery records. No migration runs as a deployment side effect.
 | Project initialization and lint commands | First creation; diagnostics during supported reads/publication |
 | Legacy experiment version/schema/link/Variant operations and Run rename/archive | Migration guides/scripts for conversion; ordinary new research uses directory ownership and Run metadata |
 | Experiment/Report migration commands | `memon-migrate-fs` with the migration directory executors |
-| Wiki commit, search, hypothesis read, delete/rename wrappers | Ordinary Git/file tools; preserve references when moving files |
+| Wiki commit, search, hypothesis read, obsolete delete/rename wrappers | Ordinary Git/file tools; preserve references when moving files |
 
 Exit codes remain 0 success, 1 failed/invalid state, 2 usage, 4 missing target,
 9 conflict, 11 unsupported older CLI and 13 forbidden path. Removed commands fail

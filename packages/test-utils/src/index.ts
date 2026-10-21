@@ -18,4 +18,5 @@ export {
   paramsFor,
   startBackend,
 } from './http.js'
+export { startSshFixture } from './ssh.js'
 export { createTLSFixture, type TLSFixture } from './tls.js'

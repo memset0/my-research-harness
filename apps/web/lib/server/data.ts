@@ -156,7 +156,7 @@ export async function getWikiPage(project: string, id: string): Promise<WikiPage
   const page = BackendWikiDocumentSchema.parse(
     await standaloneServices(rt.config).documents.getWiki(project, id),
   )
-  const projection = wikiComponentProjection(page.content)
+  const projection = wikiComponentProjection(page.content, page.resource)
   return {
     ...page,
     path: page.resource,

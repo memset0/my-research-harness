@@ -127,6 +127,7 @@ export function buildSshTunnelCommand(transport: CentralSshTransportConfig): Ssh
     '-L',
     `${LOCAL_FORWARD_HOST}:${transport.localPort}:${remoteForwardHost(transport.remoteHost)}:${transport.remotePort}`,
     ...(transport.identityFile ? ['-i', transport.identityFile] : []),
+    ...(transport.port ? ['-p', String(transport.port)] : []),
     transport.target,
   ]
 

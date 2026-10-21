@@ -183,8 +183,8 @@ describe('memon wiki show and addressing', () => {
       diagnostics: { code: string }[]
       content: string
     }>(run.stdout)
-    // Recommended `finding` sections Evidence / Limits are absent.
-    expect(parsed.diagnostics.map((entry) => entry.code)).toContain('WIKI_MISSING_SECTION')
+    // Free-form Markdown no longer requires the legacy kind's H2 outline.
+    expect(parsed.diagnostics.map((entry) => entry.code)).not.toContain('WIKI_MISSING_SECTION')
     expect(parsed.content).toContain('---\nid: W0004')
   })
 
@@ -231,7 +231,7 @@ describe('memon wiki show and addressing', () => {
 // ---------- create / move / set ----------
 
 describe('memon wiki create', () => {
-  it('writes a full template and reports the new summary', async () => {
+  it('writes a minimal folder and reports the new summary', async () => {
     const run = await runCapturing(() =>
       runWikiCreate({
         ...globals(),
@@ -250,7 +250,7 @@ describe('memon wiki create', () => {
       absolutePath: string
     }>(run.stdout)
     expect(summary.id).toBe('W0001')
-    expect(summary.path).toBe('docs/wiki/finding/W0001-vsa-debt.md')
+    expect(summary.path).toBe('docs/wiki/finding/W0001-vsa-debt/README.md')
     expect(summary).not.toHaveProperty('stale')
     expect(summary.absolutePath).toBe(join(root, summary.path))
 
@@ -261,9 +261,7 @@ describe('memon wiki create', () => {
     expect(content).toContain('description: Common path pays for VSA even when disabled.')
     expect(content).toContain('- E0017')
     expect(content).toContain('# VSA common-path debt')
-    for (const section of ['## Claim', '## Evidence', '## Limits']) {
-      expect(content).toContain(section)
-    }
+    expect(content).not.toMatch(/^## /m)
   })
 
   it('allocates the next id above every existing page', async () => {
@@ -285,7 +283,7 @@ describe('memon wiki create', () => {
     expect(jsonAs<{ id: string }>(run.stdout).id).toBe('W0008')
   })
 
-  it('writes `language: zh` with the English scaffold and rejects an unknown language', async () => {
+  it('writes language without a fixed scaffold and rejects an unknown language', async () => {
     const run = await runCapturing(() =>
       runWikiCreate({
         ...globals(),
@@ -302,16 +300,14 @@ describe('memon wiki create', () => {
     const content = await readFile(summary.path)
     expect(content).toContain('language: zh')
     // Section headings stay English whatever the page language is.
-    for (const section of ['## Claim', '## Evidence', '## Limits']) {
-      expect(content).toContain(section)
-    }
+    expect(content).not.toMatch(/^## /m)
     expect(content).not.toContain('## 结论')
 
     const english = await runCapturing(() =>
       runWikiCreate({ ...globals(), kind: 'note', slug: 'plain', title: 'Plain' }),
     )
     expect(jsonAs<{ language: string; path: string }>(english.stdout).language).toBe('en')
-    expect(await readFile('docs/wiki/note/W0002-plain.md')).not.toContain('language:')
+    expect(await readFile('docs/wiki/note/W0002-plain/README.md')).not.toContain('language:')
 
     const invalid = await runCapturing(() =>
       runWikiCreate({ ...globals(), kind: 'note', slug: 'bad', title: 'Bad', language: 'fr' }),
@@ -322,30 +318,16 @@ describe('memon wiki create', () => {
     expect(await pathExists('docs/wiki/note/W0003-bad.md')).toBe(false)
   })
 
-  it('defaults status to the kind vocabulary and requires --date for meeting', async () => {
+  it('leaves status and meeting date optional', async () => {
     const created = await runCapturing(() =>
       runWikiCreate({ ...globals(), kind: 'question', slug: 'why', title: 'Why?' }),
     )
-    expect(jsonAs<{ status: string }>(created.stdout).status).toBe('OPEN')
-
-    const missingDate = await runCapturing(() =>
+    expect(jsonAs<{ status: string | null }>(created.stdout).status).toBeNull()
+    const meeting = await runCapturing(() =>
       runWikiCreate({ ...globals(), kind: 'meeting', slug: 'weekly', title: 'Weekly' }),
     )
-    expect(missingDate.exitCode).toBe(2)
-    expect(errorOf(missingDate).message).toContain('--date')
-    expect(await pathExists('docs/wiki/meeting/W0002-weekly.md')).toBe(false)
-
-    const withDate = await runCapturing(() =>
-      runWikiCreate({
-        ...globals(),
-        kind: 'meeting',
-        slug: 'weekly',
-        title: 'Weekly',
-        date: '2026-05-04',
-      }),
-    )
-    expect(withDate.exitCode).toBeNull()
-    expect(await readFile('docs/wiki/meeting/W0002-weekly.md')).toContain('date: 2026-05-04')
+    expect(meeting.exitCode).toBeNull()
+    expect(await readFile('docs/wiki/meeting/W0002-weekly/README.md')).not.toMatch(/^date:/m)
   })
 
   it('creates a roadmap without status or fixed section scaffolding', async () => {
@@ -367,7 +349,7 @@ describe('memon wiki create', () => {
       id: 'W0001',
       kind: 'roadmap',
       status: null,
-      path: 'docs/wiki/roadmap/W0001-research-plan.md',
+      path: 'docs/wiki/roadmap/W0001-research-plan/README.md',
     })
     const content = await readFile(summary.path)
     expect(content).toContain('kind: roadmap')
@@ -396,23 +378,19 @@ describe('memon wiki create', () => {
     expect(await pathExists('docs/wiki/finding')).toBe(false)
   })
 
-  it('rejects an unknown kind, a bad status, and the reserved code-review kind', async () => {
-    const unknownKind = await runCapturing(() =>
-      runWikiCreate({ ...globals(), kind: 'retro', slug: 'x', title: 'x' }),
+  it('accepts topic categories and rejects unsafe paths or invalid declared status', async () => {
+    const topic = await runCapturing(() =>
+      runWikiCreate({ ...globals(), kind: 'methods', slug: 'topic', title: 'Topic' }),
     )
-    expect(unknownKind.exitCode).toBe(2)
-
+    expect(topic.exitCode).toBeNull()
     const badStatus = await runCapturing(() =>
       runWikiCreate({ ...globals(), kind: 'finding', slug: 'x', title: 'x', status: 'NOPE' }),
     )
     expect(badStatus.exitCode).toBe(2)
-
-    const reserved = await runCapturing(() =>
-      runWikiCreate({ ...globals(), kind: 'code-review', slug: 'x', title: 't' }),
+    const unsafe = await runCapturing(() =>
+      runWikiCreate({ ...globals(), kind: '../outside', slug: 'x', title: 'x' }),
     )
-    expect(reserved.exitCode).toBe(2)
-    expect(errorOf(reserved).message).toContain('memon-write-code-review')
-    expect(await pathExists('docs/wiki/code-review')).toBe(false)
+    expect(unsafe.exitCode).toBe(2)
   })
 
   it('--bundle creates the directory form', async () => {
@@ -500,7 +478,7 @@ describe('memon wiki move', () => {
     )
   })
 
-  it('refuses a status the target kind does not accept', async () => {
+  it('drops an incompatible optional status when moving category', async () => {
     await write(
       'docs/wiki/finding/W0013-verified.md',
       page(
@@ -515,17 +493,14 @@ describe('memon wiki move', () => {
         ].join('\n'),
       ),
     )
-    const before = await readFile('docs/wiki/finding/W0013-verified.md')
     const run = await runCapturing(() =>
       runWikiMove({ ...globals(), page: 'W0013', target: 'bottleneck' }),
     )
-    expect(run.exitCode).toBe(2)
-    expect(errorOf(run).code).toBe('BAD_REQUEST')
-    expect(await readFile('docs/wiki/finding/W0013-verified.md')).toBe(before)
-    expect(await pathExists('docs/wiki/bottleneck/W0013-verified.md')).toBe(false)
+    expect(run.exitCode).toBeNull()
+    expect(await readFile('docs/wiki/bottleneck/W0013-verified.md')).not.toMatch(/^status:/m)
   })
 
-  it('refuses a taken target slug and the reserved kind', async () => {
+  it('refuses a taken target slug and permits other categories', async () => {
     await write(
       'docs/wiki/question/W0014-kernel-abi.md',
       page(
@@ -547,6 +522,6 @@ describe('memon wiki move', () => {
     const reserved = await runCapturing(() =>
       runWikiMove({ ...globals(), page: 'W0012', target: 'code-review' }),
     )
-    expect(reserved.exitCode).toBe(2)
+    expect(reserved.exitCode).toBeNull()
   })
 })

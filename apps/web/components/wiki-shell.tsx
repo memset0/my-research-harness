@@ -48,6 +48,14 @@ import {
 import { useUserPreferenceState } from '../lib/use-user-preference-state'
 import { cn } from '../lib/utils'
 import { wikiKinds } from '../lib/wiki-kinds'
+import {
+  ContentFilters,
+  ContentMetadata,
+  ContentPresentation,
+  emptyContentFilter,
+  matchesContentFilter,
+  ServiceAvailability,
+} from './content-presentation'
 import { DocumentArtifactLinkProvider } from './document-artifact-link-provider'
 import { FrontmatterPanel } from './frontmatter-panel'
 import { Markdown } from './markdown'
@@ -117,11 +125,15 @@ export function WikiShell({
     true,
   )
   const railOpen = typeof storedRailOpen === 'boolean' ? storedRailOpen : true
+  const [contentFilter, setContentFilter] = useState(emptyContentFilter)
   const [kindFilter, setKindFilter] = useState('all')
   const [textFilter, setTextFilter] = useState('')
   const visible = useMemo(
-    () => filterWikiPages(pages, { kind: kindFilter, text: textFilter }),
-    [pages, kindFilter, textFilter],
+    () =>
+      filterWikiPages(pages, { kind: kindFilter, text: textFilter }).filter((page) =>
+        matchesContentFilter(page, contentFilter),
+      ),
+    [pages, kindFilter, textFilter, contentFilter],
   )
 
   const detail = useQuery({
@@ -131,13 +143,16 @@ export function WikiShell({
   })
 
   const filters = (
-    <WikiRailFilters
-      kind={kindFilter}
-      text={textFilter}
-      kinds={pages}
-      onKindChange={setKindFilter}
-      onTextChange={setTextFilter}
-    />
+    <div className="space-y-2">
+      <ContentFilters items={pages} value={contentFilter} onChange={setContentFilter} />
+      <WikiRailFilters
+        kind={kindFilter}
+        text={textFilter}
+        kinds={pages}
+        onKindChange={setKindFilter}
+        onTextChange={setTextFilter}
+      />
+    </div>
   )
 
   return (
@@ -366,6 +381,9 @@ function WikiCardList({
             active={page.id === selectedId}
             onSelect={onSelect}
           />
+          {page.presentation === 'service' && (
+            <ServiceAvailability project={project} kind="wiki" id={page.id} />
+          )}
         </li>
       ))}
     </ul>
@@ -522,7 +540,13 @@ function WikiSelectedPane({
         >
           <div className="flex justify-center gap-6 p-4 md:p-6" data-wiki-reading-layout="">
             <div
-              className={cn('min-w-0 flex-1 bg-card p-4 md:p-6', widthLimited && 'max-w-[800px]')}
+              className={cn(
+                'min-w-0 flex-1 bg-card p-4 md:p-6',
+                widthLimited &&
+                  page.presentation !== 'html' &&
+                  page.presentation !== 'service' &&
+                  'max-w-[800px]',
+              )}
               data-wiki-document-column=""
             >
               <WikiDocumentView
@@ -698,6 +722,15 @@ export function WikiDocumentView({
       }
     : undefined
 
+  if (page.presentation === 'html' || page.presentation === 'service' || page.contentError) {
+    return (
+      <div>
+        <ContentMetadata content={page} />
+        <WikiDiagnosticsBlock diagnostics={page.diagnostics} />
+        <ContentPresentation content={page} project={project} kind="wiki" id={page.id} />
+      </div>
+    )
+  }
   return (
     <DocumentArtifactLinkProvider
       project={project}
@@ -730,6 +763,7 @@ export function WikiDocumentView({
         </div>
       )}
 
+      <ContentMetadata content={page} />
       {frontmatter && <FrontmatterPanel data={frontmatter} timestampKeys={WIKI_TIMESTAMP_KEYS} />}
 
       <WikiDiagnosticsBlock diagnostics={page.diagnostics} />

@@ -8,7 +8,10 @@ import { makeTempDir } from './fs.js'
 import { createTLSFixture } from './tls.js'
 
 /** Starts a real source kernel with synthetic mTLS grants; callers own teardown. */
-export async function startFileAgentFixture(root: string) {
+export async function startFileAgentFixture(
+  root: string,
+  options: { servicePorts?: number[]; serviceGrant?: boolean } = {},
+) {
   const tls = await createTLSFixture()
   const directory = await makeTempDir('memon-file-agent-fixture-')
   const binary = join(directory, 'file-agent')
@@ -37,8 +40,14 @@ export async function startFileAgentFixture(root: string) {
     clientCA: tls.ca,
     replayDirectory: join(directory, 'replay'),
     projects: {
-      'project-a': { root, sourceIdentity: 'source-a', acknowledgedWriterLockVersion: 1 },
+      'project-a': {
+        root,
+        sourceIdentity: 'source-a',
+        acknowledgedWriterLockVersion: 1,
+        servicePorts: options.servicePorts ?? [],
+      },
     },
+    serviceGrants: options.serviceGrant ? { [tls.fingerprint]: { 'project-a': true } } : {},
     grants: { [tls.fingerprint]: { 'project-a': 'read-write' } },
   }
   await writeFile(configPath, JSON.stringify(config), { mode: 0o600 })

@@ -1,3 +1,5 @@
+import type { ContentFields } from '../content.js'
+
 // Wiki page model (`<projectRoot>/docs/wiki/<kind>/W<NNNN>-<slug>{.md,/README.md}`).
 //
 // Pure data: kinds, per-kind status vocabularies, recommended sections,
@@ -176,7 +178,7 @@ export interface WikiResolvedComponent {
   line: number
 }
 
-export interface WikiSummary {
+export interface WikiSummary extends ContentFields {
   id: string
   slug: string
   kind: string

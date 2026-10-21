@@ -25,12 +25,12 @@ export function renderWikiKindGuidance(registry: WikiKindRegistry): string {
       kind.en.authoring,
       '',
       `- Status vocabulary: ${kind.policy.statuses.join(' / ') || 'none'}.`,
-      `- Creation default: ${kind.policy.statuses[0] ?? 'no status'}.`,
-      `- Date required: ${kind.policy.dateRequired ? 'yes (YYYY-MM-DD)' : 'no'}.`,
-      `- Non-empty sources required: ${kind.policy.sourcesRequired ? 'yes' : 'no'}.`,
-      `- Recommended H2s (warning only; also used by create): ${kind.policy.recommendedHeadings.join(', ') || 'none; free-form'}.`,
+      '- Status is optional; creation makes no research judgment.',
+      '- Date is optional (YYYY-MM-DD when supplied).',
+      '- Structured sources are optional; cite evidence where useful.',
+      '- Body organization is free-form; no missing-section warnings or generated template.',
       '- Required H2s: none.',
-      `- Body evidence warning: ${kind.policy.bodyEvidenceWarning ? 'yes' : 'no'}.`,
+
       `- Related kinds: ${kind.relatedKinds.join(', ') || 'none'}.`,
       '',
     )
@@ -40,7 +40,7 @@ export function renderWikiKindGuidance(registry: WikiKindRegistry): string {
     '',
     registry.reservedIds.map((id) => `\`${id}\``).join(', '),
     '',
-    'These are not canonical page kinds. Unknown kinds remain readable but produce diagnostics.',
+    'These are not canonical page kinds. Any safe topic category is accepted without a kind warning.',
     'Use `memon --project-root . wiki move` for relocation or the migration Skill for conversion; registry edits never rewrite or review pages.',
     '',
   )

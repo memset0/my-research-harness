@@ -19,10 +19,15 @@ export interface MemonServerDeps {
   onProxyError?: (err: Error) => void
   /** Central-only HTTP data bridge. Omitted in standalone mode. */
   centralGateway?: CentralGatewayHandler
+  contentGateway?: {
+    http: CentralGatewayHandler
+    upgrade: (req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<boolean>
+  }
 }
 
 export function createMemonServer(deps: MemonServerDeps): Server {
   const server = createHttpServer(async (req, res) => {
+    if (deps.contentGateway && (await deps.contentGateway.http(req, res))) return
     if (deps.centralGateway) {
       try {
         if (await deps.centralGateway(req, res)) return
@@ -36,6 +41,7 @@ export function createMemonServer(deps: MemonServerDeps): Server {
   })
 
   server.on('upgrade', async (req, socket, head) => {
+    if (deps.contentGateway && (await deps.contentGateway.upgrade(req, socket, head))) return
     if (deps.upgradeHandler) {
       await deps.upgradeHandler(req, socket, head)
     } else {

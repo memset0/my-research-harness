@@ -8,7 +8,8 @@
       "@memon/core": ["../../packages/core/src/index.ts"],
       "@memon/core/wiki-kinds.json": ["../../packages/core/src/wiki/kinds.json"],
       "@memon/backend": ["../../packages/backend/src/index.ts"],
-      "@memon/test-utils": ["../../packages/test-utils/src/index.ts"]
+      "@memon/test-utils": ["../../packages/test-utils/src/index.ts"],
+      "@memon/file-protocol/*": ["../../packages/file-protocol/src/*"]
     }
   },
   "references": [
@@ -20,6 +21,9 @@
     },
     {
       "path": "../../packages/test-utils"
+    },
+    {
+      "path": "../../packages/file-protocol"
     }
   ]
 }

@@ -1,37 +1,28 @@
 ---
 name: memon-wiki
-description: Maintain current project knowledge, ongoing comparisons and navigation in Markdown or HTML; use Reports for time-scoped analyses and history.
+description: Maintain current project knowledge and navigation as Markdown, HTML artifacts or live applications; use Reports for time-scoped analysis.
 ---
 
 # Wiki
 
-Read `../PREFLIGHT.md`, the page's standing instructions and the shared
-[maintenance contract](references/maintenance.md). Wiki is maintained current
-knowledge: protocols, ongoing ablations, current interpretations and navigation.
-Revise relevant views when evidence or direction changes; completing a Run alone
-requires no Wiki edit. Readers should understand the current answer and its limits.
+Read `../PREFLIGHT.md` and the shared [maintenance contract](references/maintenance.md).
+Wiki explains what is current: protocols, ongoing comparisons, interpretations
+and navigation. Revise when knowledge or direction changes, not after every Run.
 
-Use `memon --project-root . wiki create --help` for allocation; read the selected
-kind in [page-kinds.md](references/page-kinds.md). Edit Markdown/frontmatter
-directly, inspect with `show <W-id>`, and publish with `refresh`. Preserve existing
-language and scope; new pages follow the user's preference, otherwise English.
-Standing maintenance rules belong in their existing compact section.
+Create a folder with `wiki create <category> <slug> --title "…"`, or author the
+folder directly. Keep the prose as small as the question allows. No required
+H2 template, inferred research status, duplicated narrative or review ledger.
+Use `show <W-id>` to inspect and `refresh` to publish direct edits.
 
-Choose Markdown, full HTML artifacts or a service view to suit the explanation.
-Use the agent's own website-building capabilities; no fixed layout, component
-conversion or duplicate Markdown report. Components are optional conveniences.
-New pages are bundles; for static HTML read [html-bundle.md](references/html-bundle.md).
-Agents own regeneration and service startup; memon supplies access, not scheduling.
+Choose README Markdown, a freely built HTML artifact, or a live application.
+Use the agent's own visual/web capabilities; components are optional conveniences.
+For HTML/services read [html-bundle.md](references/html-bundle.md). memon serves
+files or forwards a declared port; agents own generation and service lifecycle.
 
-Move time-scoped analyses and retired narratives into Reports within the agreed
-scope, preserving references and leaving a useful Wiki link. A brief historical
-turn may remain as a collapsed callout; do not grow a second archive in the Wiki:
+The user decides whether retired Wiki material becomes a Report or is deleted.
+Before `wiki delete <W-id>`, repair inbound references and preserve useful assets.
+The command refuses deletion while references remain and reports their locations;
+fix them and retry. Do not add an alias or archive unless it serves the user's need.
 
-```markdown
-> [!DEPRECATED]- Previous interpretation
-> Why it changed, with a link to the evidence.
-```
-
-Distinguish incorrect measurements, limited precision and superseded methods;
-retired evidence may remain useful. Preserve historical citations. Check changed
-links, syntax and rendered output. Wiki has no Git/human-review gate or ledger.
+Keep incorrect measurements distinct from limited precision, superseded methods
+and retired directions. Check links and actual rendering; return the useful URL.

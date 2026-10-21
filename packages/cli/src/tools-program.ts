@@ -5,7 +5,7 @@ import { runMockSeed } from './commands/mock.js'
 import { runServe } from './commands/serve.js'
 import { runShareCreate, runShareList, runShareRevoke } from './commands/share.js'
 import { runUpdate, updateFailed } from './commands/update.js'
-import { runWikiCreate, runWikiMove } from './commands/wiki.js'
+import { runWikiCreate, runWikiDelete, runWikiMove } from './commands/wiki.js'
 import { emitErrorAndExit } from './lib/emit-error.js'
 import { EXIT } from './lib/exit-codes.js'
 import { readGlobalsFor } from './lib/program.js'
@@ -250,11 +250,11 @@ export function registerToolsCommands(program: Command): void {
     return [...previous, value]
   }
 
-  wikiCommand(wiki, 'create <kind> <slug>', 'allocate the next W<NNNN> and write a page template')
+  wikiCommand(wiki, 'create <kind> <slug>', 'allocate the next W<NNNN> in a category folder')
     .requiredOption('--title <text>', 'page title (also the H1)')
     .option('--description <text>', 'one to three sentences that stand alone in a listing')
-    .option('--status <status>', "status from the kind's vocabulary (default: its first value)")
-    .option('--date <YYYY-MM-DD>', 'meeting date (required for `meeting`)')
+    .option('--status <status>', 'optional declared status')
+    .option('--date <YYYY-MM-DD>', 'optional event date')
     .option(
       '--source <artifact>',
       'cite an Experiment / Variant / Hypothesis / run (repeatable)',
@@ -263,7 +263,8 @@ export function registerToolsCommands(program: Command): void {
     )
     .option('--tag <tag>', 'add a tag (repeatable)', collectOption, [])
     .option('--language <en|zh>', 'content language of the page (default: en)')
-    .option('--bundle', 'create the bundle form (<slug>/README.md + assets)', false)
+    .option('--bundle', 'create a folder with README.md (default)', true)
+    .option('--no-bundle', 'create a legacy standalone Markdown file')
     .action(
       async (
         kind: string,
@@ -288,4 +289,12 @@ export function registerToolsCommands(program: Command): void {
     .action(async (page: string, target: string, opts: WikiLocalOptions & { status?: string }) => {
       await runWikiMove({ ...wikiGlobals(opts), page, target, status: opts.status })
     })
+
+  wikiCommand(
+    wiki,
+    'delete <page>',
+    'delete an unreferenced Wiki page and its owned assets',
+  ).action(async (page: string, opts: WikiLocalOptions) => {
+    await runWikiDelete({ ...wikiGlobals(opts), page })
+  })
 }

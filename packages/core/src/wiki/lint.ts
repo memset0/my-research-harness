@@ -5,13 +5,7 @@
 // dashboard, and the Backend surface verbatim. `lintWikiPage` covers one page;
 // `lintWikiProject` covers the cross-page uniqueness rules.
 
-import {
-  EXPERIMENT_REF_REGEX,
-  extractRunMentions,
-  isRunDirName,
-  RUN_MENTION_SOURCE,
-  RUN_PATH_SHAPE_REGEX,
-} from '../ids.js'
+import { EXPERIMENT_REF_REGEX, isRunDirName, RUN_PATH_SHAPE_REGEX } from '../ids.js'
 import { COMPONENT_TYPES } from './component-names.generated.js'
 import { maskWikiCode, parseWikiComponentBlocks } from './components.js'
 import {
@@ -19,8 +13,6 @@ import {
   validateWikiDeprecation,
   validateWikiEntry,
 } from './deprecation.js'
-import { wikiStringList } from './frontmatter.js'
-import { getWikiKind, WIKI_RECOMMENDED_SECTIONS } from './kind-registry.js'
 import { wikiSourceKind } from './staleness.js'
 import {
   isWikiKind,
@@ -29,7 +21,6 @@ import {
   WIKI_ID_REGEX,
   WIKI_LANGUAGES,
   WIKI_LEGACY_ID_REGEX,
-  WIKI_MAINTENANCE_RULES_HEADING,
   WIKI_STATUS_BY_KIND,
   WIKI_TIMESTAMP_REGEX,
   type WikiDiagnostic,
@@ -38,11 +29,6 @@ import {
   type WikiProjectDiagnostic,
 } from './types.js'
 
-const H2_REGEX = /^ {0,3}##\s+(.+?)\s*#*\s*$/
-/** An H1 closes a `Maintenance rules for agents` section as the next H2 does. */
-const H1_REGEX = /^ {0,3}#\s+\S/
-/** `-`, `*`, `+`, `1.` or `1)` opening a list item. */
-const LIST_ITEM_REGEX = /^ {0,3}(?:[-*+]|\d{1,9}[.)])\s+\S/
 /** `[text](@ref)` link destinations. */
 const LINK_REFERENCE_REGEX = /\]\(\s*@([^)\s]+?)\s*\)/g
 /** Bare `@ref` mentions; the leading guard keeps `mail@example.com` out. */
@@ -51,8 +37,6 @@ const BARE_REFERENCE_REGEX =
 const HYPOTHESIS_REF_REGEX = /^H\d{4}$/
 /** Canonical project-relative Run path, the unambiguous form of a Run reference. */
 const RUN_PATH_REF_REGEX = RUN_PATH_SHAPE_REGEX
-/** Any evidence token a `finding` body must carry. */
-const EVIDENCE_TOKEN_REGEX = new RegExp(`\\bE\\d{4}\\b|\\bV\\d{4}\\b|\\b${RUN_MENTION_SOURCE}\\b`)
 
 /** Artifact ids the `@` reference resolver checks against. */
 export interface WikiArtifactInventory {
@@ -116,8 +100,6 @@ export function lintWikiPage(page: WikiLintPage, ctx: WikiLintContext = {}): Wik
   lintIdentity(page, frontmatter, diagnostics)
   lintStatusAndDates(page, frontmatter, diagnostics)
   lintLanguage(frontmatter, diagnostics)
-  lintSections(page, masked, diagnostics, offset)
-  lintMaintenanceRules(page, masked, diagnostics, offset)
   lintSourceSyntax(frontmatter, diagnostics)
 
   const deprecation = validateWikiDeprecation(frontmatter?.deprecated)
@@ -145,7 +127,6 @@ export function lintWikiPage(page: WikiLintPage, ctx: WikiLintContext = {}): Wik
     })
   }
 
-  lintEvidence(page, masked, diagnostics, offset)
   lintComponents(page, ctx, diagnostics, offset)
   lintLinks(page, masked, ctx, diagnostics, offset)
 
@@ -305,14 +286,6 @@ function lintIdentity(
       })
     }
   }
-
-  if (!isWikiKind(page.kind)) {
-    diagnostics.push({
-      code: 'WIKI_UNKNOWN_KIND',
-      severity: 'warn',
-      message: `"${page.kind}" is not a canonical wiki kind; the page is listed under that directory name`,
-    })
-  }
 }
 
 function lintStatusAndDates(
@@ -325,13 +298,7 @@ function lintStatusAndDates(
   if (isWikiKind(kind)) {
     const vocabulary = WIKI_STATUS_BY_KIND[kind] ?? []
     if (vocabulary.length > 0) {
-      if (!status) {
-        diagnostics.push({
-          code: 'WIKI_STATUS_MISSING',
-          severity: 'error',
-          message: `\`${kind}\` pages require \`status\` (one of ${vocabulary.join(', ')})`,
-        })
-      } else if (!vocabulary.includes(status)) {
+      if (status && !vocabulary.includes(status)) {
         diagnostics.push({
           code: 'WIKI_STATUS_INVALID',
           severity: 'error',
@@ -339,7 +306,7 @@ function lintStatusAndDates(
         })
       }
     }
-    if (getWikiKind(kind)?.policy.dateRequired) {
+    if (frontmatter?.date !== undefined) {
       const date = typeof frontmatter?.date === 'string' ? frontmatter.date : ''
       if (!WIKI_DATE_REGEX.test(date)) {
         diagnostics.push({
@@ -348,16 +315,6 @@ function lintStatusAndDates(
           message: `\`${kind}\` pages require \`date\` in YYYY-MM-DD form`,
         })
       }
-    }
-    if (
-      getWikiKind(kind)?.policy.sourcesRequired &&
-      wikiStringList(frontmatter?.sources).length === 0
-    ) {
-      diagnostics.push({
-        code: 'WIKI_SOURCES_REQUIRED',
-        severity: 'error',
-        message: `\`${kind}\` pages require a non-empty \`sources\` list`,
-      })
     }
   }
 
@@ -408,116 +365,6 @@ function lintLanguage(frontmatter: WikiFrontmatter | null, diagnostics: WikiDiag
     severity: 'error',
     message: `language ${JSON.stringify(language)} is not a supported page language; expected one of ${WIKI_LANGUAGES.join('|')}`,
   })
-}
-
-function lintSections(
-  page: WikiLintPage,
-  masked: string,
-  diagnostics: WikiDiagnostic[],
-  offset: number,
-): void {
-  if (!isWikiKind(page.kind)) return
-  const recommended = WIKI_RECOMMENDED_SECTIONS[page.kind] ?? []
-  if (recommended.length === 0) return
-  const present = new Set<string>()
-  for (const line of masked.split('\n')) {
-    const heading = H2_REGEX.exec(line)
-    if (heading) present.add(heading[1]!.trim().toLowerCase())
-  }
-  // Section headings are English on every page, whatever the page's language.
-  for (const section of recommended) {
-    if (present.has(section.toLowerCase())) continue
-    diagnostics.push({
-      code: 'WIKI_MISSING_SECTION',
-      severity: 'warn',
-      message: `recommended \`${page.kind}\` section "${section}" is missing`,
-      line: offset + 1,
-    })
-  }
-}
-
-/**
- * The `Maintenance rules for agents` section records the owner's standing
- * requirements as a list, so anything else inside it — prose, a table, a
- * fenced block, a nested heading — is reported once, on its first line. A
- * second section with that name is reported on its heading. Headings are
- * read from the code mask (a heading inside a fence is not one); the content
- * rule reads the raw body, so a fence is offending text rather than a hole.
- */
-function lintMaintenanceRules(
-  page: WikiLintPage,
-  masked: string,
-  diagnostics: WikiDiagnostic[],
-  offset: number,
-): void {
-  const name = WIKI_MAINTENANCE_RULES_HEADING.toLowerCase()
-  const maskedLines = masked.split('\n')
-  const rawLines = page.body.split('\n')
-  let heading: string | null = null
-  let seen = 0
-  let sawItem = false
-  let reported = false
-  for (const [index, line] of maskedLines.entries()) {
-    const h2 = H2_REGEX.exec(line)
-    if (h2 || H1_REGEX.test(line)) {
-      const text = h2?.[1]?.trim() ?? ''
-      if (text.toLowerCase() !== name) {
-        heading = null
-        continue
-      }
-      seen += 1
-      if (seen > 1) {
-        diagnostics.push({
-          code: 'WIKI_MAINTENANCE_RULES_INVALID',
-          severity: 'warn',
-          message: `a page carries at most one \`${WIKI_MAINTENANCE_RULES_HEADING}\` section; "${text}" is a second one`,
-          line: offset + index + 1,
-        })
-        return
-      }
-      heading = text
-      sawItem = false
-      continue
-    }
-    if (heading === null || reported) continue
-    const raw = rawLines[index] ?? ''
-    if (raw.trim() === '') continue
-    if (LIST_ITEM_REGEX.test(raw)) {
-      sawItem = true
-      continue
-    }
-    // An indented line only continues a list item that already opened.
-    if (sawItem && /^\s+\S/.test(raw)) continue
-    diagnostics.push({
-      code: 'WIKI_MAINTENANCE_RULES_INVALID',
-      severity: 'warn',
-      message: `\`${heading}\` holds list items only; "${raw.trim()}" is neither a list item nor part of one`,
-      line: offset + index + 1,
-    })
-    reported = true
-  }
-}
-
-function lintEvidence(
-  page: WikiLintPage,
-  masked: string,
-  diagnostics: WikiDiagnostic[],
-  offset: number,
-): void {
-  const policy = getWikiKind(page.kind)?.policy
-  if (!policy) return
-  if (
-    policy.bodyEvidenceWarning &&
-    !EVIDENCE_TOKEN_REGEX.test(masked) &&
-    extractRunMentions(masked).length === 0
-  ) {
-    diagnostics.push({
-      code: 'WIKI_CLAIM_WITHOUT_EVIDENCE',
-      severity: 'warn',
-      message: `${page.kind} body cites no Experiment, Variant, or run identifier; point the prose at the evidence, not only \`sources\``,
-      line: offset + 1,
-    })
-  }
 }
 
 function lintComponents(

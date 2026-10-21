@@ -13,6 +13,17 @@ const STANDALONE: ProjectTarget = 'project-a'
 const HOSTED: ProjectTarget = ProjectRefSchema.parse({ host: 'host-a', project: 'project-a' })
 
 describe('queryKeys', () => {
+  it('keys service health by project, kind and identity', () => {
+    expect(queryKeys.contentHealth(STANDALONE, 'wiki', 'W0001')).toEqual([
+      'content-health',
+      'project-a',
+      'wiki',
+      'W0001',
+    ])
+    expect(queryKeys.contentHealth(HOSTED, 'report', 'R0001')).not.toEqual(
+      queryKeys.contentHealth(STANDALONE, 'report', 'R0001'),
+    )
+  })
   it('has a shape lock for every constructor', () => {
     expect(Object.keys(queryKeys).sort()).toMatchInlineSnapshot(`
       [
@@ -22,6 +33,7 @@ describe('queryKeys', () => {
         "codeReviews",
         "codeReviewsInventory",
         "commitMarks",
+        "contentHealth",
         "docAsset",
         "experiment",
         "experimentResearch",

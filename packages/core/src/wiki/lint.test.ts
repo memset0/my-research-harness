@@ -88,12 +88,11 @@ describe('lintWikiPage', () => {
     expect(codes(diagnostics)).toContain('WIKI_KIND_MISMATCH')
   })
 
-  it('tolerates an unknown kind directory with a warning and no status rules', () => {
+  it('accepts an arbitrary category without status rules', () => {
     const diagnostics = lintWikiPage(
       makePage(VALID_FINDING.replace('kind: finding', 'kind: retro'), { kind: 'retro' }),
     )
-    expect(codes(diagnostics)).toEqual(['WIKI_UNKNOWN_KIND'])
-    expect(diagnostics[0]?.severity).toBe('warn')
+    expect(codes(diagnostics)).toEqual([])
   })
 
   it('reports a missing title', () => {
@@ -103,7 +102,7 @@ describe('lintWikiPage', () => {
 
   it('enforces the per-kind status vocabulary', () => {
     const missing = lintWikiPage(makePage(VALID_FINDING.replace(/^status: .*$/m, 'tags: [x]')))
-    expect(codes(missing)).toContain('WIKI_STATUS_MISSING')
+    expect(codes(missing)).not.toContain('WIKI_STATUS_MISSING')
 
     const invalid = lintWikiPage(
       makePage(VALID_FINDING.replace('kind: finding', 'kind: bottleneck'), {
@@ -148,18 +147,18 @@ updated_at: "2026-09-01T09:00:00+08:00"
 
 ## Action items
 `
-    expect(codes(lintWikiPage(makePage(meeting, { kind: 'meeting' })))).toContain(
+    expect(codes(lintWikiPage(makePage(meeting, { kind: 'meeting' })))).not.toContain(
       'WIKI_DATE_MISSING',
     )
     const dated = meeting.replace('title: Weekly sync', 'title: Weekly sync\ndate: 2026-09-01')
     expect(lintWikiPage(makePage(dated, { kind: 'meeting' }))).toEqual([])
   })
 
-  it('requires non-empty `sources` on a finding', () => {
+  it('allows a finding without a structured sources list', () => {
     const diagnostics = lintWikiPage(
       makePage(VALID_FINDING.replace(/^sources: .*$/m, 'sources: []')),
     )
-    expect(codes(diagnostics)).toContain('WIKI_SOURCES_REQUIRED')
+    expect(codes(diagnostics)).not.toContain('WIKI_SOURCES_REQUIRED')
   })
 
   it('validates source reference syntax and list member types without target lookup', () => {
@@ -185,17 +184,15 @@ updated_at: "2026-09-01T09:00:00+08:00"
     expect(codes(diagnostics)).toEqual(['WIKI_TIMESTAMP_INVALID'])
   })
 
-  it('warns once per missing recommended section', () => {
+  it('does not require recommended sections', () => {
     const diagnostics = lintWikiPage(
       makePage(VALID_FINDING.replace('## Limits\n\nSingle CFG scale.\n', '')),
     )
     const missing = diagnostics.filter((entry) => entry.code === 'WIKI_MISSING_SECTION')
-    expect(missing).toHaveLength(1)
-    expect(missing[0]?.message).toBe('recommended `finding` section "Limits" is missing')
-    expect(missing[0]?.severity).toBe('warn')
+    expect(missing).toHaveLength(0)
   })
 
-  it('expects English headings on a `language: zh` page', () => {
+  it('accepts headings in the author’s language', () => {
     const chinese = VALID_FINDING.replace('status: VERIFIED', 'status: VERIFIED\nlanguage: zh')
     expect(lintWikiPage(makePage(chinese), { inventory: INVENTORY })).toEqual([])
 
@@ -208,11 +205,7 @@ updated_at: "2026-09-01T09:00:00+08:00"
       ),
       { inventory: INVENTORY },
     )
-    expect(translated.map((entry) => entry.message)).toEqual([
-      'recommended `finding` section "Claim" is missing',
-      'recommended `finding` section "Evidence" is missing',
-      'recommended `finding` section "Limits" is missing',
-    ])
+    expect(translated).toEqual([])
   })
 
   it('rejects an unknown `language` and keeps reading the page as English', () => {
@@ -256,87 +249,18 @@ updated_at: "2026-09-01T09:00:00+08:00"
     expect(lintWikiPage(makePage(rules), { inventory: INVENTORY })).toEqual([])
   })
 
-  it('warns once, on its line, about non-list content in the rules section', () => {
-    const rules = `${VALID_FINDING}
-## Maintenance rules for agents
-
-- Keep the top callout current. (2026-09-23)
-
-This paragraph does not belong here.
-
-Neither does this one.
-`
-    const diagnostics = lintWikiPage(makePage(rules), { inventory: INVENTORY })
-    expect(diagnostics).toEqual([
-      expect.objectContaining({
-        code: 'WIKI_MAINTENANCE_RULES_INVALID',
-        severity: 'warn',
-        message:
-          '`Maintenance rules for agents` holds list items only; "This paragraph does not belong here." is neither a list item nor part of one',
-      }),
-    ])
-    expect(diagnostics[0]?.line).toBe(
-      rules.split('\n').indexOf('This paragraph does not belong here.') + 1,
-    )
+  it('allows free-form maintenance explanations and repeated headings', () => {
+    const rules = `${VALID_FINDING}\n## Maintenance rules for agents\nA concise explanation.\n## Maintenance rules for agents\nAnother observation.`
+    expect(lintWikiPage(makePage(rules), { inventory: INVENTORY })).toEqual([])
   })
 
-  it('warns about a second rules section', () => {
-    const rules = `${VALID_FINDING}
-## Maintenance rules for agents
-
-- Keep the top callout current. (2026-09-23)
-
-## Maintenance rules for agents
-
-- Re-check the numbers after every rerun. (2026-09-21)
-`
-    expect(lintWikiPage(makePage(rules), { inventory: INVENTORY })).toEqual([
-      expect.objectContaining({
-        code: 'WIKI_MAINTENANCE_RULES_INVALID',
-        severity: 'warn',
-        message:
-          'a page carries at most one `Maintenance rules for agents` section; "Maintenance rules for agents" is a second one',
-        line: rules.split('\n').lastIndexOf('## Maintenance rules for agents') + 1,
-      }),
-    ])
-  })
-
-  it('leaves the old section names as ordinary content and reports a fence in the rules', () => {
-    const renamed = `${VALID_FINDING}
-## Maintenance rules
-
-Prose under an ordinary section is fine.
-
-## 维护规则
-
-也是普通小节。
-`
-    expect(lintWikiPage(makePage(renamed), { inventory: INVENTORY })).toEqual([])
-
-    const fenced = `${VALID_FINDING}
-## Maintenance rules for agents
-
-- 每次改动后复核结论。(2026-09-22)
-
-\`\`\`sh
-memon wiki lint
-\`\`\`
-`
-    expect(lintWikiPage(makePage(fenced), { inventory: INVENTORY })).toEqual([
-      expect.objectContaining({
-        code: 'WIKI_MAINTENANCE_RULES_INVALID',
-        message: expect.stringContaining('```sh'),
-      }),
-    ])
-  })
-
-  it('warns when a finding body carries no evidence token', () => {
+  it('does not infer evidence quality from literal identifier tokens', () => {
     const withoutEvidence = VALID_FINDING.replace(
       'Measured in @E0017-fused-attention.',
       'Trust me.',
     )
     const diagnostics = lintWikiPage(makePage(withoutEvidence))
-    expect(codes(diagnostics)).toEqual(['WIKI_CLAIM_WITHOUT_EVIDENCE'])
+    expect(codes(diagnostics)).toEqual([])
     // The same body with a run identifier is fine.
     expect(
       lintWikiPage(

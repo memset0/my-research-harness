@@ -18,12 +18,11 @@ Distinctions: Separate settled decisions from owned action items; preserve disag
 Use date-prefixed slugs where useful. Cite discussed Experiments in sources. Extract independently citable decisions or findings into linked pages.
 
 - Status vocabulary: none.
-- Creation default: no status.
-- Date required: yes (YYYY-MM-DD).
-- Non-empty sources required: no.
-- Recommended H2s (warning only; also used by create): Attendees, Notes, Decisions, Action items.
+- Status is optional; creation makes no research judgment.
+- Date is optional (YYYY-MM-DD when supplied).
+- Structured sources are optional; cite evidence where useful.
+- Body organization is free-form; no missing-section warnings or generated template.
 - Required H2s: none.
-- Body evidence warning: no.
 - Related kinds: decision, finding.
 
 ## roadmap
@@ -39,12 +38,11 @@ Distinctions: Not an Experiment inventory or one-Experiment-per-node slot system
 Use headings and nested lists as the content demands; no page status or recommended scaffold. Proposed goals need no evidence. Cite Experiments or Variants inline and explain their evidence role. Evidence is many-to-many across nodes and roadmaps. Keep detailed designs, metrics, execution state and experiment-local tasks in Experiments.
 
 - Status vocabulary: none.
-- Creation default: no status.
-- Date required: no.
-- Non-empty sources required: no.
-- Recommended H2s (warning only; also used by create): none; free-form.
+- Status is optional; creation makes no research judgment.
+- Date is optional (YYYY-MM-DD when supplied).
+- Structured sources are optional; cite evidence where useful.
+- Body organization is free-form; no missing-section warnings or generated template.
 - Required H2s: none.
-- Body evidence warning: no.
 - Related kinds: initiative, question.
 
 ## finding
@@ -60,12 +58,11 @@ Distinctions: Not an unanswered question or an unsupported claim disguised as a 
 Make Claim quotable. Attribute every number to an Experiment, Variant or run in Evidence and state coverage limits. Cite evidence in prose as well as sources. VERIFIED means claims reproduce from cited Results, otherwise retain TENTATIVE. Retract disproven claims with an explanation rather than deleting them.
 
 - Status vocabulary: TENTATIVE / VERIFIED / RETRACTED.
-- Creation default: TENTATIVE.
-- Date required: no.
-- Non-empty sources required: yes.
-- Recommended H2s (warning only; also used by create): Claim, Evidence, Limits.
+- Status is optional; creation makes no research judgment.
+- Date is optional (YYYY-MM-DD when supplied).
+- Structured sources are optional; cite evidence where useful.
+- Body organization is free-form; no missing-section warnings or generated template.
 - Required H2s: none.
-- Body evidence warning: yes.
 - Related kinds: question, note.
 
 ## bottleneck
@@ -81,12 +78,11 @@ Distinctions: MITIGATED means a workaround exists, not that the underlying probl
 Quantify impact where possible and cite numbers. Compare candidate options with costs, including rejected alternatives and reasons.
 
 - Status vocabulary: OPEN / MITIGATED / RESOLVED.
-- Creation default: OPEN.
-- Date required: no.
-- Non-empty sources required: no.
-- Recommended H2s (warning only; also used by create): Problem, Impact, Status, Candidates.
+- Status is optional; creation makes no research judgment.
+- Date is optional (YYYY-MM-DD when supplied).
+- Structured sources are optional; cite evidence where useful.
+- Body organization is free-form; no missing-section warnings or generated template.
 - Required H2s: none.
-- Body evidence warning: no.
 - Related kinds: question, initiative.
 
 ## showcase
@@ -102,12 +98,11 @@ Distinctions: Not a classification guide or a replacement for evidence-backed fi
 Usually use a bundle with data/ and views/<slug>/index.html. Explain exact reproduction commands, inputs and producing Experiments in substance. Read html-bundle.md before writing HTML. Mark stale, non-regenerable displays OUTDATED.
 
 - Status vocabulary: DRAFT / READY / OUTDATED.
-- Creation default: DRAFT.
-- Date required: no.
-- Non-empty sources required: no.
-- Recommended H2s (warning only; also used by create): What to show, How to reproduce, Assets.
+- Status is optional; creation makes no research judgment.
+- Date is optional (YYYY-MM-DD when supplied).
+- Structured sources are optional; cite evidence where useful.
+- Body organization is free-form; no missing-section warnings or generated template.
 - Required H2s: none.
-- Body evidence warning: no.
 - Related kinds: catalog, finding.
 
 ## question
@@ -123,12 +118,11 @@ Distinctions: Not an already established finding or necessarily a blocking probl
 State a falsifiable question, why it matters now and what was ruled out. Leave Answer empty until evidence exists, then cite it and set ANSWERED. Consider a separate finding. DROPPED records why the question stopped mattering.
 
 - Status vocabulary: OPEN / ANSWERED / DROPPED.
-- Creation default: OPEN.
-- Date required: no.
-- Non-empty sources required: no.
-- Recommended H2s (warning only; also used by create): Question, Context, Answer.
+- Status is optional; creation makes no research judgment.
+- Date is optional (YYYY-MM-DD when supplied).
+- Structured sources are optional; cite evidence where useful.
+- Body organization is free-form; no missing-section warnings or generated template.
 - Required H2s: none.
-- Body evidence warning: no.
 - Related kinds: finding, bottleneck.
 
 ## decision
@@ -144,12 +138,11 @@ Distinctions: Not a meeting transcript; alternatives and consequences matter.
 State the decision in one imperative sentence. Name alternatives and discriminating evidence in Rationale; record costs in Consequences. When replaced, set SUPERSEDED and explicitly deprecate with a successor reference.
 
 - Status vocabulary: PROPOSED / ACCEPTED / SUPERSEDED.
-- Creation default: PROPOSED.
-- Date required: no.
-- Non-empty sources required: no.
-- Recommended H2s (warning only; also used by create): Decision, Rationale, Consequences.
+- Status is optional; creation makes no research judgment.
+- Date is optional (YYYY-MM-DD when supplied).
+- Structured sources are optional; cite evidence where useful.
+- Body organization is free-form; no missing-section warnings or generated template.
 - Required H2s: none.
-- Body evidence warning: no.
 - Related kinds: meeting.
 
 ## note
@@ -165,12 +158,11 @@ Distinctions: Not a dumping ground or a way to evade finding evidence requiremen
 Write free-form, useful context without a status or prescribed scaffold. If the content is a tentative claim, use a TENTATIVE finding instead.
 
 - Status vocabulary: none.
-- Creation default: no status.
-- Date required: no.
-- Non-empty sources required: no.
-- Recommended H2s (warning only; also used by create): none; free-form.
+- Status is optional; creation makes no research judgment.
+- Date is optional (YYYY-MM-DD when supplied).
+- Structured sources are optional; cite evidence where useful.
+- Body organization is free-form; no missing-section warnings or generated template.
 - Required H2s: none.
-- Body evidence warning: no.
 - Related kinds: finding, catalog.
 
 ## harness-feedback
@@ -186,12 +178,11 @@ Distinctions: Not a research finding. Agents may write only PROPOSED; other life
 Describe the concrete moment the gap hurt and cite the affected page or task. Propose the smallest useful fix, not a redesign. Hand off to an OpenSpec change in the harness repository and stop; do not certify implementation or human review.
 
 - Status vocabulary: PROPOSED / ACCEPTED / SHIPPED / REJECTED.
-- Creation default: PROPOSED.
-- Date required: no.
-- Non-empty sources required: no.
-- Recommended H2s (warning only; also used by create): Motivation, Proposal, Status.
+- Status is optional; creation makes no research judgment.
+- Date is optional (YYYY-MM-DD when supplied).
+- Structured sources are optional; cite evidence where useful.
+- Body organization is free-form; no missing-section warnings or generated template.
 - Required H2s: none.
-- Body evidence warning: no.
 - Related kinds: bottleneck.
 
 ## initiative
@@ -207,12 +198,11 @@ Distinctions: May predate any Experiment; not a second detailed task ledger or t
 Explain intent, evolving phases, evidence-backed progress, blockers, decisions and the next discussion. Cite Experiments for evidence rather than duplicating their details. Let the content choose its structure; examples are advisory, with no status or fixed headings.
 
 - Status vocabulary: none.
-- Creation default: no status.
-- Date required: no.
-- Non-empty sources required: no.
-- Recommended H2s (warning only; also used by create): none; free-form.
+- Status is optional; creation makes no research judgment.
+- Date is optional (YYYY-MM-DD when supplied).
+- Structured sources are optional; cite evidence where useful.
+- Body organization is free-form; no missing-section warnings or generated template.
 - Required H2s: none.
-- Body evidence warning: no.
 - Related kinds: roadmap, bottleneck, decision.
 
 ## catalog
@@ -228,12 +218,11 @@ Distinctions: Not a raw inventory or duplicate Results table; use showcase for v
 Explain meaningful families, differences, suitability, maturity and evidence limits. Link authoritative assets and evidence without copying results. Structure follows the material; suggestions are advisory and there is no page status or fixed heading scaffold.
 
 - Status vocabulary: none.
-- Creation default: no status.
-- Date required: no.
-- Non-empty sources required: no.
-- Recommended H2s (warning only; also used by create): none; free-form.
+- Status is optional; creation makes no research judgment.
+- Date is optional (YYYY-MM-DD when supplied).
+- Structured sources are optional; cite evidence where useful.
+- Body organization is free-form; no missing-section warnings or generated template.
 - Required H2s: none.
-- Body evidence warning: no.
 - Related kinds: showcase, note, finding.
 
 ## digest
@@ -249,17 +238,16 @@ Distinctions: Unlike a single meeting record or a durable finding, a digest summ
 Describe the covered period, meaningful progress, evidence limits and unresolved questions. Cite original Wiki pages or Experiments rather than copying them. Preserve historical context and provenance; do not revive automatic journal cursors, generation schedules or review claims. Structure is advisory; no status or mandatory headings.
 
 - Status vocabulary: none.
-- Creation default: no status.
-- Date required: no.
-- Non-empty sources required: no.
-- Recommended H2s (warning only; also used by create): none; free-form.
+- Status is optional; creation makes no research judgment.
+- Date is optional (YYYY-MM-DD when supplied).
+- Structured sources are optional; cite evidence where useful.
+- Body organization is free-form; no missing-section warnings or generated template.
 - Required H2s: none.
-- Body evidence warning: no.
 - Related kinds: meeting, finding, note.
 
 ## Reserved directories
 
 `code-review`, `assets`
 
-These are not canonical page kinds. Unknown kinds remain readable but produce diagnostics.
+These are not canonical page kinds. Any safe topic category is accepted without a kind warning.
 Use `memon --project-root . wiki move` for relocation or the migration Skill for conversion; registry edits never rewrite or review pages.

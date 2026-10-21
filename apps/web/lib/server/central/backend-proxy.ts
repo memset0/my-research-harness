@@ -300,7 +300,7 @@ async function projectBackendWikiPage(
     registry.markFailure(host, 'misconfigured', 'Backend wiki page response is invalid')
     return safeGatewayError(502, 'UNAVAILABLE', 'Host Backend returned an invalid wiki page')
   }
-  const projected = wikiComponentProjection(parsed.data.content)
+  const projected = wikiComponentProjection(parsed.data.content, parsed.data.resource)
   for (const name of [
     'accept-ranges',
     'content-encoding',

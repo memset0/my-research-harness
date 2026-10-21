@@ -7,6 +7,7 @@
 
 import { createHash } from 'node:crypto'
 
+import { parseContent } from '../content.js'
 import { formatIsoLocal } from '../time.js'
 import type { Experiment, Run } from '../types.js'
 import { COMPONENT_TYPES } from './component-names.generated.js'
@@ -61,8 +62,9 @@ export function buildWikiSummary(input: BuildWikiSummaryInput): WikiSummary {
     id: effectiveWikiId(location.id, frontmatter),
     slug: location.slug,
     kind: location.kind,
-    title: wikiDisplayTitle(frontmatter, body, location.slug),
-    description: typeof frontmatter?.description === 'string' ? frontmatter.description : null,
+    title: wikiDisplayTitle(frontmatter, body, location.slug).slice(0, 512),
+    description:
+      typeof frontmatter?.description === 'string' ? frontmatter.description.slice(0, 4096) : null,
     status,
     date: typeof frontmatter?.date === 'string' ? frontmatter.date : null,
     language: isWikiLanguage(frontmatter?.language) ? frontmatter.language : 'en',
@@ -181,9 +183,11 @@ export function buildWikiProject(
   ctx: WikiProjectContext | WikiLocalProjectContext,
 ): WikiProjectProjection {
   const parsed = pages.map((page) => {
-    const { frontmatter, body, raw } = parseWikiFrontmatter(page.content)
+    const { frontmatter, body, raw } = parseWikiFrontmatter(page.content, page.path)
+    const content = parseContent(page.content, page.path, page.kind)
     return {
       page,
+      content,
       frontmatter,
       body,
       // `---` + YAML lines + `---`, so body line 1 is this many lines in.
@@ -257,26 +261,50 @@ export function buildWikiProject(
   const summaries = parsed.map((entry, index) => {
     const staleness = resolved?.pages.get(entry.id) ?? null
     const diagnostics = [
-      ...lintWikiPage(lintPages[index]!, {
-        ...(inventory === undefined ? {} : { inventory }),
-        ...(staleness === null
-          ? {}
-          : {
-              unresolvedSources: staleness.unresolvedSources.filter(
-                (source) => wikiSourceKind(source) !== null,
-              ),
-            }),
-        componentNames,
-      }),
+      ...(entry.content.manifest
+        ? []
+        : lintWikiPage(lintPages[index]!, {
+            ...(inventory === undefined ? {} : { inventory }),
+            ...(staleness === null
+              ? {}
+              : {
+                  unresolvedSources: staleness.unresolvedSources.filter(
+                    (source) => wikiSourceKind(source) !== null,
+                  ),
+                }),
+            componentNames,
+          })),
+      ...entry.content.errors.map((message) => ({
+        code: 'CONTENT_METADATA_INVALID',
+        severity: 'error' as const,
+        message,
+      })),
+      ...(entry.content.manifest &&
+      entry.frontmatter?.id !== undefined &&
+      entry.frontmatter.id !== entry.page.id
+        ? [
+            {
+              code: 'WIKI_ID_MISMATCH',
+              severity: 'error' as const,
+              message: 'manifest id disagrees with directory identity',
+            },
+          ]
+        : []),
       ...(projectDiagnostics.get(entry.page.path) ?? []),
     ]
-    return buildWikiSummary({
+    const summary = buildWikiSummary({
       location: entry.page,
       frontmatter: entry.frontmatter,
       body: entry.body,
       diagnostics,
       staleness,
     })
+    Object.assign(summary, entry.content.fields)
+    if (summary.freshness) {
+      summary.stale = summary.freshness === 'STALE'
+      summary.staleSources = []
+    }
+    return summary
   })
 
   const sorted = sortWikiSummaries(summaries)

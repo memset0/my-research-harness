@@ -22,6 +22,7 @@ import {
   buildWikiProject,
   type CodeReviewCompletion,
   type CodeReviewFrontMatter,
+  type ContentFields,
   collectWikiSourceReferences,
   type DiscoveredWikiPage,
   deriveCompletion,
@@ -37,6 +38,7 @@ import {
   markJournalInvocationOutcome,
   type ProjectConfig,
   parseCodeReview,
+  parseContent,
   parseExperimentDescription,
   parseExperimentReadme,
   parseWikiFrontmatter,
@@ -140,6 +142,7 @@ interface DocumentEntry {
   mtime: number
   kind: 'report' | 'code-review' | 'readme'
   format?: 'markdown' | 'bundle'
+  contentFields?: ContentFields
   slug?: string
   date?: string
   codeReview?: {
@@ -280,6 +283,45 @@ export class FilesystemDocumentService implements BackendDocumentService {
     })
   }
 
+  /** Lightweight gateway lookup: document metadata only, no evidence or asset walks. */
+  async getContentPresentation(
+    projectName: string,
+    kind: 'wiki' | 'report',
+    id: string,
+  ): Promise<ContentFields> {
+    const project = this.requireProject(projectName)
+    if (!(kind === 'wiki' ? /^W\d{4}$/ : /^R\d{4}$/).test(id))
+      throw new BackendDocumentServiceError('INVALID_RESOURCE', 'Invalid content identity')
+    const inventory =
+      kind === 'wiki'
+        ? (await indexedWikiPages(project, this.policy, { assets: false, id })).map((page) => ({
+            id: page.id,
+            resource: page.path,
+          }))
+        : await indexedReportInventory(project, this.policy, id)
+    const matches = inventory.filter((item) => item.id === id)
+    if (matches.length !== 1)
+      throw new BackendDocumentServiceError(
+        matches.length ? 'AMBIGUOUS_RESOURCE' : 'RESOURCE_NOT_FOUND',
+        'Content identity must resolve to one document',
+      )
+    const resource = matches[0]!.resource
+    const absolute = await resolveContained(
+      project.root,
+      join(project.root, ...resource.split('/')),
+    )
+    if (!absolute)
+      throw new BackendDocumentServiceError('RESOURCE_NOT_FOUND', 'Content document not found')
+    const content = await fs.readFile(absolute, 'utf8')
+    const parsed = parseContent(content, resource)
+    if (parsed.metadata.id !== undefined && parsed.metadata.id !== id)
+      throw new BackendDocumentServiceError(
+        'INVALID_RESOURCE',
+        'Manifest identity disagrees with its directory',
+      )
+    return parsed.fields
+  }
+
   async getReport(projectName: string, id: string) {
     const project = this.requireProject(projectName)
     const reports = await withAutomaticProjectFileContext(() => this.discoverReports(project))
@@ -406,7 +448,7 @@ export class FilesystemDocumentService implements BackendDocumentService {
       )
       return BackendWikiInventoryResponseSchema.parse({
         pages: pages.map((page) => {
-          const { frontmatter } = parseWikiFrontmatter(page.content)
+          const { frontmatter } = parseWikiFrontmatter(page.content, page.path)
           const legacyId = frontmatter?.legacy_id
           return {
             id: effectiveWikiId(page.id, frontmatter),
@@ -435,43 +477,45 @@ export class FilesystemDocumentService implements BackendDocumentService {
     input: DocumentWriteInput,
   ): Promise<BackendWikiWriteResult> {
     const project = this.requireProject(projectName)
-    return this.record(project, 'wiki write', { wiki: id }, async () => {
-      const summary = await this.wikiPageSummary(project, id)
-      addJournalInvocationDetail({ kind: 'target', type: 'wiki', id })
-      const absolutePath = wikiAbsolutePath(project, summary)
-      await assertWithin(project.root, absolutePath)
-      const [current, stat] = await Promise.all([
-        fs.readFile(absolutePath, 'utf8'),
-        fs.stat(absolutePath),
-      ])
-      const currentHash = sha1(current)
-      if (stat.mtimeMs !== input.expectedMtime || currentHash !== input.expectedHash) {
-        markJournalInvocationOutcome('conflict', 'DOCUMENT_CHANGED')
-        return BackendWikiConflictResponseSchema.parse({
-          error: { code: 'CONFLICT', message: 'on-disk wiki page changed' },
-          currentMtime: stat.mtimeMs,
-          currentHash,
-          currentContent: current,
+    return this.record(project, 'wiki write', { wiki: id }, () =>
+      withFileWriterLock(project.root, async () => {
+        const summary = await this.wikiPageSummary(project, id)
+        addJournalInvocationDetail({ kind: 'target', type: 'wiki', id })
+        const absolutePath = wikiAbsolutePath(project, summary)
+        await assertWithin(project.root, absolutePath)
+        const [current, stat] = await Promise.all([
+          fs.readFile(absolutePath, 'utf8'),
+          fs.stat(absolutePath),
+        ])
+        const currentHash = sha1(current)
+        if (stat.mtimeMs !== input.expectedMtime || currentHash !== input.expectedHash) {
+          markJournalInvocationOutcome('conflict', 'DOCUMENT_CHANGED')
+          return BackendWikiConflictResponseSchema.parse({
+            error: { code: 'CONFLICT', message: 'on-disk wiki page changed' },
+            currentMtime: stat.mtimeMs,
+            currentHash,
+            currentContent: current,
+          })
+        }
+        const content = nextWikiContent(input.content, current, summary)
+        await writeFileAtomic(absolutePath, content, { mode: stat.mode })
+        addJournalInvocationDetail({
+          kind: 'file-change',
+          path: relative(project.root, absolutePath).split(sep).join('/'),
+          before: currentHash,
+          after: sha1(content),
         })
-      }
-      const content = nextWikiContent(input.content, current, summary)
-      await writeFileAtomic(absolutePath, content, { mode: stat.mode })
-      addJournalInvocationDetail({
-        kind: 'file-change',
-        path: relative(project.root, absolutePath).split(sep).join('/'),
-        before: currentHash,
-        after: sha1(content),
-      })
-      // Re-project so the response carries the updated staleness and diagnostics.
-      const next = await this.wikiPageSummary(project, id)
-      const page = BackendWikiDocumentSchema.parse(await this.readWikiPage(project, next))
-      return BackendWikiWriteResponseSchema.parse({
-        ok: true,
-        mtime: page.mtime,
-        hash: page.hash,
-        page,
-      })
-    })
+        // Re-project so the response carries the updated staleness and diagnostics.
+        const next = await this.wikiPageSummary(project, id)
+        const page = BackendWikiDocumentSchema.parse(await this.readWikiPage(project, next))
+        return BackendWikiWriteResponseSchema.parse({
+          ok: true,
+          mtime: page.mtime,
+          hash: page.hash,
+          page,
+        })
+      }),
+    )
   }
 
   async wikiBacklinks(projectName: string, artifact: string) {
@@ -505,7 +549,8 @@ export class FilesystemDocumentService implements BackendDocumentService {
     }
     const pages = await indexedWikiPages(project, this.policy, { assets: true })
     const cited = pages.filter(
-      (page) => effectiveWikiId(page.id, parseWikiFrontmatter(page.content).frontmatter) === id,
+      (page) =>
+        effectiveWikiId(page.id, parseWikiFrontmatter(page.content, page.path).frontmatter) === id,
     )
     return requireWikiPage(await this.projectWiki(project, pages, cited), id)
   }
@@ -526,7 +571,7 @@ export class FilesystemDocumentService implements BackendDocumentService {
     }
     const references = wikiArtifactReferences(
       cited.flatMap((page) =>
-        wikiStringList(parseWikiFrontmatter(page.content).frontmatter?.sources),
+        wikiStringList(parseWikiFrontmatter(page.content, page.path).frontmatter?.sources),
       ),
     )
     const [artifacts, reportIds] = await Promise.all([
@@ -677,6 +722,11 @@ export class FilesystemDocumentService implements BackendDocumentService {
         if (problem) throw new BackendDocumentServiceError('INVALID_RESOURCE', problem)
       }
     }
+    if (entry.resource.endsWith('/manifest.json')) {
+      const parsed = parseContent(input.content, entry.resource)
+      if (parsed.errors.length)
+        throw new BackendDocumentServiceError('INVALID_RESOURCE', parsed.errors.join('; '))
+    }
     const original = await fs.stat(entry.absolutePath)
     await writeFileAtomic(entry.absolutePath, input.content, { mode: original.mode })
     projectReadIndex(project.root).invalidate()
@@ -744,7 +794,23 @@ export class FilesystemDocumentService implements BackendDocumentService {
           'report-title',
           age,
           (content, stat) =>
-            stat.isFile() ? { title: extractTitle(content), mtime: stat.mtimeMs } : null,
+            stat.isFile()
+              ? {
+                  title: String(
+                    parseContent(content, item.resource).metadata.title ??
+                      extractTitle(content) ??
+                      item.slug,
+                  ).slice(0, 512),
+                  mtime: stat.mtimeMs,
+                  fields: parseContent(
+                    content,
+                    item.resource,
+                    /^R\d{4}-/.test(item.resource.split('/')[2] ?? '')
+                      ? undefined
+                      : item.resource.split('/')[2],
+                  ).fields,
+                }
+              : null,
         )
         if (!summary) return null
         return {
@@ -754,7 +820,8 @@ export class FilesystemDocumentService implements BackendDocumentService {
           title: summary.title,
           mtime: summary.mtime,
           kind: 'report',
-          format: item.resource.endsWith('/README.md') ? 'bundle' : 'markdown',
+          format: /\/(README\.md|manifest\.json)$/.test(item.resource) ? 'bundle' : 'markdown',
+          contentFields: summary.fields,
           slug: item.slug,
         }
       }),
@@ -825,6 +892,8 @@ function requireWikiPage(projection: WikiProjectProjection, id: string): WikiSum
     throw new BackendDocumentServiceError('INVALID_RESOURCE', 'Wiki id must match W<NNNN>')
   }
   const summary = projection.byId.get(id)
+  if (summary?.diagnostics.some((item) => item.code === 'WIKI_ID_DUPLICATE'))
+    throw new BackendDocumentServiceError('AMBIGUOUS_RESOURCE', 'Wiki identity is ambiguous')
   if (!summary) throw new BackendDocumentServiceError('RESOURCE_NOT_FOUND', 'Wiki page not found')
   return summary
 }
@@ -838,6 +907,15 @@ function wikiAbsolutePath(project: ProjectConfig, summary: WikiSummary): string 
  * Identity (`id`, `kind`) moves only through `memon wiki move`.
  */
 function nextWikiContent(content: string, current: string, summary: WikiSummary): string {
+  if (summary.path.endsWith('/manifest.json')) {
+    const parsed = parseContent(content, summary.path)
+    if (parsed.errors.length)
+      throw new BackendDocumentServiceError('INVALID_RESOURCE', parsed.errors.join('; '))
+    const previous = parseContent(current, summary.path).metadata
+    if (parsed.metadata.id !== previous.id)
+      throw new BackendDocumentServiceError('INVALID_RESOURCE', 'manifest identity cannot change')
+    return `${JSON.stringify({ ...parsed.metadata, updated_at: formatIsoLocal(new Date()) }, null, 2)}\n`
+  }
   const next = parseWikiFrontmatter(content)
   if (!next.frontmatter) {
     throw new BackendDocumentServiceError(
@@ -872,6 +950,7 @@ function reportSummary(project: ProjectConfig, entry: DocumentEntry) {
     title: entry.title,
     mtime: entry.mtime,
     format: entry.format,
+    ...entry.contentFields,
   }
 }
 

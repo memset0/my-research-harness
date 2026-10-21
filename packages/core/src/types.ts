@@ -1,3 +1,4 @@
+import type { ContentFields } from './content.js'
 // Core type definitions for memon
 //
 // Mirrors specs/experiment-readme, specs/hypotheses, specs/journal.
@@ -634,7 +635,7 @@ export interface ExperimentMembershipAnomaly {
  * List-view metadata for a single report at
  * `<projectRoot>/docs/reports/R<NNNN>-<slug>.md`.
  */
-export interface ReportSummary {
+export interface ReportSummary extends ContentFields {
   /** Canonical 4-digit padded id, e.g. `'R0001'`. */
   id: string
   /** Slug from the filename (the kebab-case piece after the id). */
@@ -957,6 +958,8 @@ export interface CentralUrlTransportConfig {
 }
 
 export interface CentralSshTransportConfig {
+  /** Optional SSH server port; application remotePort is independent. */
+  port?: number
   kind: 'ssh'
   executable: string
   target: string

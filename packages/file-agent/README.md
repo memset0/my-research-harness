@@ -144,3 +144,13 @@ Default limits: 16 MiB whole-file body, 1 MiB range, 128 batch members, 10 concu
 source operations and 10,000 replay records. `X-Memon-Concurrency` can request a
 lower admission limit, never raise the server maximum. Descriptor-held source
 slots outlive a caller disconnect while the physical operation is still running.
+
+## Optional loopback service forwarding
+
+`/v1/services/<project>/<port>/<path>` forwards streaming HTTP and WebSockets to
+loopback only. It requires the existing mTLS project grant and source-identity
+header, an explicit `serviceGrants: { "<certificate-fingerprint>": { "project-a": true } }`,
+and `servicePorts: [8000]` on that project. File access alone grants no service
+access. Services use a separate bounded admission pool. No process starts or
+stops, no manifest parsing, and no arbitrary target host is accepted. Central
+must be upgraded separately from this independent source agent.
