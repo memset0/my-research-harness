@@ -12,7 +12,7 @@ import type { ContentFields } from '@memon/core'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, List, PanelRightClose, PanelRightOpen, Pencil, X } from 'lucide-react'
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import {
   type FullReport,
@@ -40,12 +40,6 @@ import {
   ServiceAvailability,
 } from './content-presentation'
 import { DocumentArtifactLinkProvider } from './document-artifact-link-provider'
-import {
-  EXPANDED_PANE_CLASS,
-  ExpandViewButton,
-  useExpandedInUrl,
-  useFocusedPane,
-} from './expanded-view'
 import { FrontmatterPanel } from './frontmatter-panel'
 import { Markdown } from './markdown'
 import { ReadmeMonaco } from './readme-monaco'
@@ -475,17 +469,6 @@ function SelectedItemPane({
 }) {
   const editable = kind === 'reports'
   const [editing, setEditing] = useState(false)
-  // Markdown Reports expand their whole pane; HTML bundles use their embed's
-  // own Expand. Either way the state is the page's `expanded=1` parameter.
-  const { expanded: expandedInUrl, setExpanded } = useExpandedInUrl()
-  const markdownView =
-    kind === 'reports' &&
-    data !== undefined &&
-    data.presentation !== 'html' &&
-    data.presentation !== 'service'
-  const expanded = expandedInUrl && markdownView
-  const exitExpanded = useCallback(() => setExpanded(false), [setExpanded])
-  useFocusedPane(expanded, exitExpanded)
 
   if (isLoading && !data) {
     return (
@@ -521,10 +504,7 @@ function SelectedItemPane({
   }
 
   return (
-    <div
-      className={cn('flex h-full flex-col', expanded && EXPANDED_PANE_CLASS)}
-      data-expanded-pane={expanded ? 'true' : undefined}
-    >
+    <div className="flex h-full flex-col">
       <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b bg-background/95 px-4 py-2 backdrop-blur">
         <div className="flex min-w-0 items-center gap-2">
           <div className="flex min-w-0 items-baseline gap-2 text-xs">
@@ -542,9 +522,6 @@ function SelectedItemPane({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {markdownView && (
-            <ExpandViewButton expanded={expanded} onToggle={() => setExpanded(!expanded)} />
-          )}
           {editable ? (
             <Button
               size="sm"

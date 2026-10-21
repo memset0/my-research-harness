@@ -162,6 +162,11 @@ describe('<Markdown> table of contents', () => {
     )
 
     const toc = screen.getByRole('navigation', { name: 'Table of contents' })
+    // The contents are a native disclosure that starts open and collapses
+    // from its title.
+    const disclosure = toc.closest('details')
+    expect(disclosure).toHaveAttribute('open')
+    expect(disclosure?.querySelector('summary')).toHaveTextContent('Table of contents')
     const links = within(toc).getAllByRole('link')
     expect(links.map((link) => link.textContent)).toEqual([
       'Overview',

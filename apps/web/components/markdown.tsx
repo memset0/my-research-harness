@@ -611,9 +611,10 @@ function buildTableOfContentsNode(
   return {
     type: 'reportTableOfContents',
     data: {
-      hName: 'nav',
+      // A native disclosure, open by default: the reader can collapse it.
+      hName: 'details',
       hProperties: {
-        'aria-label': title,
+        open: true,
         'data-report-toc': '',
         className: ['not-prose', 'mb-6', 'rounded-lg', 'border', 'bg-muted/30', 'p-4', 'text-sm'],
       },
@@ -622,9 +623,11 @@ function buildTableOfContentsNode(
       {
         type: 'paragraph',
         data: {
-          hName: 'div',
+          hName: 'summary',
           hProperties: {
             className: [
+              'cursor-pointer',
+              'select-none',
               'mb-2',
               'text-xs',
               'font-semibold',
@@ -637,52 +640,58 @@ function buildTableOfContentsNode(
         children: [{ type: 'text', value: title }],
       },
       {
-        type: 'list',
-        data: {
-          hProperties: {
-            className: ['m-0', 'space-y-1', 'p-0'],
-          },
-        },
-        children: entries.map((entry) => ({
-          type: 'listItem',
-          data: {
-            hProperties: {
-              className: [
-                'list-none',
-                tableOfContentsIndentClass(Math.max(0, entry.depth - minDepth)),
-              ],
+        type: 'reportTableOfContentsNav',
+        data: { hName: 'nav', hProperties: { 'aria-label': title } },
+        children: [
+          {
+            type: 'list',
+            data: {
+              hProperties: {
+                className: ['m-0', 'space-y-1', 'p-0'],
+              },
             },
-          },
-          children: [
-            {
-              type: 'paragraph',
+            children: entries.map((entry) => ({
+              type: 'listItem',
+              data: {
+                hProperties: {
+                  className: [
+                    'list-none',
+                    tableOfContentsIndentClass(Math.max(0, entry.depth - minDepth)),
+                  ],
+                },
+              },
               children: [
                 {
-                  type: 'link',
-                  url: `#${entry.id}`,
-                  data: {
-                    hProperties: {
-                      className: [
-                        'block',
-                        'rounded-sm',
-                        'px-1.5',
-                        'py-1',
-                        'text-foreground/80',
-                        'no-underline',
-                        'hover:bg-accent',
-                        'hover:text-accent-foreground',
-                        'focus-visible:outline-none',
-                        'focus-visible:ring-2',
-                        'focus-visible:ring-ring',
-                      ],
+                  type: 'paragraph',
+                  children: [
+                    {
+                      type: 'link',
+                      url: `#${entry.id}`,
+                      data: {
+                        hProperties: {
+                          className: [
+                            'block',
+                            'rounded-sm',
+                            'px-1.5',
+                            'py-1',
+                            'text-foreground/80',
+                            'no-underline',
+                            'hover:bg-accent',
+                            'hover:text-accent-foreground',
+                            'focus-visible:outline-none',
+                            'focus-visible:ring-2',
+                            'focus-visible:ring-ring',
+                          ],
+                        },
+                      },
+                      children: [{ type: 'text', value: entry.label }],
                     },
-                  },
-                  children: [{ type: 'text', value: entry.label }],
+                  ],
                 },
               ],
-            },
-          ],
-        })),
+            })),
+          },
+        ],
       },
     ],
   }
