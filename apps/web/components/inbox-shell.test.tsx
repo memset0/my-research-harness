@@ -141,3 +141,36 @@ describe('InboxShell report detail — unrefreshed catalog', () => {
     expect(screen.queryByText(/^error:/)).not.toBeInTheDocument()
   })
 })
+
+describe('InboxShell reports landing — populated versus empty', () => {
+  it('asks to select a report, not "no reports", when Reports exist and the picker is hidden', async () => {
+    localStorage.setItem('memon:reports:picker-open', 'false')
+    vi.mocked(fetchReports).mockResolvedValue({
+      reports: [
+        {
+          id: 'R0001',
+          slug: 'first-report',
+          title: 'First report',
+          mtime: 1000,
+          path: '/tmp/project-a/docs/reports/R0001-first-report.md',
+        },
+      ] as never,
+    })
+
+    renderWithQuery(<InboxShell kind="reports" project={PROJECT} selectedId={null} />)
+
+    expect(
+      await screen.findByText('Select a report from the report list to begin reading.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/No reports yet/)).not.toBeInTheDocument()
+  })
+
+  it('keeps the authoring empty copy for a genuinely empty list', async () => {
+    vi.mocked(fetchReports).mockResolvedValue({ reports: [] })
+    const { container } = renderWithQuery(
+      <InboxShell kind="reports" project={PROJECT} selectedId={null} />,
+    )
+    await waitFor(() => expect(container.querySelector('[data-inbox-empty-state]')).not.toBeNull())
+    expect(screen.queryByText(/Select a report/)).not.toBeInTheDocument()
+  })
+})

@@ -130,6 +130,9 @@ export function InboxShell({
         {selectedId === null ? (
           <EmptyState
             bodyMarkdown={empty.body}
+            itemCount={allItems.length}
+            loading={itemsLoading}
+            error={itemsError}
             onShowReports={showReportRail ? () => setReportRailOpen(true) : undefined}
           />
         ) : (
@@ -386,20 +389,44 @@ function RailList({
   )
 }
 
+/**
+ * Landing pane with nothing selected: the authoring empty copy only when the
+ * list loaded and is empty; otherwise a selection prompt, loading or failure.
+ */
 function EmptyState({
   bodyMarkdown,
+  itemCount,
+  loading,
+  error,
   onShowReports,
 }: {
   bodyMarkdown: string
+  itemCount: number
+  loading: boolean
+  error: Error | null
   onShowReports?: () => void
 }) {
   return (
     <div className="flex h-full flex-col">
       {onShowReports && <ClosedReportRailToolbar onShowReports={onShowReports} />}
       <div className="flex flex-1 items-center justify-center p-8">
-        <div className="max-w-md text-sm text-muted-foreground">
-          <Markdown>{bodyMarkdown}</Markdown>
-        </div>
+        {loading ? (
+          <div className="w-full max-w-md">
+            <ListSkeleton count={3} />
+          </div>
+        ) : error && itemCount === 0 ? (
+          <p className="max-w-md text-sm text-destructive">
+            Failed to load reports: {error.message}
+          </p>
+        ) : itemCount > 0 ? (
+          <p className="max-w-md text-sm text-muted-foreground" data-inbox-no-selection="">
+            Select a report from the report list to begin reading.
+          </p>
+        ) : (
+          <div className="max-w-md text-sm text-muted-foreground" data-inbox-empty-state="">
+            <Markdown>{bodyMarkdown}</Markdown>
+          </div>
+        )}
       </div>
     </div>
   )
