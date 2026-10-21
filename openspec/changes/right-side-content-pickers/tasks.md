@@ -9,4 +9,4 @@
 
 ## 3. Verification
 
-- [ ] 3.1 Run `pnpm --filter @memon/web typecheck`, the two component test files and Biome on touched files; after a prod rebuild, grep the served Report and Wiki markup for the rail after `<main` and confirm the CSS tokens per AGENTS.md §4.3
+- [x] 3.1 Run `pnpm --filter @memon/web typecheck`, the two component test files and Biome on touched files; after a prod rebuild, grep the served Report and Wiki markup for the rail after `<main` and confirm the CSS tokens per AGENTS.md §4.3

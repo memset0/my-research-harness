@@ -4,4 +4,4 @@
 
 ## 2. Verification
 
-- [ ] 2.1 Run `pnpm --filter @memon/web typecheck`, the inbox component tests and Biome; after deployment confirm the robo-harness Reports landing page loads its list and shows the selection prompt
+- [x] 2.1 Run `pnpm --filter @memon/web typecheck`, the inbox component tests and Biome; after deployment confirm the robo-harness Reports landing page loads its list and shows the selection prompt

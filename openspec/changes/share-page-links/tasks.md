@@ -13,4 +13,4 @@
 
 ## 4. Verification
 
-- [ ] 4.1 Run the touched tests, `pnpm typecheck` and Biome; after deployment open a page link and a public page in a fresh cookie jar and confirm redirects, allowed and denied reads, and revocation
+- [x] 4.1 Run the touched tests, `pnpm typecheck` and Biome; after deployment open a page link and a public page in a fresh cookie jar and confirm redirects, allowed and denied reads, and revocation

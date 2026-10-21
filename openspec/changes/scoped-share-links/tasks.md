@@ -17,4 +17,4 @@
 
 ## 4. Verification
 
-- [ ] 4.1 Run the touched test files, `pnpm typecheck` and Biome; after deployment issue a page link and a Project link on central, open each in a fresh cookie jar, confirm landing, allowed and denied reads, and revocation
+- [x] 4.1 Run the touched test files, `pnpm typecheck` and Biome; after deployment issue a page link and a Project link on central, open each in a fresh cookie jar, confirm landing, allowed and denied reads, and revocation
