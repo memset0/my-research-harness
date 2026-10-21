@@ -24,10 +24,8 @@ vi.mock('./report-html-embed', () => ({
     return <iframe src={props.src} title={props.title} />
   },
 }))
-const navigation = { search: '', replace: vi.fn() }
+const navigation = { search: '' }
 vi.mock('next/navigation', () => ({
-  usePathname: () => '/h/source-a/p/project-a/reports/R0006',
-  useRouter: () => ({ replace: navigation.replace }),
   useSearchParams: () => new URLSearchParams(navigation.search),
 }))
 afterEach(() => vi.unstubAllGlobals())
@@ -163,8 +161,12 @@ describe('content presentation', () => {
   })
 
   it('keeps the expanded HTML view of a full page in the URL', () => {
+    window.history.replaceState(
+      null,
+      '',
+      '/h/source-a/p/project-a/reports/R0006?tab=notes&expanded=1#top',
+    )
     navigation.search = 'tab=notes&expanded=1'
-    navigation.replace.mockClear()
     embedProps.length = 0
     wrap(
       <ContentPresentation
@@ -178,16 +180,11 @@ describe('content presentation', () => {
     const props = embedProps.at(-1)!
     expect(props.expanded).toBe(true)
     props.onExpandedChange?.(false)
-    expect(navigation.replace).toHaveBeenLastCalledWith(
-      '/h/source-a/p/project-a/reports/R0006?tab=notes',
-      { scroll: false },
+    expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe(
+      '/h/source-a/p/project-a/reports/R0006?tab=notes#top',
     )
-    navigation.search = ''
     props.onExpandedChange?.(true)
-    expect(navigation.replace).toHaveBeenLastCalledWith(
-      '/h/source-a/p/project-a/reports/R0006?tab=notes&expanded=1',
-      { scroll: false },
-    )
+    expect(window.location.search).toBe('?tab=notes&expanded=1')
   })
 
   it('leaves side and embedded views out of the URL', () => {

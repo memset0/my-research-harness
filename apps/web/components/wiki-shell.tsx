@@ -13,7 +13,7 @@ import type { WikiDiagnostic } from '@memon/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, List, PanelRightClose, PanelRightOpen, Pencil, X } from 'lucide-react'
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import {
   ApiError,
@@ -58,6 +58,12 @@ import {
   ServiceAvailability,
 } from './content-presentation'
 import { DocumentArtifactLinkProvider } from './document-artifact-link-provider'
+import {
+  EXPANDED_PANE_CLASS,
+  ExpandViewButton,
+  useExpandedInUrl,
+  useFocusedPane,
+} from './expanded-view'
 import { FrontmatterPanel } from './frontmatter-panel'
 import { Markdown } from './markdown'
 import { ReadmeMonaco } from './readme-monaco'
@@ -466,6 +472,14 @@ function WikiSelectedPane({
 }) {
   const [editing, setEditing] = useState(false)
   const [widthLimited, setWidthLimited] = useState(true)
+  // Markdown pages expand their whole pane; HTML bundles use their embed's
+  // own Expand. Either way the state is the page's `expanded=1` parameter.
+  const { expanded: expandedInUrl, setExpanded } = useExpandedInUrl()
+  const markdownView =
+    page !== undefined && page.presentation !== 'html' && page.presentation !== 'service'
+  const expanded = expandedInUrl && markdownView
+  const exitExpanded = useCallback(() => setExpanded(false), [setExpanded])
+  useFocusedPane(expanded, exitExpanded)
   const notFound = (error as (Error & { status?: number }) | null)?.status === 404
 
   if (isLoading && !page) {
@@ -504,7 +518,10 @@ function WikiSelectedPane({
   })
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div
+      className={cn('flex h-full min-h-0 flex-col', expanded && EXPANDED_PANE_CLASS)}
+      data-expanded-pane={expanded ? 'true' : undefined}
+    >
       <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 border-b bg-background/95 px-4 py-2 backdrop-blur">
         <div className="flex min-w-0 items-center gap-2">
           <div className="flex min-w-0 items-baseline gap-2 text-xs">
@@ -522,6 +539,9 @@ function WikiSelectedPane({
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <WikiKindHelp />
+          {markdownView && (
+            <ExpandViewButton expanded={expanded} onToggle={() => setExpanded(!expanded)} />
+          )}
           <Button
             size="sm"
             variant="outline"

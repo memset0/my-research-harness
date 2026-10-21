@@ -25,6 +25,10 @@ vi.mock('../lib/use-user-preference-state', () => ({
   useUserPreferenceState: () => [true, vi.fn()],
 }))
 const viewer = { documentOnly: false }
+const navigation = { search: '' }
+vi.mock('next/navigation', () => ({
+  useSearchParams: () => new URLSearchParams(navigation.search),
+}))
 vi.mock('./session-provider', () => ({
   useIsOwner: () => false,
   useIsDocumentOnlyViewer: () => viewer.documentOnly,
@@ -286,5 +290,33 @@ describe('WikiShell', () => {
     } finally {
       viewer.documentOnly = false
     }
+  })
+
+  it('expands a Markdown page over the window from the URL and exits on Escape', async () => {
+    const page = summary('W0004', '2026-05-04T08:00:00+00:00', { title: 'Roadmap' })
+    vi.mocked(fetchWiki).mockResolvedValue({ pages: [page] })
+    vi.mocked(fetchWikiPage).mockResolvedValue(detail(page, '## Plan\nExpanded body.'))
+    window.history.replaceState(null, '', '/h/host-a/p/project-a/wiki/W0004?expanded=1')
+    navigation.search = 'expanded=1'
+    try {
+      const { container } = renderWithQuery(<WikiShell project="project-a" selectedId="W0004" />)
+      expect(await screen.findByTestId('wiki-markdown')).toHaveTextContent('Expanded body.')
+      expect(container.querySelector('[data-expanded-pane="true"]')).toHaveClass('fixed', 'inset-0')
+      expect(screen.getByRole('button', { name: 'Exit expanded view' })).toBeInTheDocument()
+      expect(document.body.style.overflow).toBe('hidden')
+      await userEvent.keyboard('{Escape}')
+      expect(window.location.search).toBe('')
+    } finally {
+      navigation.search = ''
+    }
+  })
+
+  it('leaves Expand to the embed on HTML pages', async () => {
+    const page = summary('W0005', '2026-05-04T08:00:00+00:00', { presentation: 'html' } as never)
+    vi.mocked(fetchWiki).mockResolvedValue({ pages: [page] })
+    vi.mocked(fetchWikiPage).mockResolvedValue(detail(page, ''))
+    renderWithQuery(<WikiShell project="project-a" selectedId="W0005" />)
+    await screen.findByRole('button', { name: /Limit reading width/ })
+    expect(document.querySelector('[data-expand-view]')).toBeNull()
   })
 })

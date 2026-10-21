@@ -3,10 +3,10 @@
 import type { ContentFields } from '@memon/core'
 import { useQuery } from '@tanstack/react-query'
 import { Clock, LayoutTemplate, type LucideIcon, Tag } from 'lucide-react'
-import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { useCallback, useState } from 'react'
+import { useState } from 'react'
 import { type ProjectTarget, projectHost, projectName } from '../lib/api'
 import { queryKeys } from '../lib/query-keys'
+import { useExpandedInUrl } from './expanded-view'
 import { ReportHtmlEmbed, ReportHtmlZoomProvider } from './report-html-embed'
 import { useIsOwner } from './session-provider'
 import { Badge } from './ui/badge'
@@ -191,29 +191,6 @@ export function ServiceAvailability({
             : 'Reachable'}
     </Button>
   )
-}
-
-/**
- * The expanded HTML view of a full page, kept in the `expanded=1` query
- * parameter so a reload restores it. The URL is replaced, never pushed, and
- * other parameters are preserved.
- */
-function useExpandedInUrl(): { expanded: boolean; setExpanded: (expanded: boolean) => void } {
-  const router = useRouter()
-  const pathname = usePathname() ?? ''
-  const searchParams = useSearchParams()
-  const expanded = searchParams?.get('expanded') === '1'
-  const setExpanded = useCallback(
-    (next: boolean) => {
-      const params = new URLSearchParams(searchParams?.toString() ?? '')
-      if (next) params.set('expanded', '1')
-      else params.delete('expanded')
-      const query = params.toString()
-      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false })
-    },
-    [pathname, router, searchParams],
-  )
-  return { expanded, setExpanded }
 }
 
 export function ContentPresentation({
