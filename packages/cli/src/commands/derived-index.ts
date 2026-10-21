@@ -123,6 +123,11 @@ export async function runIndexRebuild(input: IndexRebuildInput): Promise<void> {
           }).summaries.flatMap((page) =>
             page.diagnostics.map((issue) => ({ file: page.path, ...issue })),
           ),
+          ...(result.warnings ?? []).map((issue) => ({
+            file: issue.resource,
+            severity: 'warning' as const,
+            message: issue.message,
+          })),
         ]
       : []
   const valid = !diagnostics.some((issue) => issue.severity === 'error')

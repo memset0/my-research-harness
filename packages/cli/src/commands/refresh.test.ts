@@ -238,3 +238,23 @@ it('checks the published index without writing and reports it current after refr
   const mixed = await captureCli(() => runRefresh({ ...base, experiments: [id], check: true }))
   expect(mixed.error).toMatchObject({ code: 'BAD_REQUEST' })
 })
+
+it('warns about a new standalone Report without refusing the refresh', async () => {
+  const { project, base } = await fixture()
+  await put(
+    project.path('docs/reports/R0001-flat.md'),
+    `---\ntitle: Flat\ncreated_at: ${timestamp}\n---\n# Flat\n`,
+  )
+  const result = await captureCli(() => runRefresh({ ...base, experiments: [] }))
+  expect(result.exitCode).toBe(0)
+  expect(result.json).toMatchObject({ published: true, counts: { reports: 1 } })
+  expect(result.json.diagnostics).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        file: 'docs/reports/R0001-flat.md',
+        severity: 'warning',
+        message: expect.stringContaining('docs/reports/R0001-flat/README.md'),
+      }),
+    ]),
+  )
+})

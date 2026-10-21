@@ -2,6 +2,7 @@ import {
   buildExperimentCatalog,
   buildReportCatalog,
   buildWikiCatalog,
+  newStandaloneDocuments,
   type ProjectCatalogBuild,
   type ProjectCatalogIssue,
   type ProjectCatalogKind,
@@ -72,6 +73,8 @@ export interface RebuildIndexResult {
    */
   catalogs?: Record<ProjectCatalogKind, ProjectCatalogBuild>
   invalid?: ProjectCatalogIssue[]
+  /** Non-blocking: standalone Wiki pages/Reports new since the previous publication. */
+  warnings?: ProjectCatalogIssue[]
   /** Events present at the start and deleted after the snapshot was written. */
   deletedEvents: string[]
   audit?: RunDirsAudit
@@ -295,6 +298,13 @@ export async function rebuildIndex(
       : []
     if (invalid.length)
       return { ...(await finish(snapshot, 'invalid', catalogs)), snapshot: null, invalid }
+    // Compared before the catalogs are replaced below.
+    const warnings = catalogs
+      ? [
+          ...(await newStandaloneDocuments(root, 'wiki', catalogs.wiki, fs)),
+          ...(await newStandaloneDocuments(root, 'reports', catalogs.reports, fs)),
+        ]
+      : []
     await writeSnapshot(root, snapshot, fs)
     if (catalogs) {
       await writeProjectCatalog(root, 'wiki', catalogs.wiki.entries, fs)
@@ -303,6 +313,7 @@ export async function rebuildIndex(
     const events = resolveIndexPaths(root).events
     for (const name of startEvents) await fs.rm(`${events}/${name}`, { force: true })
     const result = await finish(snapshot, 'rebuilt', catalogs)
+    if (warnings.length) result.warnings = warnings
     result.deletedEvents = startEvents
     const orphans = await pruneOrphanSummaries(root, snapshot, fs)
     const stale = await pruneStaleResultsSummaries(root, { fs })

@@ -181,3 +181,30 @@ it('checks published catalogs against the files without writing', async () => {
   await rebuildIndex(p.root)
   expect((await check()).map((drift) => drift.state)).toEqual(['current', 'current', 'current'])
 })
+
+it('warns about standalone documents that are new since the previous publication', async () => {
+  const p = await createTempProject({
+    files: {
+      '.memon/project.yml': 'schema_version: 1\n',
+      'docs/reports/R0001-legacy.md': report('Legacy'),
+    },
+  })
+  const first = await rebuildIndex(p.root)
+  expect(first.status).toBe('rebuilt')
+  expect(first.warnings).toBeUndefined()
+
+  await put(p, 'docs/reports/R0002-flat.md', report('Flat'))
+  await put(p, 'docs/reports/R0003-folder/README.md', report('Folder'))
+  await put(p, 'docs/wiki/finding/W0002-flat.md', wiki('W0002'))
+  const second = await rebuildIndex(p.root)
+  expect(second.status).toBe('rebuilt')
+  expect(second.counts.reports).toBe(3)
+  expect(second.warnings?.map((issue) => issue.resource).sort()).toEqual([
+    'docs/reports/R0002-flat.md',
+    'docs/wiki/finding/W0002-flat.md',
+  ])
+  expect(second.warnings?.[0]?.message).toMatch(/create docs\/.+\/README\.md instead/)
+
+  const third = await rebuildIndex(p.root)
+  expect(third.warnings).toBeUndefined()
+})

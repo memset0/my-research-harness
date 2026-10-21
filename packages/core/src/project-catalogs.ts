@@ -481,3 +481,38 @@ export async function checkPublishedCatalog(
   if (drift.missing.length || drift.extra.length || drift.changed.length) drift.state = 'stale'
   return drift
 }
+
+/**
+ * Standalone Markdown Wiki pages and Reports (flat `.md` files rather than
+ * folders) that the previously published catalog does not list: new documents
+ * written in the legacy layout. Nothing is reported when no previous catalog
+ * can be read, so a project's first publication never flags its legacy files.
+ */
+export async function newStandaloneDocuments(
+  root: string,
+  kind: 'wiki' | 'reports',
+  built: ProjectCatalogBuild,
+  io: IndexFs = defaultIndexFs,
+): Promise<ProjectCatalogIssue[]> {
+  let previous: Set<string>
+  try {
+    const text = await io.readFile(join(resolveIndexPaths(root).dir, `${kind}.json`), 'utf8')
+    const parsed = ProjectCatalogSchema.safeParse(JSON.parse(String(text)))
+    if (!parsed.success || parsed.data.kind !== kind) return []
+    previous = new Set(parsed.data.entries.map((entry) => entry.id))
+  } catch {
+    return []
+  }
+  const noun = kind === 'wiki' ? 'Wiki page' : 'Report'
+  return built.entries.flatMap((entry) =>
+    entry.summary.format === 'markdown' && !previous.has(entry.id)
+      ? [
+          {
+            kind,
+            resource: entry.resource,
+            message: `new standalone ${noun}; create ${entry.resource.replace(/\.md$/, '')}/README.md instead`,
+          },
+        ]
+      : [],
+  )
+}
