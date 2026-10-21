@@ -16,12 +16,15 @@ export interface RuntimeConfigPayload {
   fileAccess: {
     heartbeatMs: number
   }
+  /** Operator-selected availability; absent on older payloads. */
+  translation?: { enabled: boolean }
 }
 
 const DEFAULT_RUNTIME_CONFIG: RuntimeConfigPayload = {
   role: 'standalone',
   gitStatus: { intervalMs: 10_000 },
   fileAccess: { heartbeatMs: 30_000 },
+  translation: { enabled: false },
 }
 
 let cached: RuntimeConfigPayload | null = null
@@ -59,6 +62,7 @@ export function readRuntimeConfig(): RuntimeConfigPayload {
             ? heartbeatMs
             : DEFAULT_RUNTIME_CONFIG.fileAccess.heartbeatMs,
       },
+      translation: { enabled: parsed.translation?.enabled === true },
     }
     return cached
   } catch {

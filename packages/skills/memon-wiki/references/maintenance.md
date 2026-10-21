@@ -11,7 +11,8 @@ HTML and services use manifest.json. A manifest takes precedence over README.
 Existing standalone documents remain readable. IDs stay unique across categories;
 the CLI maintains `.memon/id-watermarks.json` so deleted IDs are not reused.
 
-Metadata: `title`, optional `description`/`category`, `created_at`, `updated_at`,
+Metadata: `title`, `description` (include for HTML; optional for other forms),
+optional `category`, `created_at`, `updated_at`,
 `freshness: CURRENT|STALE` and optional `stale_reason`. Record times with the
 writer's local offset. Reports also record `as_of` (evidence cutoff) and
 `source_commits` (repository name → full SHA). Use analyzed revisions, not the

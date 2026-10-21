@@ -41,6 +41,7 @@ describe('readRuntimeConfig', () => {
       role: 'standalone',
       gitStatus: { intervalMs: 10_000 },
       fileAccess: { heartbeatMs: 30_000 },
+      translation: { enabled: false },
     })
   })
 
@@ -75,5 +76,16 @@ describe('readRuntimeConfig', () => {
     const b = readRuntimeConfig()
     expect(b).toBe(a)
     expect(b.gitStatus.intervalMs).toBe(15_000)
+  })
+
+  it.each([
+    true,
+    false,
+    'true',
+    '1',
+    undefined,
+  ])('requires an explicit boolean translation opt-in: %s', (enabled) => {
+    injectScript({ translation: { enabled } })
+    expect(readRuntimeConfig().translation?.enabled).toBe(enabled === true)
   })
 })

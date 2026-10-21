@@ -2,6 +2,7 @@
 
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
+import { useRuntimeConfig } from '../lib/runtime-config'
 import {
   literalSegment,
   packSegments,
@@ -100,18 +101,26 @@ async function jsonRequest(url: string, options: RequestInit = {}) {
   return data
 }
 
-export function BodyTranslation({
-  document: target,
-  sources,
-  sourceLanguage = 'en',
-  children,
-}: {
+type BodyTranslationProps = {
   document: TranslationDocument
   sources: TranslationSource[]
   /** Language the body is written in; a `zh` body is translated into English. */
   sourceLanguage?: TranslationSourceLanguage
   children: ReactNode
-}) {
+}
+
+export function BodyTranslation(props: BodyTranslationProps) {
+  const { translation } = useRuntimeConfig()
+  if (!translation?.enabled) return <>{props.children}</>
+  return <EnabledBodyTranslation {...props} />
+}
+
+function EnabledBodyTranslation({
+  document: target,
+  sources,
+  sourceLanguage = 'en',
+  children,
+}: BodyTranslationProps) {
   const { role } = useSession()
   const targetLanguage: TranslationTarget = sourceLanguage === 'zh' ? 'en' : 'zh-CN'
   const identity = JSON.stringify([target, sources, targetLanguage])

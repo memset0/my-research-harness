@@ -18,6 +18,7 @@ export async function readSerializedRuntimeConfig(): Promise<RuntimeConfigPayloa
     gitStatus: { intervalMs: rt.config.gitStatus.intervalMs },
     // Absent config keys fall back to the store's own default cadence.
     fileAccess: { heartbeatMs: heartbeatMs ?? DEFAULT_FILE_ACCESS_OPTIONS.heartbeatMs },
+    translation: { enabled: process.env.MEMON_TRANSLATION_ENABLED === '1' },
   }
 }
 

@@ -1,6 +1,7 @@
 import { webcrypto } from 'node:crypto'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { __resetRuntimeConfigForTests } from '../lib/runtime-config'
 import { createTranslationManifest } from '../lib/server/translation/manifest'
 import { BodyTranslation } from './body-translation'
 import { Markdown } from './markdown'
@@ -12,9 +13,20 @@ function stubIdle() {
   vi.stubGlobal('cancelIdleCallback', (handle: number) => clearTimeout(handle))
 }
 
+beforeEach(() => {
+  __resetRuntimeConfigForTests()
+  const tag = document.createElement('script')
+  tag.id = 'memon-runtime-config'
+  tag.type = 'application/json'
+  tag.textContent = JSON.stringify({ translation: { enabled: true } })
+  document.head.appendChild(tag)
+})
+
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  document.getElementById('memon-runtime-config')?.remove()
+  __resetRuntimeConfigForTests()
 })
 const text =
   '# Body heading\n\nHello **world** with `code`.\n\n- List prose\n\n| Label |\n|---|\n| Table prose |\n\n## Findings\n\nMore evidence.'
@@ -49,6 +61,20 @@ function setup(role: 'owner' | 'viewer' = 'owner', sourceLanguage: 'en' | 'zh' =
   )
   return { ...render(element()), fetcher, element }
 }
+
+it('renders original content without controls, idle work or keyboard requests when disabled', () => {
+  document.getElementById('memon-runtime-config')!.textContent = JSON.stringify({
+    translation: { enabled: false },
+  })
+  const { container, fetcher, rerender, element } = setup()
+  expect(screen.getByText('Body heading')).toBeInTheDocument()
+  expect(container.querySelector('[data-slot="body-translation-controls"]')).toBeNull()
+  fireEvent.keyDown(window, { key: 't', code: 'KeyT', altKey: true })
+  rerender(element('# Next document'))
+  expect(screen.getByText('Next document')).toBeInTheDocument()
+  expect(fetcher).not.toHaveBeenCalled()
+  expect(container.querySelector('[data-slot="body-translation-root"]')).toBeNull()
+})
 
 it('translates React-owned headings, paragraphs, lists and tables; restores originals', async () => {
   const { container, fetcher } = setup()

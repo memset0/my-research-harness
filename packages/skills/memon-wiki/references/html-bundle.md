@@ -8,12 +8,16 @@ layout, framework or duplicate explanation is required. Add manifest.json:
 {
   "type": "html",
   "title": "Ablation overview",
+  "description": "Compare the ablations and inspect the evidence behind the current interpretation.",
   "category": "analysis",
   "created_at": "2026-10-01T10:00:00+08:00",
   "updated_at": "2026-10-01T10:00:00+08:00",
   "freshness": "CURRENT"
 }
 ```
+
+For HTML Wiki and Report entries, maintain a concise plain-text `description`
+that helps readers decide whether to open the page; revise it when the content changes.
 
 `entry` optionally selects another contained relative HTML file. Assets must stay
 inside the folder. HTML is trusted and same-origin; keep credentials out of browser
