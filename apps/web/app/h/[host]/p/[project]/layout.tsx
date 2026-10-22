@@ -8,7 +8,6 @@ import { CentralProjectUnavailable } from '../../../../../components/central-pro
 import { ProjectFooter } from '../../../../../components/project-footer'
 import { ResizableSidebarProvider } from '../../../../../components/resizable-sidebar-provider'
 import { SidebarInset, SidebarTrigger } from '../../../../../components/ui/sidebar'
-import { WorkspaceSplitOutlet } from '../../../../../components/workspace-pane-provider'
 import { readIdentityFromHeaders } from '../../../../../lib/server/auth/request-context'
 import { aggregateCentralProjects } from '../../../../../lib/server/central/central-projects'
 import { servesProjectsDirectly } from '../../../../../lib/server/central/direct-projects'
@@ -111,9 +110,9 @@ export default async function CentralProjectLayout({
       <AppSidebar />
       <SidebarInset className="min-h-0 min-w-0 overflow-hidden">
         <AppBar project={parsed.data} />
-        <WorkspaceSplitOutlet>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto">
           <div className="min-h-0 min-w-0 flex-1 overflow-y-auto pb-8">{children}</div>
-        </WorkspaceSplitOutlet>
+        </div>
       </SidebarInset>
       <ProjectFooter project={parsed.data} />
     </ResizableSidebarProvider>

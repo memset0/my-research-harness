@@ -7,7 +7,6 @@ import { cookies } from 'next/headers'
 import { AppSidebar } from '../../components/app-sidebar'
 import { ResizableSidebarProvider } from '../../components/resizable-sidebar-provider'
 import { SidebarInset, SidebarTrigger } from '../../components/ui/sidebar'
-import { WorkspaceSplitOutlet } from '../../components/workspace-pane-provider'
 import { getQueryClient } from '../../lib/get-query-client'
 import { queryKeys } from '../../lib/query-keys'
 import { getProjectsData } from '../../lib/server/data'
@@ -38,9 +37,9 @@ export default async function ManageLayout({ children }: { children: React.React
           <header className="flex h-12 items-center gap-2 border-b border-border bg-background px-3">
             <SidebarTrigger />
           </header>
-          <WorkspaceSplitOutlet>
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto">
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
-          </WorkspaceSplitOutlet>
+          </div>
         </SidebarInset>
       </ResizableSidebarProvider>
     </HydrationBoundary>

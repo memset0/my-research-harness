@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ArtifactInventory, ArtifactTarget } from '../lib/artifact-links'
 import { resolveDocumentResourceUrl } from '../lib/document-resource-url'
@@ -314,7 +314,6 @@ describe('<Markdown> artifact references', () => {
     return {
       inventory,
       sourceDocumentPath,
-      sourceSurface: 'left',
       getArtifactHref: hrefFor,
       ...overrides,
     }
@@ -420,7 +419,6 @@ describe('<Markdown> artifact references', () => {
   it('recognizes an explicit absolute artifact link without inventing label emphasis', () => {
     const context = artifactLinks({
       sourceDocumentPath: inventory.reports[0]!.path,
-      sourceSurface: 'side-report',
     })
     const { container } = render(
       <Markdown artifactLinks={context}>
@@ -444,39 +442,16 @@ describe('<Markdown> artifact references', () => {
     expect(container.querySelector('a[href="./notes.md"]')).not.toBeNull()
   })
 
-  it('passes source surface to the navigation callback', () => {
+  it('links the resolved target to the destination the callback returns', () => {
     const getArtifactHref = vi.fn((target: ArtifactTarget) => hrefFor(target))
-    render(
-      <Markdown artifactLinks={artifactLinks({ sourceSurface: 'full-report', getArtifactHref })}>
-        {'R0007'}
-      </Markdown>,
-    )
-    expect(getArtifactHref).toHaveBeenCalledWith({ kind: 'report', id: 'R0007' }, 'full-report')
-  })
-
-  it('updates same-left Report state through History without remounting local content', () => {
-    window.history.replaceState({}, '', '/p/vsqa/e/E0017-vsqa-fvfa4-inference?run=sample')
-    const context = artifactLinks({
-      getArtifactHref: () =>
-        '/p/vsqa/e/E0017-vsqa-fvfa4-inference?run=sample&report=R0007&reportSurface=split',
-    })
     const { container } = render(
-      <div>
-        <input aria-label="Experiment draft" defaultValue="kept" />
-        <Markdown artifactLinks={context}>{'R0007'}</Markdown>
-      </div>,
+      <Markdown artifactLinks={artifactLinks({ getArtifactHref })}>{'R0007'}</Markdown>,
     )
-    const draft = container.querySelector('input') as HTMLInputElement
-    fireEvent.change(draft, { target: { value: 'unsaved experiment state' } })
-    const reportLink = container.querySelector('a[data-memon-artifact-id="R0007"]')!
-
-    fireEvent.click(reportLink)
-
-    expect(`${window.location.pathname}${window.location.search}`).toBe(
-      '/p/vsqa/e/E0017-vsqa-fvfa4-inference?run=sample&report=R0007&reportSurface=split',
+    expect(getArtifactHref).toHaveBeenCalledWith({ kind: 'report', id: 'R0007' })
+    expect(container.querySelector('a[data-memon-artifact-id="R0007"]')).toHaveAttribute(
+      'href',
+      '/artifact/report/R0007',
     )
-    expect(container.querySelector('input')).toBe(draft)
-    expect(draft).toHaveValue('unsaved experiment state')
   })
 })
 

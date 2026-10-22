@@ -7,22 +7,11 @@ import type * as Api from '../lib/api'
 import { projectQueryKey } from '../lib/api'
 import { ExperimentWikiCitations } from './experiment-wiki-citations'
 
-const { openWiki, fetchWikiBacklinks } = vi.hoisted(() => ({
-  openWiki: vi.fn(),
-  fetchWikiBacklinks: vi.fn(),
-}))
+const { fetchWikiBacklinks } = vi.hoisted(() => ({ fetchWikiBacklinks: vi.fn() }))
 
 vi.mock('../lib/api', async (importOriginal) => ({
   ...(await importOriginal<typeof Api>()),
   fetchWikiBacklinks,
-}))
-
-vi.mock('next/navigation', () => ({
-  usePathname: () => '/p/project-a/e/E0017-kernels',
-  useSearchParams: () => new URLSearchParams('run=sample&report=R0007&reportSurface=drawer'),
-}))
-vi.mock('./workspace-pane-provider', () => ({
-  useWikiPane: () => ({ openWiki, closeWiki: vi.fn() }),
 }))
 
 const CITATION: WikiBacklink = {
@@ -70,21 +59,15 @@ describe('ExperimentWikiCitations', () => {
     expect(fetchWikiBacklinks).toHaveBeenCalledOnce()
   })
 
-  it('renders trust signals and opens the cited page in the shared wiki slot', async () => {
+  it('renders trust signals and links the cited wiki page', async () => {
     renderCitations([CITATION])
     await userEvent.click(screen.getByRole('button', { name: /Cited by wiki/i }))
 
     const link = screen.getByRole('link', { name: /W0004.*Kernel drift/i })
-    expect(link).toHaveAttribute(
-      'href',
-      '/p/project-a/e/E0017-kernels?run=sample&wiki=W0004&wikiSurface=split',
-    )
+    expect(link).toHaveAttribute('href', '/p/project-a/wiki/W0004')
     expect(within(link).getByText('finding')).toBeInTheDocument()
     expect(within(link).getByText('VERIFIED')).toBeInTheDocument()
     expect(within(link).getByText('stale')).toBeInTheDocument()
     expect(link.querySelector('[data-slot="wiki-review-badge"]')).toBeNull()
-
-    await userEvent.click(link)
-    expect(openWiki).toHaveBeenCalledWith('W0004')
   })
 })

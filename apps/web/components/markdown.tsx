@@ -36,31 +36,23 @@ import type { ComponentDocumentRef } from '../lib/components/types'
 import { resolveDocumentResourceUrl } from '../lib/document-resource-url'
 import { remarkCallouts } from '../lib/markdown-callouts'
 import { markdownHeadingSlug, normalizeHeadingIdPrefix } from '../lib/markdown-outline'
-import type { ArtifactSourceSurface } from '../lib/report-workspace-url'
 import { handleFragmentClick } from '../lib/scroll-to-fragment'
 import { cn } from '../lib/utils'
-import { replaceWorkspaceHistory } from '../lib/workspace-history'
 import { ComponentBlockView } from './components'
 import { GithubPermalinkPreview, isGithubBlobPermalink } from './github-permalink-preview'
 import { MarkdownCalloutTitle } from './markdown-callout-title'
 import { ReportHtmlEmbed } from './report-html-embed'
 
-export type MarkdownArtifactSourceSurface = ArtifactSourceSurface
-
 export interface MarkdownArtifactLinkContext {
   inventory: ArtifactInventory
   /** Absolute or project-relative source Markdown path returned by the detail API. */
   sourceDocumentPath: string
-  sourceSurface: MarkdownArtifactSourceSurface
-  /** Surface-aware wrapper around `buildArtifactNavigationHref`. */
-  getArtifactHref: (
-    target: ArtifactTarget,
-    sourceSurface: MarkdownArtifactSourceSurface,
-  ) => string | null
+  /** The full-page destination of a resolved artifact, or null when it has none. */
+  getArtifactHref: (target: ArtifactTarget) => string | null
 }
 
 export interface MarkdownTableOfContentsOptions {
-  /** Keeps Report anchors distinct from headings in the left document. */
+  /** Keeps Report anchors distinct from other headings on the page. */
   headingIdPrefix: string
   title?: string
   minDepth?: number
@@ -262,23 +254,21 @@ export function Markdown({
             : null
         const artifactHref =
           artifactTarget && activeArtifactLinks
-            ? activeArtifactLinks.getArtifactHref(
-                { kind: artifactTarget.kind, id: artifactTarget.id },
-                activeArtifactLinks.sourceSurface,
-              )
+            ? activeArtifactLinks.getArtifactHref({
+                kind: artifactTarget.kind,
+                id: artifactTarget.id,
+              })
             : null
         if (artifactTarget && artifactHref) {
           return (
             <Link
               href={artifactHref}
-              scroll={false}
               {...rest}
               // `group/artifact` is what lets the inline badge rendered by
               // `decorateArtifactText` react to hover on the whole anchor,
               // which is the only remaining clickability cue now that the
               // typography underline is suppressed for artifact links.
               className={cn('group/artifact', rest.className)}
-              onClick={(event) => replaceSamePathArtifactHistory(event, artifactHref)}
               data-memon-artifact-kind={artifactTarget.kind}
               data-memon-artifact-id={artifactTarget.id}
             >
@@ -441,33 +431,6 @@ export function Markdown({
       </ReactMarkdown>
     </div>
   )
-}
-
-function replaceSamePathArtifactHistory(
-  event: React.MouseEvent<HTMLAnchorElement>,
-  href: string,
-): void {
-  if (
-    event.defaultPrevented ||
-    event.button !== 0 ||
-    event.metaKey ||
-    event.ctrlKey ||
-    event.shiftKey ||
-    event.altKey ||
-    event.currentTarget.target === '_blank' ||
-    typeof window === 'undefined'
-  ) {
-    return
-  }
-  const destination = new URL(href, window.location.href)
-  if (
-    destination.origin !== window.location.origin ||
-    destination.pathname !== window.location.pathname
-  ) {
-    return
-  }
-  event.preventDefault()
-  replaceWorkspaceHistory(`${destination.pathname}${destination.search}${destination.hash}`)
 }
 
 interface HastCodeElement {
@@ -816,7 +779,7 @@ function linkBareArtifactText(
     }
 
     const target = resolveBareArtifactReference(reference, context.inventory)
-    const href = target ? context.getArtifactHref(target, context.sourceSurface) : null
+    const href = target ? context.getArtifactHref(target) : null
     if (!target || !href) continue
 
     if (start > cursor) nodes.push({ type: 'text', value: value.slice(cursor, start) })

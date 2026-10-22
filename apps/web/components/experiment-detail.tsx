@@ -164,7 +164,6 @@ function ExperimentDetailLayout({ exp, project }: { exp: FullExperiment; project
             <DocumentArtifactLinkProvider
               project={project}
               sourceDocumentPath={`${exp.path ?? exp.resource ?? exp.id}/README.md`}
-              sourceSurface="left"
             >
               <Card>
                 <CardContent className="pt-6">

@@ -9,7 +9,7 @@
  * the wiki) the same token targets the page carrying `legacy_id: R<NNNN>`.
  */
 
-import type { ArtifactNavigationTarget } from './report-workspace-url'
+import type { ArtifactNavigationTarget } from './artifact-navigation'
 
 export type ArtifactKind = 'experiment' | 'report' | 'wiki'
 

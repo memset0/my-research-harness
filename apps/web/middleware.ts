@@ -127,9 +127,24 @@ function isViewerVisibleMutation(method: string, pathname: string): boolean {
   return /^\/api\/experiment-results-views\/[^/]+$/.test(pathname)
 }
 
+/** Query parameters of the retired side Report/wiki workspace. */
+const RETIRED_SIDE_PARAMS = ['report', 'reportSurface', 'wiki', 'wikiSurface'] as const
+
+/** An old page link with side-document parameters: the same page without them. */
+function retiredSideParamsRedirect(req: NextRequest): NextResponse | null {
+  if ((req.method !== 'GET' && req.method !== 'HEAD') || req.nextUrl.pathname.startsWith('/api/'))
+    return null
+  if (!RETIRED_SIDE_PARAMS.some((name) => req.nextUrl.searchParams.has(name))) return null
+  const location = new URL(`${req.nextUrl.pathname}${req.nextUrl.search}`, publicOrigin(req))
+  for (const name of RETIRED_SIDE_PARAMS) location.searchParams.delete(name)
+  return NextResponse.redirect(location, 308)
+}
+
 export async function middleware(req: NextRequest): Promise<NextResponse> {
   const { pathname } = req.nextUrl
   if (isAuthBypass(pathname)) return NextResponse.next()
+  const retired = retiredSideParamsRedirect(req)
+  if (retired) return retired
 
   // Classify the route + compute projectFor. We do this BEFORE any auth
   // work to know whether to evaluate mode 3 (viewer share cookie) at all.

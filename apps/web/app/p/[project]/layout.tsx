@@ -7,7 +7,6 @@ import { AppSidebar } from '../../../components/app-sidebar'
 import { ProjectFooter } from '../../../components/project-footer'
 import { ResizableSidebarProvider } from '../../../components/resizable-sidebar-provider'
 import { SidebarInset } from '../../../components/ui/sidebar'
-import { WorkspaceSplitOutlet } from '../../../components/workspace-pane-provider'
 import { getQueryClient } from '../../../lib/get-query-client'
 import { queryKeys } from '../../../lib/query-keys'
 import { readIdentityFromHeaders } from '../../../lib/server/auth/request-context'
@@ -130,9 +129,9 @@ export default async function ProjectLayout({
               row of content isn't occluded. `min-w-0` propagates the
               shrinkability one level deeper so the children block keeps
               the same constraint. */}
-          <WorkspaceSplitOutlet>
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto">
             <div className="min-h-0 min-w-0 flex-1 pb-8">{children}</div>
-          </WorkspaceSplitOutlet>
+          </div>
         </SidebarInset>
         <ProjectFooter project={decoded} />
       </ResizableSidebarProvider>

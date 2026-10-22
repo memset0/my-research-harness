@@ -550,8 +550,7 @@ function SelectedItemPane({
               metadata={data}
               project={project}
               sourceDocumentPath={data.path ?? data.resource}
-              sourceSurface={kind === 'reports' ? 'full-report' : 'left'}
-              sourceReportId={kind === 'reports' ? selectedId : undefined}
+              reportId={kind === 'reports' ? selectedId : undefined}
               resourceBaseUrl={
                 kind === 'reports' && data.format === 'bundle'
                   ? reportResourceBaseUrl(project, selectedId)
@@ -657,8 +656,7 @@ export function RenderedItem({
   project,
   resourceBaseUrl,
   sourceDocumentPath,
-  sourceSurface,
-  sourceReportId,
+  reportId,
   metadata,
 }: {
   kind: InboxKind
@@ -667,8 +665,7 @@ export function RenderedItem({
   project: ProjectTarget
   resourceBaseUrl?: string
   sourceDocumentPath?: string
-  sourceSurface?: 'left' | 'full-report' | 'side-report'
-  sourceReportId?: string
+  reportId?: string
 }) {
   const { frontmatter, body } = useMemo(() => splitFrontmatter(content), [content])
   if (
@@ -683,8 +680,8 @@ export function RenderedItem({
           content={metadata}
           project={project}
           kind="report"
-          id={sourceReportId ?? ''}
-          expandInUrl={sourceSurface === 'full-report'}
+          id={reportId ?? ''}
+          expandInUrl
         />
       </div>
     )
@@ -703,7 +700,7 @@ export function RenderedItem({
             host: projectHost(project) ?? undefined,
             project: projectName(project),
             kind: 'report',
-            id: sourceReportId ?? '',
+            id: reportId ?? '',
           }}
           sources={translationSources('report', { content })}
         >
@@ -711,7 +708,7 @@ export function RenderedItem({
             <Markdown
               project={project}
               resourceBaseUrl={resourceBaseUrl}
-              tableOfContents={{ headingIdPrefix: `report-${sourceReportId ?? 'document'}` }}
+              tableOfContents={{ headingIdPrefix: `report-${reportId ?? 'document'}` }}
               document={
                 sourceDocumentPath
                   ? {
@@ -745,13 +742,8 @@ export function RenderedItem({
       )}
     </>
   )
-  return sourceDocumentPath && sourceSurface ? (
-    <DocumentArtifactLinkProvider
-      project={project}
-      sourceDocumentPath={sourceDocumentPath}
-      sourceSurface={sourceSurface}
-      sourceReportId={sourceReportId}
-    >
+  return sourceDocumentPath ? (
+    <DocumentArtifactLinkProvider project={project} sourceDocumentPath={sourceDocumentPath}>
       {rendered}
     </DocumentArtifactLinkProvider>
   ) : (

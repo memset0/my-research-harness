@@ -74,7 +74,7 @@ describe('directory Report inbox rendering', () => {
         kind="reports"
         content={'# Report title\n\n## Summary\n\n### Metrics'}
         project="research"
-        sourceReportId="R0002"
+        reportId="R0002"
       />,
     )
 

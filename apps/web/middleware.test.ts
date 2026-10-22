@@ -70,6 +70,30 @@ describe('middleware', () => {
     expect(res.headers.get('www-authenticate')).toBeNull()
   })
 
+  it('redirects old side-document links to the same page without their parameters', async () => {
+    const res = await middleware(
+      req(
+        'http://localhost/h/host-a/p/project-a/e/E0017-kernels?run=sample&report=R0007&reportSurface=split#top',
+        { accept: 'text/html', 'x-forwarded-for': '203.0.113.9' },
+      ),
+    )
+    expect(res.status).toBe(308)
+    expect(res.headers.get('location')).toBe(
+      'http://localhost/h/host-a/p/project-a/e/E0017-kernels?run=sample',
+    )
+    const wiki = await middleware(
+      req('http://localhost/h/host-a/p/project-a?wiki=W0004&wikiSurface=drawer'),
+    )
+    expect(wiki.headers.get('location')).toBe('http://localhost/h/host-a/p/project-a')
+    // API routes keep their own `report`/`wiki` query parameters.
+    const api = await middleware(
+      req('http://localhost/api/reports?project=project-a&report=R0007', {
+        authorization: basic('admin', 'correct'),
+      }),
+    )
+    expect(api.status).not.toBe(308)
+  })
+
   it('returns 302 to /login on anonymous HTML page request', async () => {
     const res = await middleware(
       req('http://localhost/p/project-a', {

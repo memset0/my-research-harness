@@ -2,16 +2,14 @@
 
 // Wiki source resolution may read Run evidence. It starts only when the reader
 // opens this panel, and follows the shared heartbeat only while open.
-// Activating an entry opens the page in the shared right-side slot instead of
-// navigating away from the Experiment.
+// Each entry links to the wiki page.
 
 import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
-import { usePathname, useSearchParams } from 'next/navigation'
 import { useState } from 'react'
 import { fetchWikiBacklinks, type ProjectTarget } from '../lib/api'
+import { canonicalWikiHref } from '../lib/artifact-navigation'
 import { queryKeys } from '../lib/query-keys'
-import { setWikiWorkspaceUrl } from '../lib/wiki-workspace-url'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
 import {
@@ -20,7 +18,6 @@ import {
   WikiStaleIndicator,
   WikiStatusBadge,
 } from './wiki-page-card'
-import { useWikiPane } from './workspace-pane-provider'
 
 export function ExperimentWikiCitations({
   project,
@@ -35,10 +32,6 @@ export function ExperimentWikiCitations({
     queryFn: () => fetchWikiBacklinks(project, experimentId),
     enabled: open,
   })
-  const { openWiki } = useWikiPane()
-  const pathname = usePathname() ?? '/'
-  const search = useSearchParams()?.toString() ?? ''
-  const currentHref = `${pathname}${search ? `?${search}` : ''}`
   const citedBy = data?.pages ?? []
 
   return (
@@ -72,20 +65,7 @@ export function ExperimentWikiCitations({
                 citedBy.map((page) => (
                   <Link
                     key={page.id}
-                    href={setWikiWorkspaceUrl(currentHref, page.id)}
-                    onClick={(event) => {
-                      if (
-                        event.button !== 0 ||
-                        event.metaKey ||
-                        event.ctrlKey ||
-                        event.shiftKey ||
-                        event.altKey
-                      ) {
-                        return
-                      }
-                      event.preventDefault()
-                      openWiki(page.id)
-                    }}
+                    href={canonicalWikiHref(project, page.id)}
                     data-slot="experiment-wiki-citation-row"
                     data-wiki-id={page.id}
                     className="flex flex-wrap items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

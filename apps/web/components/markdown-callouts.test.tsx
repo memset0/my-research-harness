@@ -15,7 +15,6 @@ describe('Markdown callouts', () => {
             reports: [],
           },
           sourceDocumentPath: 'docs/wiki/note/W0001-example.md',
-          sourceSurface: 'left',
           getArtifactHref: (target) => `/artifact/${target.id}`,
         }}
       >

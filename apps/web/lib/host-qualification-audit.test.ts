@@ -18,7 +18,6 @@ describe('central Host qualification static audit', () => {
       join(WEB, 'components/experiment-status-edit.tsx'),
       join(WEB, 'components/warnings-card.tsx'),
       join(WEB, 'components/inbox-shell.tsx'),
-      join(WEB, 'components/report-pane.tsx'),
       join(WEB, 'components/log-viewer.tsx'),
     ]
     const forbidden = [

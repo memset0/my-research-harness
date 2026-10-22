@@ -96,9 +96,7 @@ describe('wiki checklist writes', () => {
         }
       },
     )
-    const { container } = renderWithQuery(
-      <WikiDocumentView project="project-a" page={page()} sourceSurface="full-wiki" />,
-    )
+    const { container } = renderWithQuery(<WikiDocumentView project="project-a" page={page()} />)
     const child = container.querySelector('[data-wiki-checklist-item="1.1"]')!
     const box = child.querySelector(
       '[data-wiki-checklist-field="human_acknowledged"]',
@@ -120,9 +118,7 @@ describe('wiki checklist writes', () => {
   it('leaves the checkbox unchanged and offers reload on a conflict', async () => {
     session.owner = true
     vi.mocked(putWikiPage).mockRejectedValue(new ApiError(409, 'CONFLICT', 'CONFLICT'))
-    const { container } = renderWithQuery(
-      <WikiDocumentView project="project-a" page={page()} sourceSurface="side-wiki" />,
-    )
+    const { container } = renderWithQuery(<WikiDocumentView project="project-a" page={page()} />)
     const box = container.querySelector(
       '[data-wiki-checklist-item="1"] [data-wiki-checklist-field="human_reviewed"]',
     ) as HTMLElement
@@ -142,9 +138,7 @@ describe('wiki checklist writes', () => {
         'UNSUPPORTED_CAPABILITY',
       ),
     )
-    const { container } = renderWithQuery(
-      <WikiDocumentView project="project-a" page={page()} sourceSurface="full-wiki" />,
-    )
+    const { container } = renderWithQuery(<WikiDocumentView project="project-a" page={page()} />)
     const box = container.querySelector(
       '[data-wiki-checklist-item="1"] [data-wiki-checklist-field="agent_completed"]',
     ) as HTMLElement
@@ -158,9 +152,7 @@ describe('wiki checklist writes', () => {
 
   it('disables every control for a viewer', () => {
     session.owner = false
-    const { container } = renderWithQuery(
-      <WikiDocumentView project="project-a" page={page()} sourceSurface="full-wiki" />,
-    )
+    const { container } = renderWithQuery(<WikiDocumentView project="project-a" page={page()} />)
     const boxes = container.querySelectorAll('[data-wiki-checklist-field]')
     expect(boxes.length).toBe(6)
     expect(Array.from(boxes).every((box) => box.hasAttribute('disabled'))).toBe(true)

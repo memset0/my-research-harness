@@ -91,9 +91,7 @@ describe('WikiShell', () => {
       summary('W0002', '2026-05-04T08:00:00+00:00', {}),
       '## Evidence\nPlain prose.',
     )
-    const { container } = renderWithQuery(
-      <WikiDocumentView project="project-a" page={page} sourceSurface="side-wiki" />,
-    )
+    const { container } = renderWithQuery(<WikiDocumentView project="project-a" page={page} />)
     const body = container.querySelector('[data-wiki-document-body]')
     expect(body).toHaveClass('mx-auto', 'w-full', 'max-w-[800px]')
     expect(body).not.toHaveClass('rounded-md', 'border-l-4', 'bg-muted/50', 'py-2', 'pl-3')
@@ -107,7 +105,6 @@ describe('WikiShell', () => {
       <WikiDocumentView
         project="project-a"
         page={detail(summary('W0006', '2026-05-04T08:00:00+00:00'), '## Evidence\nProse.')}
-        sourceSurface="full-wiki"
       />,
     )
     expect(english.container.querySelector('[data-wiki-document-body]')).toHaveAttribute(
@@ -121,7 +118,6 @@ describe('WikiShell', () => {
           summary('W0007', '2026-05-04T08:00:00+00:00', { language: 'zh' }),
           '## 证据\n实测结果。',
         )}
-        sourceSurface="side-wiki"
       />,
     )
     expect(chinese.container.querySelector('[data-wiki-document-body]')).toHaveAttribute(

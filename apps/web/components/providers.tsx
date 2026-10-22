@@ -5,7 +5,6 @@ import { useState } from 'react'
 import { type RuntimeConfigPayload, RuntimeConfigProvider } from '../lib/runtime-config'
 import { ResourceHeartbeatProvider } from './resource-heartbeat-provider'
 import { type SessionInfo, SessionProvider } from './session-provider'
-import { WorkspacePaneProvider } from './workspace-pane-provider'
 
 interface ProvidersProps {
   children: React.ReactNode
@@ -35,9 +34,7 @@ export function Providers({ children, session, runtimeConfig }: ProvidersProps) 
     <SessionProvider value={session}>
       <RuntimeConfigProvider value={runtimeConfig}>
         <QueryClientProvider client={client}>
-          <ResourceHeartbeatProvider>
-            <WorkspacePaneProvider>{children}</WorkspacePaneProvider>
-          </ResourceHeartbeatProvider>
+          <ResourceHeartbeatProvider>{children}</ResourceHeartbeatProvider>
         </QueryClientProvider>
       </RuntimeConfigProvider>
     </SessionProvider>

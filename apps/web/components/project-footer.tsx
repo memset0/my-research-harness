@@ -12,7 +12,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { History } from 'lucide-react'
 import Link from 'next/link'
-import { type CSSProperties, useCallback, useState } from 'react'
+import { useCallback, useState } from 'react'
 import {
   fetchGitStatus,
   type ProjectTarget,
@@ -27,14 +27,12 @@ import { GitDiffDialog } from './git-diff-dialog'
 import { GitHistoryDialog } from './git-history-dialog'
 import { GitStatusPill } from './git-status-pill'
 import { PageFreshness } from './page-freshness'
-import { useWorkspaceSplitWidth } from './workspace-pane-provider'
 
 export interface ProjectFooterProps {
   project: ProjectTarget
 }
 
 export function ProjectFooter({ project }: ProjectFooterProps) {
-  const workspaceSplitWidth = useWorkspaceSplitWidth()
   // The two dialogs are mutually exclusive — opening one closes the other.
   const [statusDialogOpen, setStatusDialogOpen] = useState(false)
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false)
@@ -62,13 +60,8 @@ export function ProjectFooter({ project }: ProjectFooterProps) {
     <>
       <footer
         data-slot="project-footer"
-        style={
-          {
-            '--workspace-split-width': `${workspaceSplitWidth}px`,
-          } as CSSProperties
-        }
         className={cn(
-          'fixed bottom-0 left-0 right-[var(--workspace-split-width,0px)] z-40 flex h-7 items-center gap-2 border-t bg-card px-3 text-xs text-muted-foreground',
+          'fixed bottom-0 left-0 right-0 z-40 flex h-7 items-center gap-2 border-t bg-card px-3 text-xs text-muted-foreground',
           'md:left-[var(--sidebar-width)]',
         )}
       >

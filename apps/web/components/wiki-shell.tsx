@@ -560,12 +560,7 @@ function WikiSelectedPane({
               )}
               data-wiki-document-column=""
             >
-              <WikiDocumentView
-                project={project}
-                page={page}
-                sourceSurface="full-wiki"
-                widthLimited={widthLimited}
-              />
+              <WikiDocumentView project={project} page={page} widthLimited={widthLimited} />
               <WikiFragmentDeepLink pageId={page.id} />
             </div>
             {!editing && outline.length > 0 && (
@@ -713,12 +708,10 @@ function WikiIdentity({
 export function WikiDocumentView({
   project,
   page,
-  sourceSurface,
   widthLimited = true,
 }: {
   project: ProjectTarget
   page: WikiPageDetail
-  sourceSurface: 'full-wiki' | 'side-wiki'
   widthLimited?: boolean
 }) {
   const { frontmatter, body } = useMemo(() => splitFrontmatter(page.content), [page.content])
@@ -747,17 +740,13 @@ export function WikiDocumentView({
           project={project}
           kind="wiki"
           id={page.id}
-          expandInUrl={sourceSurface === 'full-wiki'}
+          expandInUrl
         />
       </div>
     )
   }
   return (
-    <DocumentArtifactLinkProvider
-      project={project}
-      sourceDocumentPath={page.resource ?? page.path}
-      sourceSurface={sourceSurface}
-    >
+    <DocumentArtifactLinkProvider project={project} sourceDocumentPath={page.resource ?? page.path}>
       {page.deprecated && (
         <div
           className="mb-4 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-xs text-destructive"

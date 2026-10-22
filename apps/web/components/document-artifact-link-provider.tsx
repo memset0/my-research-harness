@@ -1,7 +1,6 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { usePathname, useSearchParams } from 'next/navigation'
 import { type ReactNode, useCallback, useMemo } from 'react'
 import {
   fetchExperimentsInventory,
@@ -13,26 +12,20 @@ import {
   projectQueryKey,
 } from '../lib/api'
 import type { ArtifactTarget } from '../lib/artifact-links'
+import { artifactHref } from '../lib/artifact-navigation'
 import { queryKeys } from '../lib/query-keys'
-import { buildArtifactNavigationHref } from '../lib/report-workspace-url'
-import { MarkdownArtifactLinkProvider, type MarkdownArtifactSourceSurface } from './markdown'
+import { MarkdownArtifactLinkProvider } from './markdown'
 import { useIsDocumentOnlyViewer } from './session-provider'
 
 export function DocumentArtifactLinkProvider({
   project,
   sourceDocumentPath,
-  sourceSurface,
-  sourceReportId,
   children,
 }: {
   project: ProjectTarget
   sourceDocumentPath?: string
-  sourceSurface: MarkdownArtifactSourceSurface
-  sourceReportId?: string
   children: ReactNode
 }) {
-  const pathname = usePathname()
-  const searchParams = useSearchParams()
   // Project inventories are not readable through a document-only share.
   const documentOnly = useIsDocumentOnlyViewer()
   const reportsQuery = useQuery({
@@ -53,10 +46,6 @@ export function DocumentArtifactLinkProvider({
     staleTime: 5_000,
     enabled: !documentOnly,
   })
-  const currentHref = useMemo(() => {
-    const search = searchParams?.toString() ?? ''
-    return `${pathname ?? '/'}${search ? `?${search}` : ''}`
-  }, [pathname, searchParams])
   const inventory = useMemo(
     () => ({
       project: projectName(project),
@@ -80,29 +69,22 @@ export function DocumentArtifactLinkProvider({
     [experimentsQuery.data, project, reportsQuery.data, wikiQuery.data],
   )
   const getArtifactHref = useCallback(
-    (target: ArtifactTarget, activeSourceSurface: MarkdownArtifactSourceSurface) => {
+    (target: ArtifactTarget) => {
       try {
-        return buildArtifactNavigationHref({
-          sourceSurface: activeSourceSurface,
-          target,
-          project,
-          currentHref,
-          sourceReportId,
-        })
+        return artifactHref(project, target)
       } catch {
         return null
       }
     },
-    [currentHref, project, sourceReportId],
+    [project],
   )
   const value = useMemo(
     () => ({
       inventory,
       sourceDocumentPath: sourceDocumentPath ?? '',
-      sourceSurface,
       getArtifactHref,
     }),
-    [getArtifactHref, inventory, sourceDocumentPath, sourceSurface],
+    [getArtifactHref, inventory, sourceDocumentPath],
   )
 
   return <MarkdownArtifactLinkProvider value={value}>{children}</MarkdownArtifactLinkProvider>

@@ -130,11 +130,7 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
   )
 
   return (
-    <DocumentArtifactLinkProvider
-      project={project}
-      sourceDocumentPath={exp.path ?? exp.resource}
-      sourceSurface="left"
-    >
+    <DocumentArtifactLinkProvider project={project} sourceDocumentPath={exp.path ?? exp.resource}>
       <div className="flex flex-col gap-4 p-4 md:p-6">
         <header className="flex flex-col gap-2">
           <div className="flex items-baseline flex-wrap gap-2">
@@ -637,11 +633,7 @@ function RunBody({
     : run.resource
 
   return (
-    <DocumentArtifactLinkProvider
-      project={project}
-      sourceDocumentPath={runSourceDocumentPath}
-      sourceSurface="left"
-    >
+    <DocumentArtifactLinkProvider project={project} sourceDocumentPath={runSourceDocumentPath}>
       {/* Action stripe */}
       <div className="flex flex-wrap items-center gap-2 border-t p-3">
         {run.recordFormat !== 'json' && (
