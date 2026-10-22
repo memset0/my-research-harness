@@ -18,10 +18,20 @@ import {
   withProjectFileContext,
 } from '@memon/core'
 import { fileAgentServiceRequest } from '@memon/file-protocol/service'
+import {
+  buildSetCookieHeader,
+  mergeShareCookie,
+  SHARES_COOKIE_NAME,
+  SHARES_COOKIE_TTL_SECONDS,
+  verifySharesCookie,
+} from './auth/cookies'
 import type { RuntimeAuth } from './auth/identity'
+import { clientIpFromHeaders, consume, refund } from './auth/rate-limit'
 import { writeImmediate } from './central/node-http'
 import { authorizeCentralServerRequest } from './central/server-auth'
 import { SshTunnelManager } from './central/ssh-tunnel'
+import { INVALID_SHARE_LINK_BODY, SHARE_TOKEN_PATTERN } from './share-landing'
+import { shareRegistryFor } from './share-registry'
 import { withShareRegistry } from './share-validator'
 
 export interface ServiceTarget {
@@ -149,6 +159,22 @@ function responseHeaders(headers: IncomingHttpHeaders, prefix: string): Incoming
   )
     result.location = prefix.replace(/\/$/, '') + result.location
   return result
+}
+
+function readRequestCookie(request: IncomingMessage, name: string): string | null {
+  for (const part of (request.headers.cookie ?? '').split(';')) {
+    const separator = part.indexOf('=')
+    if (separator >= 0 && part.slice(0, separator).trim() === name)
+      return part.slice(separator + 1).trim()
+  }
+  return null
+}
+
+function requestIsHttps(request: IncomingMessage): boolean {
+  const forwarded = request.headers['x-forwarded-proto']
+  const first = Array.isArray(forwarded) ? forwarded[0] : forwarded
+  if (first) return first.split(',')[0]!.trim().toLowerCase() === 'https'
+  return Boolean((request.socket as { encrypted?: boolean }).encrypted)
 }
 
 function sameOrigin(request: IncomingMessage): boolean {
@@ -315,6 +341,71 @@ export function createContentServiceGateway(
     }
     return { url: new URL(path, `http://127.0.0.1:${port}`) }
   }
+  // A service URL opened directly with `?share=<token>` redeems a service link
+  // for exactly this document into the viewer cookie, then reloads the same
+  // URL without the token so the application never sees it.
+  async function redeemShare(
+    request: IncomingMessage,
+    response: ServerResponse,
+    route: Route,
+    url: URL,
+    token: string,
+  ): Promise<void> {
+    const headers = new Headers()
+    for (const [name, value] of Object.entries(request.headers))
+      for (const item of Array.isArray(value) ? value : value === undefined ? [] : [value])
+        headers.append(name, item)
+    const ip = clientIpFromHeaders(headers, request.socket.remoteAddress)
+    const limit = consume(ip)
+    if (!limit.ok) {
+      writeImmediate(request, response, 429, { 'Retry-After': String(limit.retryAfter ?? 60) })
+      return
+    }
+    const secret = auth.sessionSecret
+    const record =
+      overrides.configPath && secret
+        ? await shareRegistryFor(overrides.configPath)
+            .find(token)
+            .catch(() => null)
+        : null
+    if (
+      !record?.service ||
+      !secret ||
+      (record.host ?? '-') !== route.host ||
+      record.project !== route.project ||
+      record.scope.kind !== route.kind ||
+      (record.scope as { id?: string }).id !== route.id
+    ) {
+      request.resume()
+      response.writeHead(404, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store',
+      })
+      response.end(INVALID_SHARE_LINK_BODY)
+      return
+    }
+    refund(ip)
+    const cookie = mergeShareCookie(
+      verifySharesCookie(readRequestCookie(request, SHARES_COOKIE_NAME), secret),
+      record.host === null
+        ? { project: record.project, token: record.token }
+        : { host: record.host, project: record.project, token: record.token },
+      secret,
+    )
+    url.searchParams.delete('share')
+    request.resume()
+    response.writeHead(302, {
+      Location: `${url.pathname}${url.search}`,
+      'Cache-Control': 'no-store',
+      'Set-Cookie': buildSetCookieHeader({
+        name: SHARES_COOKIE_NAME,
+        value: cookie,
+        maxAgeSeconds: SHARES_COOKIE_TTL_SECONDS,
+        secure: requestIsHttps(request),
+      }),
+    })
+    response.end()
+  }
   async function resolve(request: IncomingMessage, route: Route) {
     const authResult = await authorizeCentralServerRequest({
       request,
@@ -418,6 +509,17 @@ export function createContentServiceGateway(
         return true
       }
       if (!route) return false
+      const url = new URL(request.url, 'http://central.invalid')
+      const share = url.searchParams.get('share')
+      if (
+        share !== null &&
+        SHARE_TOKEN_PATTERN.test(share) &&
+        !route.health &&
+        (request.method === 'GET' || request.method === 'HEAD')
+      ) {
+        await redeemShare(request, response, route, url, share)
+        return true
+      }
       try {
         const resolved = await resolve(request, route)
         if (resolved.denied) {

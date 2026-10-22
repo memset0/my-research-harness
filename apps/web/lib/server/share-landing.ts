@@ -14,7 +14,7 @@ import {
 } from './auth/cookies'
 import type { ShareRegistryRecord } from './share-registry'
 
-const GENERIC_NOT_FOUND_BODY = `<!DOCTYPE html>
+export const INVALID_SHARE_LINK_BODY = `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><title>Share link invalid or expired · memon</title></head>
 <body><h1>Share link invalid or expired</h1><p>Ask the project owner to issue a new one.</p></body>
@@ -23,7 +23,7 @@ const GENERIC_NOT_FOUND_BODY = `<!DOCTYPE html>
 export const SHARE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{24}$/
 
 export function invalidShareLinkResponse(): NextResponse {
-  return new NextResponse(GENERIC_NOT_FOUND_BODY, {
+  return new NextResponse(INVALID_SHARE_LINK_BODY, {
     status: 404,
     headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
   })

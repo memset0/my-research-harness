@@ -4,4 +4,4 @@
 
 ## 2. Verification
 
-- [ ] 2.1 Run the touched tests, web typecheck and Biome; after deployment confirm the served dialog bundle contains the new code
+- [x] 2.1 Run the touched tests, web typecheck and Biome; after deployment confirm the served dialog bundle contains the new code

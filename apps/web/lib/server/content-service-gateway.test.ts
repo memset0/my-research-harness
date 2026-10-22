@@ -5,11 +5,13 @@ import { once } from 'node:events'
 import { existsSync } from 'node:fs'
 import { createServer, type IncomingMessage, request, type Server } from 'node:http'
 import type { Socket } from 'node:net'
+import { join } from 'node:path'
 import type { Config } from '@memon/core'
 import { createTempProject, removeTempDirs, startSshFixture } from '@memon/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createContentServiceGateway } from './content-service-gateway'
 import { createMemonServer } from './server-core'
+import { shareRegistryFor } from './share-registry'
 
 const teardown: Array<() => void | Promise<void>> = []
 afterEach(async () => {
@@ -192,6 +194,58 @@ describe('content service gateway', () => {
       ),
     ])
     expect(socket.destroyed).toBe(true)
+  })
+  it('redeems a service link opened directly on the service URL', async () => {
+    const app = await source()
+    const temp = await createTempProject({
+      wiki: {
+        'monitor/W0001-live/manifest.json': JSON.stringify({
+          type: 'service',
+          title: 'Live',
+          port: app.port,
+        }),
+      },
+    })
+    const configPath = join(temp.root, 'central.yml')
+    const registry = shareRegistryFor(configPath)
+    const scope = { kind: 'wiki', id: 'W0001' } as const
+    const service = await registry.create({
+      host: null,
+      project: 'project-a',
+      scope,
+      service: true,
+    })
+    const page = await registry.create({ host: null, project: 'project-a', scope })
+    const config = {
+      projects: [{ name: 'project-a', root: temp.root, include: [], exclude: [] }],
+    } as unknown as Config
+    const gateway = createContentServiceGateway(
+      config,
+      { ...auth, sessionSecret: 'x'.repeat(32) },
+      { configPath },
+    )
+    teardown.push(() => gateway.stop())
+    const port = await listen(
+      createMemonServer({ contentGateway: gateway, handle: (_req, res) => void res.end() }),
+    )
+    const prefix = '/api/content-services/-/project-a/wiki/W0001/'
+    const url = `http://127.0.0.1:${port}${prefix}`
+
+    const landing = await fetch(`${url}?view=1&share=${service.token}`, { redirect: 'manual' })
+    expect(landing.status).toBe(302)
+    expect(landing.headers.get('location')).toBe(`${prefix}?view=1`)
+    const cookie = landing.headers.get('set-cookie')!.split(';')[0]!
+    expect(cookie).toMatch(/^memon-shares=/)
+    const opened = await fetch(`${url}?view=1`, { headers: { cookie } })
+    expect(opened.status).toBe(200)
+    expect(app.seen.map((entry) => entry.url)).toEqual(['/?view=1'])
+
+    // A page link for the same document is not a service link.
+    const denied = await fetch(`${url}?share=${page.token}`, { redirect: 'manual' })
+    expect(denied.status).toBe(404)
+    expect(await denied.text()).toContain('Share link invalid or expired')
+    // An application's own non-token `share` parameter passes through.
+    expect((await fetch(`${url}?share=mine`, { headers: { cookie } })).status).toBe(200)
   })
   it('rejects invalid manifest targets and reports offline without launching anything', async () => {
     const gateway = await setup(1)
