@@ -22,6 +22,7 @@ import type { RuntimeAuth } from './auth/identity'
 import { writeImmediate } from './central/node-http'
 import { authorizeCentralServerRequest } from './central/server-auth'
 import { SshTunnelManager } from './central/ssh-tunnel'
+import { withShareRegistry } from './share-validator'
 
 export interface ServiceTarget {
   url: URL
@@ -195,6 +196,8 @@ export function createContentServiceGateway(
   auth: RuntimeAuth,
   overrides: {
     target?: (project: ProjectConfig, port: number, path: string) => Promise<ServiceTarget>
+    /** Instance config path: its share registry admits service links. */
+    configPath?: string
   } = {},
 ) {
   const tunnels = new Map<string, Promise<Tunnel>>()
@@ -316,7 +319,14 @@ export function createContentServiceGateway(
     const authResult = await authorizeCentralServerRequest({
       request,
       runtimeAuth: auth,
-      shareValidator: { validate: async () => false },
+      // Only a service link for exactly this document admits a viewer.
+      shareValidator: withShareRegistry(overrides.configPath, { validate: async () => false }),
+      service: {
+        host: route.host === '-' ? null : route.host,
+        project: route.project,
+        kind: route.kind,
+        id: route.id,
+      },
       route: {
         manifestRoute: 'content-services/[host]/[project]/[kind]/[id]/[...path]',
         ownership: {

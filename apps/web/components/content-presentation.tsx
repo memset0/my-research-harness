@@ -139,12 +139,9 @@ function useAvailability(
       const response = await fetch(contentUrl(project, kind, id, 'content-health'), {
         signal: AbortSignal.timeout(20_000),
       })
-      if (!response.ok)
-        throw new Error(
-          response.status === 401 || response.status === 403
-            ? 'Owner access required'
-            : 'Service unavailable',
-        )
+      if (response.status === 401 || response.status === 403)
+        throw Object.assign(new Error('Owner access required'), { denied: true })
+      if (!response.ok) throw new Error('Service unavailable')
       return response.json() as Promise<{ available: boolean; status: number }>
     },
     retry: false,
@@ -249,14 +246,20 @@ function LiveContent({
   id: string
   entry: string
 }) {
+  // Viewers reach the service only through a service link; the health check
+  // tells whether this browser holds one.
   const owner = useIsOwner()
-  const health = useAvailability(project, kind, id, owner)
+  const health = useAvailability(project, kind, id, true)
   const prefix = contentUrl(project, kind, id, 'content-services')
   const url = prefix + entry.replace(/^\.\//, '')
-  if (!owner)
+  if (!owner && (health.error as { denied?: boolean } | null)?.denied)
     return (
-      <p className="text-sm text-muted-foreground">Sign in as the owner to open this service.</p>
+      <p className="text-sm text-muted-foreground">
+        Sign in as the owner, or open a service link, to use this service.
+      </p>
     )
+  if (!owner && !health.data && !health.isError)
+    return <p className="text-sm text-muted-foreground">Checking service…</p>
   return (
     <div className="space-y-3" data-live-content>
       <div className="flex flex-wrap items-center gap-2 text-xs">

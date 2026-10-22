@@ -200,4 +200,55 @@ describe('authorizeCentralServerRequest', () => {
     })
     await expect(authorize('/api/reports')).resolves.toMatchObject({ ok: false, status: 401 })
   })
+
+  it('admits a viewer to a service only with a service grant for exactly that document', async () => {
+    const SERVICE_TOKEN = 'share_token_S'
+    const grants: Record<string, unknown> = {
+      [SHARE_TOKEN]: true,
+      [SERVICE_TOKEN]: { document: { kind: 'report', id: 'R0010' }, service: true },
+    }
+    const shareValidator = {
+      validate: vi.fn(async (_project: string, token: string) => grants[token] ?? false),
+    } as never
+    const route = {
+      manifestRoute: 'content-services/[host]/[project]/[kind]/[id]/[...path]',
+      ownership: {
+        owner: 'central',
+        auth: 'shell',
+        methods: ['GET'],
+        scope: 'global',
+        streaming: 'bytes',
+      },
+    } as never
+    const authorize = (tokens: string[], id: string, method = 'POST') =>
+      authorizeCentralServerRequest({
+        request: incoming('/api/content-services/host-a/project-x/report/x/', method, {
+          cookie: `${SHARES_COOKIE_NAME}=${signHostQualifiedSharesCookie(
+            tokens.map((token) => ({ host: 'host-a', project: 'project-x', token })),
+            SESSION_SECRET,
+          )}`,
+        }),
+        route,
+        shareValidator,
+        service: { host: 'host-a', project: 'project-x', kind: 'report', id },
+        runtimeAuth,
+      })
+
+    const both = await authorize([SHARE_TOKEN, SERVICE_TOKEN], 'R0010')
+    expect(both).toMatchObject({
+      ok: true,
+      actor: { role: 'viewer', scopes: [{ host: 'host-a', project: 'project-x' }] },
+    })
+    expect(both.setCookies.some((cookie) => cookie.startsWith(`${SHARES_COOKIE_NAME}=`))).toBe(
+      false,
+    )
+    await expect(authorize([SHARE_TOKEN], 'R0010')).resolves.toMatchObject({
+      ok: false,
+      status: 403,
+    })
+    await expect(authorize([SERVICE_TOKEN], 'R0012')).resolves.toMatchObject({
+      ok: false,
+      status: 403,
+    })
+  })
 })

@@ -38,10 +38,17 @@ export interface ShareDocumentGrant {
   project: string
   kind: 'experiment' | 'wiki' | 'report'
   id: string
+  /** A service link: also reaches this Report/Wiki page's live service. */
+  service?: true
 }
 
-/** A validated share: `true` grants the whole Project, `{document}` one document. */
-export type ShareGrant = boolean | { document: { kind: ShareDocumentGrant['kind']; id: string } }
+/**
+ * A validated share: `true` grants the whole Project, `{document}` one
+ * document, and `service` additionally that document's live service.
+ */
+export type ShareGrant =
+  | boolean
+  | { document: { kind: ShareDocumentGrant['kind']; id: string }; service?: true }
 
 export interface ResolvedIdentity {
   role: IdentityRole
@@ -175,6 +182,7 @@ export async function resolveIdentity(
             ...(entry.host ? { host: entry.host } : {}),
             project: entry.project,
             ...ok.document,
+            ...(ok.service ? { service: true as const } : {}),
           })
         } else if (ok) {
           validatedEntries.push(entry)

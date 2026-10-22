@@ -14,14 +14,18 @@ export function withShareRegistry(
   return {
     validate: async (project, token, host) => {
       if (configPath) {
-        let scope: ReturnType<typeof matchShare>
+        let match: ReturnType<typeof matchShare>
         try {
           records ??= shareRegistryFor(configPath).read()
-          scope = matchShare(await records, host ?? null, project, token)
+          match = matchShare(await records, host ?? null, project, token)
         } catch {
           return false
         }
-        if (scope) return scope.kind === 'project' ? true : { document: scope }
+        if (match) {
+          const { scope } = match
+          if (scope.kind === 'project') return true
+          return match.service ? { document: scope, service: true } : { document: scope }
+        }
       }
       return legacy.validate(project, token, host)
     },

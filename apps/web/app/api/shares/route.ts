@@ -2,7 +2,9 @@
 //
 // GET  [?host=NAME&project=NAME]  every issued link (optionally one Project),
 //                                 with token, scope, landing path and share_url.
-// POST { host?, project, scope, label?, expires?, currentPath?, public? }
+// POST { host?, project, scope, label?, expires?, currentPath?, public?, service? }
+//      service: true issues a service link for a service Report/Wiki page
+//      (its token also reaches that page's live service); never with public.
 //      public: true makes a Report/Wiki page public (idempotent) instead of
 //      issuing a token link.
 //      scope: { kind: 'project' } | { kind: 'experiment'|'wiki'|'report', id }
@@ -17,7 +19,7 @@ import { readIdentityFromRequest } from '@/lib/server/auth/request-context'
 import { getRuntime } from '@/lib/server/runtime'
 import {
   configuredShareProject,
-  sharedDocumentExists,
+  sharedDocument,
   shareRegistry,
   shareRow,
 } from '@/lib/server/share-api'
@@ -78,10 +80,12 @@ async function scopedPOST(req: NextRequest): Promise<Response> {
   if (!target) return bad('project is not configured', 404)
   const scope = ShareScopeSchema.safeParse(body.scope)
   if (!scope.success) return bad('invalid share scope')
+  const service = body.service === true
+  if (service && body.public === true) return bad('a service cannot be public')
   if (isDocumentScope(scope.data)) {
-    let exists: boolean
+    let document: Awaited<ReturnType<typeof sharedDocument>>
     try {
-      exists = await sharedDocumentExists(
+      document = await sharedDocument(
         runtime,
         target.host,
         target.project,
@@ -92,7 +96,11 @@ async function scopedPOST(req: NextRequest): Promise<Response> {
       console.error('share: document lookup failed', error)
       return bad(`could not read ${scope.data.kind} ${scope.data.id}; try again`, 503)
     }
-    if (!exists) return bad(`${scope.data.kind} ${scope.data.id} is not published`, 404)
+    if (!document) return bad(`${scope.data.kind} ${scope.data.id} is not published`, 404)
+    if (service && document.presentation !== 'service')
+      return bad(`${scope.data.kind} ${scope.data.id} is not a service`)
+  } else if (service) {
+    return bad('only Report and Wiki services can be shared')
   }
   try {
     const record = await (await shareRegistry(runtime)).create({
@@ -102,6 +110,7 @@ async function scopedPOST(req: NextRequest): Promise<Response> {
       ...(typeof body.expires === 'string' ? { expires: body.expires } : {}),
       currentPath: typeof body.currentPath === 'string' ? body.currentPath : null,
       ...(body.public === true ? { public: true } : {}),
+      ...(service ? { service: true } : {}),
     })
     return NextResponse.json(
       { share: shareRow(req, record) } satisfies ScopedShareCreatedResponse,

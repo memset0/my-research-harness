@@ -95,7 +95,9 @@ if (runtime.config.central) {
             return false
           }
 }
-const contentGateway = createContentServiceGateway(runtime.config, runtime.auth)
+const contentGateway = createContentServiceGateway(runtime.config, runtime.auth, {
+  configPath: runtime.configPath,
+})
 const server = createMemonServer({
   contentGateway,
   handle,

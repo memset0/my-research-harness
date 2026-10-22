@@ -10,7 +10,8 @@ import {
   matchesContentFilter,
 } from './content-presentation'
 
-vi.mock('./session-provider', () => ({ useIsOwner: () => true }))
+const session = { owner: true }
+vi.mock('./session-provider', () => ({ useIsOwner: () => session.owner }))
 const embedProps: Array<{ expanded?: boolean; onExpandedChange?: (value: boolean) => void }> = []
 vi.mock('./report-html-embed', () => ({
   ReportHtmlZoomProvider: ({ children }: { children: React.ReactNode }) => children,
@@ -28,7 +29,10 @@ const navigation = { search: '' }
 vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(navigation.search),
 }))
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  session.owner = true
+})
 const project = ProjectRefSchema.parse({ host: 'source-a', project: 'project-a' })
 function wrap(children: React.ReactNode) {
   return render(
@@ -104,6 +108,34 @@ describe('content presentation', () => {
         `${contentUrl(project, 'wiki', 'W0001', 'content-services')}dashboard/`,
       ),
     )
+  })
+  it('opens a service for a viewer only when the gateway admits the share', async () => {
+    session.owner = false
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 403 }))
+    const view = wrap(
+      <ContentPresentation
+        project={project}
+        kind="report"
+        id="R0010"
+        content={{ presentation: 'service' }}
+      />,
+    )
+    await screen.findByText(/open a service link, to use this service/)
+    view.unmount()
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ available: true, status: 200 }) }),
+    )
+    wrap(
+      <ContentPresentation
+        project={project}
+        kind="report"
+        id="R0010"
+        content={{ presentation: 'service' }}
+      />,
+    )
+    expect(await screen.findByTitle('R0010 live application')).toBeInTheDocument()
   })
   it('filters independently by category, freshness and presentation', () => {
     const content = {

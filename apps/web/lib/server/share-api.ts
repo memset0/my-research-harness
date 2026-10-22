@@ -79,17 +79,18 @@ async function ownerRead(
  * missing, unrefreshed or malformed; any other failure (an unreachable
  * source) is thrown.
  */
-export async function sharedDocumentExists(
+/** The published document's detail (owner read), or null when it is not published. */
+export async function sharedDocument(
   runtime: Runtime,
   host: string | null,
   project: string,
   kind: 'experiment' | 'wiki' | 'report',
   id: string,
-): Promise<boolean> {
+): Promise<{ presentation?: unknown } | null> {
   const resource = kind === 'wiki' ? 'wiki' : kind === 'report' ? 'reports' : 'experiments'
-  const { status } = await ownerRead(runtime, host, project, resource, id)
-  if (status === 200) return true
-  if (status === 404 || status === 400) return false
+  const { status, body } = await ownerRead(runtime, host, project, resource, id)
+  if (status === 200) return (body ?? {}) as { presentation?: unknown }
+  if (status === 404 || status === 400) return null
   throw new Error(`document read failed with HTTP ${status}`)
 }
 

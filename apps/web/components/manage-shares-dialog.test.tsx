@@ -24,8 +24,10 @@ const row = (id: string, scope: unknown) => ({
 
 let posted: unknown[]
 let listed: unknown[]
+let detail: Record<string, unknown>
 beforeEach(() => {
   posted = []
+  detail = { id: 'W0004', presentation: 'markdown' }
   listed = [
     row('shr_project1', { kind: 'project' }),
     row('shr_wikipage', { kind: 'wiki', id: 'W0004' }),
@@ -33,7 +35,8 @@ beforeEach(() => {
   Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } })
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (_url: string, init?: RequestInit) => {
+    vi.fn(async (url: string, init?: RequestInit) => {
+      if (/^\/api\/(wiki|reports)\/[WR]\d{4}/.test(url)) return Response.json(detail)
       if (init?.method === 'POST') {
         const body = JSON.parse(String(init.body))
         posted.push(body)
@@ -128,6 +131,31 @@ describe('ManageSharesDialog public pages', () => {
       await screen.findByRole('button', { name: 'Create link for Experiment E0001-pipeline' }),
     ).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Make public' })).not.toBeInTheDocument()
+  })
+})
+
+describe('ManageSharesDialog service links', () => {
+  it('offers a service link only on a service page and labels it', async () => {
+    pathname.mockReturnValue('/h/host-a/p/project-x/wiki/W0004')
+    const view = renderWithQuery(<ManageSharesDialog project={PROJECT} />)
+    await userEvent.click(screen.getByRole('button', { name: /Share/ }))
+    await screen.findByRole('button', { name: 'Create link for Wiki W0004' })
+    expect(screen.queryByRole('radio', { name: 'Service' })).not.toBeInTheDocument()
+    view.unmount()
+
+    detail = { id: 'W0004', presentation: 'service' }
+    listed = [{ ...row('shr_service1', { kind: 'wiki', id: 'W0004' }), service: true }]
+    renderWithQuery(<ManageSharesDialog project={PROJECT} />)
+    await userEvent.click(screen.getByRole('button', { name: /Share/ }))
+    expect(
+      await screen.findByText('Service · Wiki W0004', { selector: '[data-share-scope]' }),
+    ).toBeInTheDocument()
+    await userEvent.click(await screen.findByRole('radio', { name: 'Service' }))
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Create link for Service · Wiki W0004' }),
+    )
+    await waitFor(() => expect(posted).toHaveLength(1))
+    expect(posted[0]).toMatchObject({ scope: { kind: 'wiki', id: 'W0004' }, service: true })
   })
 })
 

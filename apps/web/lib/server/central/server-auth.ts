@@ -36,6 +36,13 @@ export interface CentralServerAuthOptions {
   publicGrants?: (
     selected: ProjectRef,
   ) => Promise<Awaited<ReturnType<typeof resolveIdentity>>['scopeDocuments']>
+  /**
+   * A live service request: a viewer is admitted, on every method, only with
+   * a service grant for exactly this Host, Project and document. Its share
+   * cookie is never rewritten here, since this validator may not know every
+   * token the cookie holds.
+   */
+  service?: { host: string | null; project: string; kind: 'wiki' | 'report'; id: string }
   runtimeAuth: RuntimeAuth
   nowSeconds?: number
   rateLimit?: {
@@ -141,6 +148,7 @@ function selectedProjectRef(
 function refreshedCookies(
   identity: Awaited<ReturnType<typeof resolveIdentity>>,
   secure: boolean,
+  shares = true,
 ): string[] {
   const cookies: string[] = []
   if (identity.refreshedSessionCookie) {
@@ -153,6 +161,7 @@ function refreshedCookies(
       }),
     )
   }
+  if (!shares) return cookies
   if (identity.refreshedSharesCookie) {
     cookies.push(
       buildSetCookieHeader({
@@ -192,14 +201,20 @@ export async function authorizeCentralServerRequest(
       sharesCookieValue: readCookie(options.request, SHARES_COOKIE_NAME),
       // Ordinary data mutations resolve viewers so writes can
       // return an explicit 403. Other privileged routes reject them before validation.
-      allowViewer: effectiveAuthClass(options.route, options.request.method ?? 'GET') !== 'shell',
+      allowViewer:
+        options.service !== undefined ||
+        effectiveAuthClass(options.route, options.request.method ?? 'GET') !== 'shell',
     },
     options.runtimeAuth,
     options.shareValidator,
     options.nowSeconds,
   )
   if (identity.refundToken) limiter.refund(ip)
-  const setCookies = refreshedCookies(identity, requestIsHttps(options.request))
+  const setCookies = refreshedCookies(
+    identity,
+    requestIsHttps(options.request),
+    options.service === undefined,
+  )
 
   const readRoute = effectiveAuthClass(options.route, options.request.method ?? 'GET') === 'read'
   const requestUrl = new URL(options.request.url ?? '/', 'http://central.invalid')
@@ -221,6 +236,21 @@ export async function authorizeCentralServerRequest(
   }
   if (identity.role === 'owner') {
     return { ok: true, actor: { role: 'owner' }, headers: {}, setCookies }
+  }
+  const service = options.service
+  if (service) {
+    const admitted = identity.scopeDocuments.some(
+      (grant) =>
+        grant.service === true &&
+        (grant.host ?? null) === service.host &&
+        grant.project === service.project &&
+        grant.kind === service.kind &&
+        grant.id === service.id,
+    )
+    if (!admitted)
+      return { ok: false, status: 403, headers: { 'Cache-Control': 'no-store' }, setCookies }
+    const scope = { host: service.host, project: service.project } as ProjectRef
+    return { ok: true, actor: { role: 'viewer', scopes: [scope] }, headers: {}, setCookies }
   }
 
   if (!readRoute) {

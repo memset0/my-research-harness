@@ -43,6 +43,8 @@ export interface ScopedShareRow {
   expires_at: string | null
   /** A public page: anyone with the page URL can read it. */
   public?: true
+  /** A service link: its token also reaches the page's live service. */
+  service?: true
   /** Page URL with `share=<token>`, or the plain page URL for a public page. */
   share_url: string
 }

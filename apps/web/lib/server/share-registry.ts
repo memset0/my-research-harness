@@ -1,6 +1,7 @@
 // Central share registry: every share token this dashboard issues, with its
 // Host-qualified Project, scope (the whole Project or one Experiment, Wiki
-// page or Report) and the page its link lands on.
+// page or Report) and the page its link lands on. A service record also lets
+// its token use that Report/Wiki page's live service (every method).
 //
 // The file lives beside the instance config (`shares.json`, mode 0600) and is
 // never written into a Project, so read-only and File Agent Projects can be
@@ -54,6 +55,8 @@ const ShareRegistryRecordSchema = z
     expires_at: z.string().nullable(),
     /** A public Report/Wiki page: readable by anyone, its token grants nothing. */
     public: z.literal(true).optional(),
+    /** A service link: its token also reaches this Report/Wiki page's service. */
+    service: z.literal(true).optional(),
   })
   .strict()
 export type ShareRegistryRecord = z.infer<typeof ShareRegistryRecordSchema>
@@ -131,9 +134,15 @@ function isExpired(record: ShareRegistryRecord, nowMs: number): boolean {
   return !Number.isNaN(expires) && expires <= nowMs
 }
 
+/** What a token grants: its scope and, for a service link, the service. */
+export interface ShareMatch {
+  scope: ShareScope
+  service: boolean
+}
+
 /**
- * The scope `token` grants for exactly `{host, project}` among `records`, or
- * null. Every record is compared in constant time and expiry is honoured.
+ * What `token` grants for exactly `{host, project}` among `records`, or null.
+ * Every record is compared in constant time and expiry is honoured.
  */
 export function matchShare(
   records: readonly ShareRegistryRecord[],
@@ -141,13 +150,15 @@ export function matchShare(
   project: string,
   token: string,
   nowMs = Date.now(),
-): ShareScope | null {
+): ShareMatch | null {
   let match: ShareRegistryRecord | null = null
   for (const record of records) {
     if (tokenMatches(record.token, token) && !isExpired(record, nowMs) && !record.public)
       match = record
   }
-  return match && match.host === host && match.project === project ? match.scope : null
+  return match && match.host === host && match.project === project
+    ? { scope: match.scope, service: match.service === true }
+    : null
 }
 
 /** The Report and Wiki pages of `{host, project}` that are public. */
@@ -179,6 +190,8 @@ export interface CreateShareInput {
   currentPath?: string | null
   /** Make a Report or Wiki page public instead of issuing a token link. */
   public?: boolean
+  /** Issue a service link: the token also reaches the page's service. */
+  service?: boolean
 }
 
 export class ShareRegistry {
@@ -210,6 +223,11 @@ export class ShareRegistry {
       throw new ShareRegistryInputError('label must be at most 64 characters')
     const scope = ShareScopeSchema.safeParse(input.scope)
     if (!scope.success) throw new ShareRegistryInputError('invalid share scope')
+    if (input.service) {
+      if (input.public) throw new ShareRegistryInputError('a service cannot be public')
+      if (scope.data.kind !== 'report' && scope.data.kind !== 'wiki')
+        throw new ShareRegistryInputError('only Report and Wiki services can be shared')
+    }
     if (input.public) {
       if (scope.data.kind !== 'report' && scope.data.kind !== 'wiki')
         throw new ShareRegistryInputError('only Report and Wiki pages can be public')
@@ -239,6 +257,7 @@ export class ShareRegistry {
       created_at: formatIsoLocal(now),
       expires_at: durationMs === null ? null : formatIsoLocal(new Date(now.getTime() + durationMs)),
       ...(input.public ? { public: true as const } : {}),
+      ...(input.service ? { service: true as const } : {}),
     }
     await this.update((records) => [...records, record])
     return record
@@ -267,8 +286,8 @@ export class ShareRegistry {
     return found
   }
 
-  /** The scope this token grants for exactly `{host, project}`, or null. */
-  async validate(host: string | null, project: string, token: string): Promise<ShareScope | null> {
+  /** What this token grants for exactly `{host, project}`, or null. */
+  async validate(host: string | null, project: string, token: string): Promise<ShareMatch | null> {
     return matchShare(await this.read(), host, project, token)
   }
 

@@ -7,7 +7,9 @@
 // (the default) or the whole Project; elsewhere links are Project-scoped. A
 // link is the page's own URL with `?share=<token>`; a listed whole-Project link
 // is copied for the page currently open. Report and Wiki pages can
-// also be made public (readable by anyone with the plain page URL). The list
+// also be made public (readable by anyone with the plain page URL). A service
+// Report or Wiki page additionally offers a service link, the only kind of
+// link whose token also reaches the page's live application. The list
 // shows every link of this Project with what it can reach, and copies or
 // revokes it.
 
@@ -16,7 +18,13 @@ import { Copy, Plus, Share2, Trash2 } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { type ProjectTarget, projectHost, projectName } from '../lib/api'
+import {
+  fetchReport,
+  fetchWikiPage,
+  type ProjectTarget,
+  projectHost,
+  projectName,
+} from '../lib/api'
 import type {
   ScopedShareCreatedResponse,
   ScopedShareRow,
@@ -68,7 +76,8 @@ export function scopeLabel(scope: ShareScopeDto): string {
 }
 
 function rowLabel(row: ScopedShareRow): string {
-  return row.public ? `Public · ${scopeLabel(row.scope)}` : scopeLabel(row.scope)
+  if (row.public) return `Public · ${scopeLabel(row.scope)}`
+  return row.service ? `Service · ${scopeLabel(row.scope)}` : scopeLabel(row.scope)
 }
 
 /**
@@ -113,6 +122,7 @@ async function createShare(
     expires: string
     currentPath: string
     public?: boolean
+    service?: boolean
   },
 ): Promise<ScopedShareRow> {
   const res = await fetch('/api/shares', {
@@ -170,7 +180,7 @@ export function ManageSharesDialog({ project }: Props) {
   const [open, setOpen] = useState(false)
   const [label, setLabel] = useState('')
   const [expires, setExpires] = useState('never')
-  const [reach, setReach] = useState<'page' | 'project'>('page')
+  const [reach, setReach] = useState<'page' | 'project' | 'service'>('page')
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
@@ -181,9 +191,26 @@ export function ManageSharesDialog({ project }: Props) {
     staleTime: 5_000,
   })
 
-  const scope: ShareScopeDto = pageDoc && reach === 'page' ? pageDoc : { kind: 'project' }
-  // Only Report and Wiki pages can be public.
+  // Only Report and Wiki pages can be public or carry a service.
   const publishable = pageDoc && pageDoc.kind !== 'experiment' ? pageDoc : null
+  const { data: pageDetail } = useQuery({
+    queryKey:
+      publishable?.kind === 'wiki'
+        ? queryKeys.wikiPage(project, publishable.id)
+        : queryKeys.report(project, publishable?.id ?? null),
+    queryFn: () =>
+      publishable?.kind === 'wiki'
+        ? fetchWikiPage(project, publishable.id)
+        : fetchReport(project, publishable!.id),
+    enabled: open && role === 'owner' && publishable !== null,
+  })
+  const serviceDoc =
+    publishable && (pageDetail as { presentation?: string } | undefined)?.presentation === 'service'
+      ? publishable
+      : null
+  const service = serviceDoc !== null && reach === 'service'
+  const scope: ShareScopeDto = pageDoc && reach !== 'project' ? pageDoc : { kind: 'project' }
+  const scopeName = service ? `Service · ${scopeLabel(scope)}` : scopeLabel(scope)
   const publicRecord = publishable
     ? (shares ?? []).find((row) => row.public && sameScope(row.scope, publishable))
     : undefined
@@ -202,12 +229,13 @@ export function ManageSharesDialog({ project }: Props) {
         ...(label ? { label } : {}),
         expires,
         currentPath: `${window.location.pathname}${window.location.search}`,
+        ...(service ? { service: true } : {}),
       }),
     onSuccess: async (created) => {
       setLabel('')
       setExpires('never')
       await copyToClipboard(created.share_url)
-      toast.success(`Share created for ${scopeLabel(created.scope)} — URL copied to clipboard`)
+      toast.success(`Share created for ${rowLabel(created)} — URL copied to clipboard`)
       queryClient.invalidateQueries({ queryKey: queryKeys.projectShares(project) })
     },
     onError: (err) => toast.error(`Could not create share: ${(err as Error).message}`),
@@ -260,7 +288,8 @@ export function ManageSharesDialog({ project }: Props) {
           </DialogTitle>
           <DialogDescription>
             Links grant read-only access to one page or to the whole project, and open the page they
-            were issued from. Revoke a link to end that access.
+            were issued from. Only a service link reaches a live application. Revoke a link to end
+            that access.
           </DialogDescription>
         </DialogHeader>
 
@@ -360,9 +389,10 @@ export function ManageSharesDialog({ project }: Props) {
                   type="single"
                   variant="outline"
                   size="sm"
-                  value={reach}
+                  value={reach === 'service' && !serviceDoc ? 'page' : reach}
                   onValueChange={(value) => {
-                    if (value === 'page' || value === 'project') setReach(value)
+                    if (value === 'page' || value === 'project' || value === 'service')
+                      setReach(value)
                   }}
                   aria-label="Share scope"
                 >
@@ -370,7 +400,14 @@ export function ManageSharesDialog({ project }: Props) {
                     This page only ({KIND_LABEL[pageDoc.kind]} {pageDoc.id})
                   </ToggleGroupItem>
                   <ToggleGroupItem value="project">Whole project</ToggleGroupItem>
+                  {serviceDoc ? <ToggleGroupItem value="service">Service</ToggleGroupItem> : null}
                 </ToggleGroup>
+                {service ? (
+                  <p className="text-xs text-muted-foreground" data-service-warning="">
+                    This page plus its live application. Recipients can use the application fully,
+                    including any writes it makes.
+                  </p>
+                ) : null}
               </div>
             ) : (
               <p className="text-xs text-muted-foreground">
@@ -413,7 +450,7 @@ export function ManageSharesDialog({ project }: Props) {
               size="sm"
             >
               <Plus className="size-3.5" />
-              {createMutation.isPending ? 'Creating…' : `Create link for ${scopeLabel(scope)}`}
+              {createMutation.isPending ? 'Creating…' : `Create link for ${scopeName}`}
             </Button>
           </div>
         </div>

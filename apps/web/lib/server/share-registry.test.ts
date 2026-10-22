@@ -45,8 +45,8 @@ describe('share registry', () => {
     expect(JSON.parse(await readFile(file, 'utf8')).shares).toHaveLength(2)
 
     expect(await registry().validate('host-a', 'project-x', page.token)).toEqual({
-      kind: 'wiki',
-      id: 'W0004',
+      scope: { kind: 'wiki', id: 'W0004' },
+      service: false,
     })
     expect(await registry().validate('host-b', 'project-x', page.token)).toBeNull()
     expect(await registry().validate('host-a', 'project-x', 'x'.repeat(24))).toBeNull()
@@ -119,6 +119,29 @@ describe('public pages', () => {
     ).rejects.toBeInstanceOf(ShareRegistryInputError)
     expect(await registry().remove(first.id)).toBe(true)
     expect(publicDocuments(await registry().read(), 'host-a', 'project-x')).toEqual([])
+  })
+})
+
+describe('service links', () => {
+  it('issues a service token for a Report or Wiki page only, never public', async () => {
+    const input = {
+      host: 'host-a',
+      project: 'project-x',
+      scope: { kind: 'report' as const, id: 'R0010' },
+      service: true,
+    }
+    const record = await registry().create(input)
+    expect(record).toMatchObject({ service: true, path: '/h/host-a/p/project-x/reports/R0010' })
+    expect(matchShare(await registry().read(), 'host-a', 'project-x', record.token)).toEqual({
+      scope: { kind: 'report', id: 'R0010' },
+      service: true,
+    })
+    for (const bad of [
+      { ...input, public: true },
+      { ...input, scope: { kind: 'project' as const } },
+      { ...input, scope: { kind: 'experiment' as const, id: 'E0001-x' } },
+    ])
+      await expect(registry().create(bad)).rejects.toBeInstanceOf(ShareRegistryInputError)
   })
 })
 

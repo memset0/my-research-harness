@@ -16,8 +16,9 @@ vi.mock('@/lib/server/central/direct-runtime', () => ({
     registry: { capabilities: (host: string) => (host === 'host-a' ? {} : null) },
     dispatch: async ({ request }: { request: Request }) => {
       const path = new URL(request.url).pathname
-      return path === '/api/wiki/W0004' && (await getWiki())
-        ? Response.json({ id: 'W0004' })
+      const wiki = path === '/api/wiki/W0004' ? await getWiki() : null
+      return wiki
+        ? Response.json(wiki)
         : Response.json({ error: { code: 'NOT_FOUND' } }, { status: 404 })
     },
   }),
@@ -143,5 +144,29 @@ describe('/api/shares', () => {
         )
       ).status,
     ).toBe(403)
+  })
+
+  it('issues a service link only for a service page and never a public one', async () => {
+    const service = { host: 'host-a', project: 'project-x', scope: { kind: 'wiki', id: 'W0004' } }
+    expect((await create({ ...service, service: true })).status).toBe(400)
+    getWiki.mockResolvedValue({ id: 'W0004', presentation: 'service' })
+    expect((await create({ ...service, service: true, public: true })).status).toBe(400)
+    expect(
+      (
+        await create({
+          host: 'host-a',
+          project: 'project-x',
+          scope: { kind: 'project' },
+          service: true,
+        })
+      ).status,
+    ).toBe(400)
+    const created = await create({ ...service, service: true })
+    expect(created.status).toBe(201)
+    const { share } = await created.json()
+    expect(share).toMatchObject({ service: true, scope: { kind: 'wiki', id: 'W0004' } })
+    expect(share.share_url).toBe(
+      `https://memon.example.test/h/host-a/p/project-x/wiki/W0004?share=${share.token}`,
+    )
   })
 })
