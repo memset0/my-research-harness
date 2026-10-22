@@ -12,15 +12,10 @@ import {
   SHARES_COOKIE_TTL_SECONDS,
   verifySharesCookie,
 } from './auth/cookies'
+import { INVALID_SHARE_LINK_BODY, SHARE_TOKEN_PATTERN } from './share-link'
 import type { ShareRegistryRecord } from './share-registry'
 
-export const INVALID_SHARE_LINK_BODY = `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8"><title>Share link invalid or expired · memon</title></head>
-<body><h1>Share link invalid or expired</h1><p>Ask the project owner to issue a new one.</p></body>
-</html>`
-
-export const SHARE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{24}$/
+export { INVALID_SHARE_LINK_BODY, SHARE_TOKEN_PATTERN }
 
 export function invalidShareLinkResponse(): NextResponse {
   return new NextResponse(INVALID_SHARE_LINK_BODY, {

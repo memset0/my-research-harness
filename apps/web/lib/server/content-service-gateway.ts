@@ -30,7 +30,7 @@ import { clientIpFromHeaders, consume, refund } from './auth/rate-limit'
 import { writeImmediate } from './central/node-http'
 import { authorizeCentralServerRequest } from './central/server-auth'
 import { SshTunnelManager } from './central/ssh-tunnel'
-import { INVALID_SHARE_LINK_BODY, SHARE_TOKEN_PATTERN } from './share-landing'
+import { INVALID_SHARE_LINK_BODY, SHARE_TOKEN_PATTERN } from './share-link'
 import { shareRegistryFor } from './share-registry'
 import { withShareRegistry } from './share-validator'
 
