@@ -5,8 +5,9 @@
 // client to render, optionally clicks and reloads, and prints one JSON report:
 // the main document status, failed requests (HTTP >= 400 or network errors),
 // uncaught page exceptions and the values of `--eval` expressions. It exits 1
-// when a `--wait` selector never appears, a request answers 5xx, a request
-// fails at the network level or the page throws. Needs Node >= 22 (global
+// when a `--wait` selector never appears, a request answers 5xx, a same-origin
+// request fails at the network level or the page throws. Cross-origin network
+// failures (fonts or CDNs a document links) are reported but do not fail. Needs Node >= 22 (global
 // WebSocket) and a local Chrome or Chromium.
 //
 //   node scripts/verify-page.mjs http://localhost:3737/local/project-a/r/1 \
@@ -239,11 +240,22 @@ try {
   rmSync(profile, { recursive: true, force: true })
 }
 
+function sameOrigin(requestUrl) {
+  try {
+    return new URL(requestUrl).origin === new URL(url).origin
+  } catch {
+    return false
+  }
+}
+
 const failed =
   Boolean(report.error) ||
   report.waited === false ||
   report.results.some((result) => result.waited === false || result.clicked === false) ||
-  report.failedRequests.some((request) => request.status === null || request.status >= 500) ||
+  report.failedRequests.some(
+    (request) =>
+      (request.status === null && sameOrigin(request.url)) || (request.status ?? 0) >= 500,
+  ) ||
   report.exceptions.length > 0
 report.ok = !failed
 process.stdout.write(`${JSON.stringify(report, null, 2)}\n`)
