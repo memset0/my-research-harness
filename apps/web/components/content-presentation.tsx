@@ -201,7 +201,7 @@ export function ContentPresentation({
   project: ProjectTarget
   kind: 'wiki' | 'report'
   id: string
-  /** Keep the expanded HTML view in the page URL (full pages only). */
+  /** Keep the expanded HTML or live view in the page URL (full pages only). */
   expandInUrl?: boolean
 }) {
   if (content.contentError)
@@ -212,7 +212,13 @@ export function ContentPresentation({
     )
   if (content.presentation === 'service')
     return (
-      <LiveContent project={project} kind={kind} id={id} entry={content.contentEntry ?? './'} />
+      <LiveContent
+        project={project}
+        kind={kind}
+        id={id}
+        entry={content.contentEntry ?? './'}
+        expandInUrl={expandInUrl}
+      />
     )
   if (content.presentation !== 'html') return null
   const url =
@@ -229,10 +235,16 @@ export function ContentPresentation({
   )
 }
 
-function UrlExpandedEmbed({ src, title }: { src: string; title: string }) {
+function UrlExpandedEmbed({ src, title, live }: { src: string; title: string; live?: boolean }) {
   const { expanded, setExpanded } = useExpandedInUrl()
   return (
-    <ReportHtmlEmbed src={src} title={title} expanded={expanded} onExpandedChange={setExpanded} />
+    <ReportHtmlEmbed
+      src={src}
+      title={title}
+      live={live}
+      expanded={expanded}
+      onExpandedChange={setExpanded}
+    />
   )
 }
 function LiveContent({
@@ -240,11 +252,13 @@ function LiveContent({
   kind,
   id,
   entry,
+  expandInUrl,
 }: {
   project: ProjectTarget
   kind: 'wiki' | 'report'
   id: string
   entry: string
+  expandInUrl: boolean
 }) {
   // Viewers reach the service only through a service link; the health check
   // tells whether this browser holds one.
@@ -281,11 +295,13 @@ function LiveContent({
           forwards traffic and does not start the service.
         </p>
       ) : health.data ? (
-        <iframe
-          src={url}
-          title={`${id} live application`}
-          className="h-[70svh] min-h-80 w-full rounded-md border"
-        />
+        <ReportHtmlZoomProvider>
+          {expandInUrl ? (
+            <UrlExpandedEmbed src={url} title={`${id} live application`} live />
+          ) : (
+            <ReportHtmlEmbed src={url} title={`${id} live application`} live />
+          )}
+        </ReportHtmlZoomProvider>
       ) : (
         <p className="text-sm text-muted-foreground">Checking service…</p>
       )}

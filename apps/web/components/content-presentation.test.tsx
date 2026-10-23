@@ -12,12 +12,17 @@ import {
 
 const session = { owner: true }
 vi.mock('./session-provider', () => ({ useIsOwner: () => session.owner }))
-const embedProps: Array<{ expanded?: boolean; onExpandedChange?: (value: boolean) => void }> = []
+const embedProps: Array<{
+  live?: boolean
+  expanded?: boolean
+  onExpandedChange?: (value: boolean) => void
+}> = []
 vi.mock('./report-html-embed', () => ({
   ReportHtmlZoomProvider: ({ children }: { children: React.ReactNode }) => children,
   ReportHtmlEmbed: (props: {
     src: string
     title: string
+    live?: boolean
     expanded?: boolean
     onExpandedChange?: (value: boolean) => void
   }) => {
@@ -221,6 +226,29 @@ describe('content presentation', () => {
     props.onExpandedChange?.(true)
     expect(window.location.search).toBe('?tab=notes&expanded=1')
     replace.mockRestore()
+  })
+
+  it('keeps the expanded live application of a full page in the URL', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ available: true, status: 200 }) }),
+    )
+    navigation.search = 'expanded=1'
+    embedProps.length = 0
+    wrap(
+      <ContentPresentation
+        project={project}
+        kind="report"
+        id="R0010"
+        content={{ presentation: 'service' }}
+        expandInUrl
+      />,
+    )
+    await screen.findByTitle('R0010 live application')
+    const props = embedProps.at(-1)!
+    expect(props.live).toBe(true)
+    expect(props.expanded).toBe(true)
+    expect(props.onExpandedChange).toBeTypeOf('function')
   })
 
   it('leaves side and embedded views out of the URL', () => {

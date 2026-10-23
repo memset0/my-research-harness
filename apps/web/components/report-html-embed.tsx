@@ -73,6 +73,12 @@ export interface ReportHtmlEmbedProps {
    */
   height?: number | 'auto'
   /**
+   * A live application (`service` presentation) at `src`: mounted directly,
+   * with no HTML probe and no revision polling. Its availability is checked
+   * by the caller before the embed mounts.
+   */
+  live?: boolean
+  /**
    * Controlled expanded state (e.g. kept in the page URL). Omitted, the
    * embed keeps its own local state.
    */
@@ -93,6 +99,7 @@ export function ReportHtmlEmbed({
   srcDoc,
   title,
   height,
+  live = false,
   expanded,
   onExpandedChange,
 }: ReportHtmlEmbedProps) {
@@ -134,9 +141,10 @@ export function ReportHtmlEmbed({
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: a changed srcDoc must reload the inline document
   useEffect(() => {
-    if (inline) {
-      // An inline document is already in hand: mount it immediately and skip
-      // the probe/revision machinery, which exists for HTTP-served assets.
+    if (inline || (live && src)) {
+      // An inline document is already in hand, and a live application is
+      // gated by its availability check: mount either immediately and skip
+      // the probe/revision machinery, which exists for static HTTP assets.
       setError(null)
       setProbedSrc(documentId)
       setIframeAttempt(attempt)
@@ -193,7 +201,7 @@ export function ReportHtmlEmbed({
       window.clearTimeout(timeout)
       controller.abort()
     }
-  }, [src, srcDoc, inline, documentId, attempt])
+  }, [src, srcDoc, inline, live, documentId, attempt])
 
   useEffect(() => {
     const container = containerRef.current
@@ -246,7 +254,7 @@ export function ReportHtmlEmbed({
   }, [hasApproachedViewport, phase])
 
   useEffect(() => {
-    if (inline || !src || phase !== 'ready' || updateAvailable || !isEmbedVisible) return
+    if (inline || live || !src || phase !== 'ready' || updateAvailable || !isEmbedVisible) return
     let checking = false
     const controller = new AbortController()
     const checkForUpdate = async () => {
@@ -279,7 +287,7 @@ export function ReportHtmlEmbed({
       window.clearInterval(interval)
       controller.abort()
     }
-  }, [inline, isEmbedVisible, phase, src, updateAvailable])
+  }, [inline, live, isEmbedVisible, phase, src, updateAvailable])
 
   useEffect(() => {
     if (!isExpanded) return

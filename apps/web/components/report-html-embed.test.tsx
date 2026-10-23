@@ -152,6 +152,27 @@ describe('<ReportHtmlEmbed>', () => {
     expect(document.body.style.overflow).toBe('')
   })
 
+  it('mounts a live application without probing or polling it and expands it', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn().mockResolvedValue(response())
+    vi.stubGlobal('fetch', fetchMock)
+    const { container } = render(
+      <ReportHtmlEmbed src="/api/content-services/h/p/report/R0010/" title="Live app" live />,
+    )
+    const iframe = screen.getByTitle('Live app')
+    expect(iframe).toHaveAttribute('src', '/api/content-services/h/p/report/R0010/')
+    fireEvent.load(iframe)
+    act(() => {
+      vi.advanceTimersByTime(REPORT_HTML_CHANGE_POLL_MS * 2)
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    const wrapper = container.querySelector('[data-report-html-wrapper]') as HTMLElement
+    fireEvent.click(screen.getByRole('button', { name: 'Expand' }))
+    expect(wrapper).toHaveAttribute('data-expanded', 'true')
+    expect(screen.getByTitle('Live app')).toBe(iframe)
+  })
+
   it('changes iframe zoom in ten-percent steps and clamps the supported range', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response()))
     render(<ReportHtmlEmbed src="/api/report-assets/p/R0001/view.html" title="Zoomable" />)
