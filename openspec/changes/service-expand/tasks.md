@@ -6,4 +6,4 @@
 
 ## 2. Verification
 
-- [ ] 2.1 Run the touched tests, web typecheck and Biome; after deployment confirm the served bundle renders the toolbar on a live service page
+- [x] 2.1 Run the touched tests, web typecheck and Biome; after deployment confirm the served bundle renders the toolbar on a live service page
