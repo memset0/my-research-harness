@@ -25,7 +25,7 @@ Both content lists SHALL support category filtering and freshness filtering and 
 - **THEN** all matching presentations remain available in the same list
 
 ### Requirement: Dynamic content uses authenticated source forwarding
-The server SHALL forward streaming HTTP and WebSocket traffic to the manifest-declared service through the configured local, SSHFS or File Agent access mode. Browser input SHALL NOT select arbitrary hosts or ports. Central authentication credentials SHALL NOT reach upstream applications. File Agent forwarding SHALL enforce mTLS project grants, source pinning and an operator service-port allowlist. Dynamic application access SHALL require owner authentication, since application requests need not be read-only. Path escapes and invalid manifests SHALL fail before connecting. Offline services SHALL return a recoverable unavailable response without application execution.
+The server SHALL forward streaming HTTP and WebSocket traffic to the manifest-declared service through the configured local, SSHFS or File Agent access mode. Browser input SHALL NOT select arbitrary hosts or ports. Central authentication credentials SHALL NOT reach upstream applications. File Agent forwarding SHALL enforce mTLS project grants, source pinning and an operator service-port allowlist. Dynamic application access SHALL require owner authentication or a valid service share grant for exactly that Host, Project and document, since application requests need not be read-only; no other share grant SHALL admit it. Path escapes and invalid manifests SHALL fail before connecting. Offline services SHALL return a recoverable unavailable response without application execution.
 
 #### Scenario: Transport parity
 - **WHEN** an owner opens the same service via native, SSHFS and File Agent projects
@@ -39,6 +39,10 @@ The server SHALL forward streaming HTTP and WebSocket traffic to the manifest-de
 #### Scenario: Browser credentials
 - **WHEN** a request authenticated with memon cookies or Basic credentials reaches the gateway
 - **THEN** those credentials are consumed centrally and omitted from the forwarded application request
+
+#### Scenario: Service grant for another document
+- **WHEN** a viewer holding the service grant of `R0010` requests the service of `R0012`
+- **THEN** forwarding is refused
 
 ### Requirement: Authoring guidance supports agent-owned content
 Skills SHALL distinguish maintained Wiki from time-scoped Report, allow freely authored HTML, and describe only necessary metadata, relative paths and service base-prefix configuration. Agents SHALL own generation and service lifecycle. Migration preparation SHALL preserve historical references and separate invalid evidence from superseded or less precise evidence.

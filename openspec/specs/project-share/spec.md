@@ -370,8 +370,41 @@ An owner SHALL be able to mark one Report or Wiki page of a Project public throu
 - **THEN** anonymous readers of `W0004` are refused again
 
 ### Requirement: Share dialog offers page links and public pages
-The share dialog SHALL copy links in the page-URL form, SHALL offer "Make public" on Report and Wiki pages (and show when the current page already is public), and SHALL list public pages distinctly from token links.
+The share dialog SHALL copy links in the page-URL form, SHALL offer "Make public" on Report and Wiki pages (and show when the current page already is public), and SHALL list public pages distinctly from token links. Copying a listed Project-scoped token link SHALL produce the URL of the page currently open (its path and query without any existing `share` parameter, and without a fragment) with `share=<token>` appended; document-scoped token links and public pages SHALL copy their own record link.
 
 #### Scenario: Make the current Report public
 - **WHEN** the owner on `R0005` chooses "Make public"
 - **THEN** the page URL is copied and the list shows "Public · Report R0005"
+
+#### Scenario: Copy a whole-Project link from another page
+- **WHEN** a whole-Project link was issued from the Project root and the owner copies it while on `/h/<host>/p/<project>/reports/R0006?expanded=1`
+- **THEN** the copied URL is `/h/<host>/p/<project>/reports/R0006?expanded=1&share=<token>` on the public origin
+
+#### Scenario: Copy a page link from another page
+- **WHEN** the owner copies a link scoped to `W0004` while on `R0006`
+- **THEN** the copied URL is the `W0004` page URL with `share=<token>`
+
+### Requirement: Owners can share one service
+An owner SHALL be able to issue a service link through `POST /api/shares` with `service: true` and a `report` or `wiki` scope whose document has the `service` presentation; other scopes, other presentations and `public` together with `service` SHALL be rejected. A service record SHALL carry its own token, land on the document's page and be listed (marked as a service) and revoked like other records. Its token SHALL admit the document's page and reads like a page link and, in addition, every method and WebSocket of that document's service. Project, page and public grants SHALL NOT admit any service. A viewer cookie MAY hold a service token beside other tokens of the same Project; the grants of all its valid tokens SHALL combine. A service URL opened directly with `share=<token>` SHALL redeem a service link for exactly that document into the viewer cookie and redirect to the same URL without the token, so the application never receives it; any other valid-format token SHALL get the invalid-link page, and a `share` value that is not token-shaped SHALL pass through to the application.
+
+#### Scenario: Share a live dashboard
+- **WHEN** the owner on service Report `R0010` creates a service link
+- **THEN** the list shows "Service · Report R0010" and the copied URL is the `R0010` page URL with `share=<token>`
+- **AND** a recipient opening it sees the page and can use the application, including its writes
+
+#### Scenario: Project token does not reach the service
+- **WHEN** a viewer holding only a whole-Project token of the same Project requests `R0010`'s service
+- **THEN** the gateway refuses it
+
+#### Scenario: Two tokens in one browser
+- **WHEN** a viewer holds a whole-Project token and the `R0010` service token of that Project
+- **THEN** every page of the Project is readable and the `R0010` service is usable, while other services stay refused
+
+#### Scenario: Not a service
+- **WHEN** the owner requests a service link for a Markdown Report
+- **THEN** the request is rejected and no record is created
+
+#### Scenario: Service URL opened directly
+- **WHEN** a recipient opens `R0010`'s service URL with its service token in `share=`
+- **THEN** the token joins the viewer cookie, the browser is redirected to the same service URL without `share`, and the application loads
+- **AND** the same URL with a page or Project token shows the invalid-link page

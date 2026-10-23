@@ -9,4 +9,4 @@
 
 ## 3. Verification
 
-- [ ] 3.1 Run the touched tests, `lib/server/layering.test.ts`, web typecheck and Biome; after deployment open an Experiment page with legacy `report=` parameters and confirm the redirect, and confirm an Experiment's Report link opens the Report page
+- [x] 3.1 Run the touched tests, `lib/server/layering.test.ts`, web typecheck and Biome; after deployment open an Experiment page with legacy `report=` parameters and confirm the redirect, and confirm an Experiment's Report link opens the Report page

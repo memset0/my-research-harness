@@ -41,33 +41,6 @@ The skill SHALL treat Experiment Results, Variant rows, and Run READMEs as the o
 - **WHEN** the user asserts a conclusion for which no Experiment Results exist yet
 - **THEN** the page is written with `status: TENTATIVE`, the assertion marked as interpretation, and the user is told which Experiment would verify it
 
-### Requirement: Review is a human boundary and the agent commits wiki changes separately
-
-The skill SHALL never run `memon wiki review verify|unverify`, never write `.memon/wiki-review.csv`, and never call `POST|DELETE /api/wiki/review/*`. After every batch of wiki edits the skill SHALL create a separate commit with `memon wiki commit -m "<summary>"` (through `ssh <host>` in mounted mode) so that each wiki change is individually verifiable; it SHALL commit collector scripts and other non-wiki files in their own commits. The closing message SHALL name the new wiki commit SHA(s) and, for every touched page, its `review.state` afterwards.
-
-#### Scenario: Rework after verification
-- **GIVEN** `W0004` is `VERIFIED`
-- **WHEN** the user asks the agent to tighten its Limits section
-- **THEN** the skill edits the page, runs `memon wiki commit`, and the closing message states the page is now `CHANGED_SINCE_VERIFY` with the new commit SHA and asks the user to verify it
-
-#### Scenario: Skill text contains no verify command
-- **WHEN** a reader greps `SKILL.md` for `review verify` or `/api/wiki/review`
-- **THEN** there are no matches except the sentence forbidding them
-
-### Requirement: The agent trusts documents by default and consults review state on conflict
-
-The skill (and, by one shared sentence, `memon-write-experiment-doc` and `memon-drive`) SHALL treat wiki pages and Experiment documents as trustworthy by default. When two documents contradict each other, or a document contradicts fresh Experiment data, the skill SHALL run `memon wiki review ls` / `memon wiki review diff <page>` and prefer, in order: content whose lines are `VERIFIED`, then content in `CHANGED_SINCE_VERIFY` pages outside their `unverifiedRanges`, then `UNVERIFIED` content. When that ordering does not settle the conflict, the skill SHALL stop and ask the user, quoting both passages and their review states, rather than choosing.
-
-#### Scenario: Verified passage wins
-- **GIVEN** `W0001` (VERIFIED) states a 20% gain and `W0009` (UNVERIFIED) states 12% for the same Variant
-- **WHEN** the skill needs the number
-- **THEN** it uses 20%, notes the conflict, and flags `W0009` for correction
-
-#### Scenario: Both unverified
-- **GIVEN** two `UNVERIFIED` pages that contradict each other
-- **WHEN** the skill needs the number
-- **THEN** it asks the user with both passages quoted and their review states
-
 ### Requirement: The skill authors pages by kind
 
 The skill SHALL choose the kind with the user (or infer it from an unambiguous request) using `references/page-kinds.md`; create pages only through `memon wiki create` and always pass `--description` with a one-to-three-sentence plain-text summary; keep `description` accurate whenever the body changes materially (`memon wiki set --description`); edit bodies by writing the Markdown file; prefer `memon wiki set` for frontmatter-only changes; run `memon wiki lint <page>` before handoff and resolve every `error`; and when updating an existing page preserve prior claims or explicitly mark corrections. For `meeting` pages the skill SHALL record decisions and action items as separate lists and cite the Experiments discussed in `sources`. For `showcase` pages the skill SHALL state how to reproduce each shown artifact.
@@ -78,11 +51,11 @@ The skill SHALL choose the kind with the user (or infer it from an unambiguous r
 
 ### Requirement: The skill migrates Reports editorially on request
 
-When asked to migrate a Report, the skill SHALL run `memon wiki migrate-report <R-id> <kind> [<slug>]`, reorganise the body into the kind's recommended sections without dropping content, derive `sources` from the Experiments, Variants, and runs the Report cited, run `memon wiki backlinks <R-id>` and fix every listed Markdown link so it targets the new page path, run lint, and hand the page over as `UNVERIFIED`. The skill SHALL migrate one Report per invocation unless the user explicitly asks for a batch, and SHALL never migrate a Report the user did not name.
+When asked to migrate a Report, the skill SHALL run `memon wiki migrate-report <R-id> <kind> [<slug>]`, reorganise the body into the kind's recommended sections without dropping content, derive `sources` from the Experiments, Variants, and runs the Report cited, run `memon wiki backlinks <R-id>` and fix every listed Markdown link so it targets the new page path, run lint, and hand the page over with its evidence sources and remaining limitations. The skill SHALL migrate one Report per invocation unless the user explicitly asks for a batch, and SHALL never migrate a Report the user did not name.
 
 #### Scenario: Migrate one report
 - **WHEN** the user asks to move `R0007` into the wiki as a finding
-- **THEN** the skill runs `migrate-report`, restructures the page, fixes the listed links, and reports the page id and its `UNVERIFIED` state
+- **THEN** the skill runs `migrate-report`, restructures the page, fixes the listed links, and reports the page id and its evidence sources
 
 ### Requirement: Every task ends with the harness-feedback step
 
@@ -100,7 +73,7 @@ After completing the requested wiki work the skill SHALL perform a harness-feedb
 
 ### Requirement: Skill index and preflight docs name the wiki
 
-`packages/skills/README.md` SHALL list `memon-wiki` in the skill index and files-written table (write scope: wiki pages via `memon wiki` and direct Markdown edits; never Experiment bundles, Reports, review fields, the journal cursor, or legacy `docs/digests/` files, which only the reviewed v7 migration converts; a `digest`-kind Wiki page is an ordinary Wiki page) and SHALL describe the wiki forms next to the Report forms. `packages/skills/PREFLIGHT.md` SHALL add `docs/wiki/` to the protected-file lists.
+`packages/skills/README.md` SHALL list `memon-wiki` in the skill index and files-written table (write scope: wiki pages via `memon wiki` and direct Markdown edits; never Experiment bundles, Reports, the journal cursor, or legacy `docs/digests/` files, which only the reviewed v7 migration converts; a `digest`-kind Wiki page is an ordinary Wiki page) and SHALL describe the wiki forms next to the Report forms. `packages/skills/PREFLIGHT.md` SHALL add `docs/wiki/` to the protected-file lists.
 
 #### Scenario: README updated
 - **WHEN** a reader greps `packages/skills/README.md` for `memon-wiki`
@@ -108,7 +81,7 @@ After completing the requested wiki work the skill SHALL perform a harness-feedb
 
 ### Requirement: Outdated content is deprecated, not deleted
 
-When updating a page whose earlier claims no longer hold, the skill SHALL keep the earlier text and mark it: a whole page via `memon wiki deprecate … --reason … [--superseded-by …]`, a section via a `> [!DEPRECATED] since <date>: <reason>` blockquote directly under its heading. The skill SHALL NOT delete or rewrite historical claims to make a page look current, and SHALL NOT run `memon wiki delete` on a page that has ever been reviewed unless the user explicitly asks for deletion by id.
+When updating a page whose earlier claims no longer hold, the skill SHALL keep the earlier text and mark it: a whole page via `memon wiki deprecate … --reason … [--superseded-by …]`, a section via a `> [!DEPRECATED] since <date>: <reason>` blockquote directly under its heading. The skill SHALL NOT delete or rewrite historical claims to make a page look current, and SHALL NOT run `memon wiki delete` unless the user explicitly asks for deletion by id.
 
 #### Scenario: Superseded section
 - **WHEN** new Results contradict the `## Throughput` section of a `VERIFIED` page
@@ -221,3 +194,11 @@ A skill SHALL exist at `packages/skills/memon-wiki/SKILL.md` with `name: memon-w
 - **WHEN** a reader lists the harness repository
 - **THEN** `packages/skills/memon-wiki/SKILL.md` exists and `.claude/skills/memon-wiki/` does not
 - **AND** `packages/skills/memon-write-report/` still exists
+
+### Requirement: Wiki guidance matches the review-free interface
+
+Bundled Wiki guidance SHALL NOT instruct an agent or user to use retired review commands, review marks, review UI or review-state priority. Existing evidence requirements and ordinary Git commit guidance SHALL remain applicable. Conflicting claims SHALL be checked against their cited evidence and measurement scope instead of a review badge.
+
+#### Scenario: Conflicting Wiki claims
+- **WHEN** two pages report different numbers for the same research question
+- **THEN** the agent checks cited execution evidence and measurement conditions and explains unresolved uncertainty without consulting a review ledger

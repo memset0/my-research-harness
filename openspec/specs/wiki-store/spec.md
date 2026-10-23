@@ -152,53 +152,6 @@ Each `sources` entry SHALL be resolved as one of: an Experiment id `E<NNNN>` opt
 - **WHEN** the page is linted
 - **THEN** a `WIKI_CLAIM_WITHOUT_EVIDENCE` warning is produced
 
-### Requirement: Wiki review is a commit-ordered human verification of `docs/wiki/`
-
-Human trust in the wiki SHALL be recorded per git commit, not per page. A *wiki commit* is any commit in the project's git history that touches a path under `docs/wiki/` (bundle assets included). The system SHALL persist verification marks in `<projectRoot>/.memon/wiki-review.csv` with header `sha,verified_at,note` (full 40-char SHA, ISO8601 with offset, RFC 4180 quoted note), rows sorted by commit order; this file is independent of `.memon/commit-marks.csv`, which is deprecated by this change and no longer consulted for wiki trust. Verification SHALL proceed oldest to newest: a commit MAY be marked only when every older wiki commit is already marked (409 `REVIEW_ORDER` / exit 9 otherwise); removing a mark SHALL also remove every newer mark. `verifiedThrough` SHALL be the newest marked wiki commit. Marking SHALL be owner-only (`POST /api/wiki/review/<sha>`, `DELETE /api/wiki/review/<sha>`, and the CLI `memon wiki review verify|unverify`); viewer shares and `PUT /api/wiki/<id>` SHALL have no way to write marks. `GET /api/wiki/review?project=<name>` SHALL return `{ verifiedThrough, commits: [{ sha, authoredAt, subject, pages: [W-ids], verified: bool, verifiedAt?, note? }] }` in commit order. Projects whose root is not inside a git worktree SHALL report `review: null` everywhere and hide the surface.
-
-#### Scenario: Marks are sequential
-- **GIVEN** wiki commits `c1`, `c2`, `c3` with only `c1` marked
-- **WHEN** the owner marks `c3`
-- **THEN** the request is rejected with `REVIEW_ORDER` and `c2` is offered as the next commit
-
-#### Scenario: Unmarking cascades
-- **GIVEN** `c1`, `c2`, `c3` all marked
-- **WHEN** the owner unmarks `c2`
-- **THEN** `c2` and `c3` are unmarked and `verifiedThrough` is `c1`
-
-#### Scenario: Viewer cannot mark
-- **WHEN** a request carrying only a viewer share cookie posts to `/api/wiki/review/<sha>`
-- **THEN** the response is 403 and `.memon/wiki-review.csv` is unchanged
-
-#### Scenario: Not a git project
-- **GIVEN** a project root outside any git worktree
-- **WHEN** the wiki is listed
-- **THEN** every page carries `review: null` and `GET /api/wiki/review` returns 404
-
-### Requirement: Page review state is derived from verified commits and the working tree
-
-For every page the system SHALL derive `review: { state, verifiedThrough, verifiedAt, unverifiedCommits, unverifiedRanges, dirty }`: `state` SHALL be `VERIFIED` when every line of the page's Markdown file (and every asset of a bundle) was last changed in a commit at or before `verifiedThrough` and the working tree matches HEAD for those paths; `CHANGED_SINCE_VERIFY` when some but not all of it is covered; `UNVERIFIED` when no line is covered or `verifiedThrough` is absent. `unverifiedRanges` SHALL list the 1-based line ranges of the Markdown file whose last change is newer than `verifiedThrough` (uncommitted edits count as unverified and set `dirty: true`); `unverifiedCommits` SHALL list the wiki commits newer than `verifiedThrough` that touched the page. Derivation SHALL run in the runtime cache on wiki-change, review-change, and git-HEAD change and SHALL never shell out on the request path. The list projection SHALL expose `review.state` and the page projection the full object; `reviewState` used by earlier deltas of this change means this `review.state`. A `finding` with `status: VERIFIED` whose `review.state` is not `VERIFIED` SHALL produce `WIKI_UNREVIEWED_VERIFIED` (`warn`). Frontmatter SHALL NOT carry review fields; `reviewed_at`/`reviewed_hash` keys, if present, are preserved as unknown keys and ignored.
-
-#### Scenario: Fully verified page
-- **GIVEN** `W0004` last changed in `c2` and `verifiedThrough` is `c2`
-- **WHEN** the page is projected
-- **THEN** `review.state` is `VERIFIED` and `unverifiedRanges` is empty
-
-#### Scenario: Partial edit after verification
-- **GIVEN** `W0004` verified through `c2`, then `c3` rewrites lines 12-18
-- **WHEN** the page is projected
-- **THEN** `review.state` is `CHANGED_SINCE_VERIFY`, `unverifiedRanges` is `[[12,18]]`, and `unverifiedCommits` is `[c3]`
-
-#### Scenario: Uncommitted edit
-- **GIVEN** `W0004` is `VERIFIED` and an agent edits it without committing
-- **WHEN** the page is projected
-- **THEN** `review.state` is `CHANGED_SINCE_VERIFY` with `dirty: true`
-
-#### Scenario: Verified finding without review warns
-- **GIVEN** a `finding` with `status: VERIFIED` whose `review.state` is `UNVERIFIED`
-- **WHEN** the page is linted
-- **THEN** a `WIKI_UNREVIEWED_VERIFIED` warning is produced
-
 ### Requirement: Legacy Report identifiers fall back to wiki pages
 
 A page MAY carry `legacy_id: R<NNNN>`. Artifact resolution for a bare `R<NNNN>` token or a Report path SHALL target the Report while a Report with that id exists in `docs/reports/`; when no such Report exists, it SHALL target the wiki page whose `legacy_id` equals `R<NNNN>`; when neither exists the token stays plain text. Two pages sharing a `legacy_id` SHALL each produce `WIKI_LEGACY_ID_DUPLICATE` (`error`).
@@ -215,7 +168,7 @@ A page MAY carry `legacy_id: R<NNNN>`. Artifact resolution for a bare `R<NNNN>` 
 
 ### Requirement: Backlinks are derived from sources
 
-The system SHALL expose, for any Experiment id, the list of wiki pages whose `sources` reference it (by bare id, id-with-slug, or Variant form), each with `id`, `slug`, `kind`, `title`, `status`, `stale`, and `reviewState`. `GET /api/experiments/<id>` SHALL include this list as `citedBy`, ordered by `updated_at` descending.
+The system SHALL expose, for any Experiment id, the list of wiki pages whose `sources` reference it (by bare id, id-with-slug, or Variant form), each with `id`, `slug`, `kind`, `title`, `status`, `stale`. `GET /api/experiments/<id>` SHALL include this list as `citedBy`, ordered by `updated_at` descending.
 
 #### Scenario: Experiment detail lists citing pages
 - **GIVEN** `W0004` (finding) and `W0009` (bottleneck) both cite `E0017`
@@ -224,7 +177,7 @@ The system SHALL expose, for any Experiment id, the list of wiki pages whose `so
 
 ### Requirement: GET /api/wiki?project=NAME lists all pages
 
-`GET /api/wiki?project=<name>` SHALL return `{ pages: WikiSummary[] }` where `WikiSummary` includes `id`, `slug`, `kind`, `title`, `description` (nullable), `status` (nullable), `date` (nullable), `tags`, `sources`, `legacyId` (nullable), `stale`, `staleSources`, `review` (nullable; `state`, `verifiedThrough`, `unverifiedCommits`, `dirty`), `format`, `mtime`, `updatedAt`, and `diagnostics` (code + severity + message). Pages SHALL be ordered by kind in canonical order (unknown kinds last, alphabetically), then `updated_at` descending. The response SHALL NOT include page bodies and SHALL be served from the runtime cache.
+`GET /api/wiki?project=<name>` SHALL return `{ pages: WikiSummary[] }` where `WikiSummary` includes `id`, `slug`, `kind`, `title`, `description` (nullable), `status` (nullable), `date` (nullable), `tags`, `sources`, `legacyId` (nullable), `stale`, `staleSources`, `format`, `mtime`, `updatedAt`, and `diagnostics` (code + severity + message). Pages SHALL be ordered by kind in canonical order (unknown kinds last, alphabetically), then `updated_at` descending. The response SHALL NOT include page bodies and SHALL be served from the runtime cache.
 
 #### Scenario: Empty wiki
 - **WHEN** `docs/wiki/` is empty or missing
@@ -249,7 +202,7 @@ The system SHALL expose, for any Experiment id, the list of wiki pages whose `so
 
 ### Requirement: PUT /api/wiki/[id]?project=NAME writes with mtime+hash optimistic lock
 
-`PUT /api/wiki/<id>?project=<name>` with body `{ content, expectedMtime, expectedHash }` SHALL atomically replace the file via a `.tmp.<random>` sibling and rename, and return `{ ok: true, mtime, hash }`. When on-disk mtime or hash differ from the expected values it SHALL return 409 `CONFLICT` with `currentMtime`, `currentHash`, `currentContent`. The target path SHALL pass project-root containment; escapes return 403 `FORBIDDEN`. A write whose new content changes `id` or `kind` SHALL be rejected with 400 `BAD_REQUEST` (identity is changed only through `memon wiki move`), as SHALL a write that touches `reviewed_at` or `reviewed_hash`.
+`PUT /api/wiki/<id>?project=<name>` with body `{ content, expectedMtime, expectedHash }` SHALL atomically replace the file via a `.tmp.<random>` sibling and rename, and return `{ ok: true, mtime, hash }`. When on-disk mtime or hash differ from the expected values it SHALL return 409 `CONFLICT` with `currentMtime`, `currentHash`, `currentContent`. The target path SHALL pass project-root containment; escapes return 403 `FORBIDDEN`. A write whose new content changes `id` or `kind` SHALL be rejected with 400 `BAD_REQUEST` (identity is changed only through `memon wiki move`).
 
 #### Scenario: Successful write
 - **WHEN** PUT carries matching `expectedMtime` and `expectedHash`
@@ -362,7 +315,7 @@ A page MAY carry one section named `Maintenance rules for agents` (English on ev
 
 ### Requirement: Opening one page does not wait on project-wide work
 
-A single-page read (`GET /api/wiki/<id>`) and the projection returned after a page write SHALL derive git review state for the requested page only, never for every page of the wiki. The inventory of Run directories that bare Run citations and `@` Run mentions resolve against SHALL be shared by every wiki projection of a Project (list, single page, write, backlinks): concurrent projections SHALL share one directory walk, and once an inventory exists it SHALL be served immediately while a walk older than a short refresh age runs in the background. Failure of a background refresh SHALL keep the last successful inventory. Reads of cited Run metadata SHALL be issued with bounded concurrency, so a projection citing many Runs does not delay the file operations of a concurrent single-page read until all of its own reads finish. The metadata of cited Runs SHALL still be read at request time, so staleness of an already-resolved citation is always current; only whether a newly created or removed Run directory exists may lag by one refresh.
+A single-page read (`GET /api/wiki/<id>`) and the projection returned after a page write SHALL NOT read review ledgers or invoke Git to derive a review state. The inventory of Run directories that bare Run citations and `@` Run mentions resolve against SHALL be shared by every wiki projection of a Project (list, single page, write, backlinks): concurrent projections SHALL share one directory walk, and once an inventory exists it SHALL be served immediately while a walk older than a short refresh age runs in the background. Failure of a background refresh SHALL keep the last successful inventory. Reads of cited Run metadata SHALL be issued with bounded concurrency, so a projection citing many Runs does not delay the file operations of a concurrent single-page read until all of its own reads finish. The metadata of cited Runs SHALL still be read at request time, so staleness of an already-resolved citation is always current; only whether a newly created or removed Run directory exists may lag by one refresh.
 
 #### Scenario: Page and list requested together
 - **GIVEN** a Project with many Run directories and no inventory cached yet
@@ -377,7 +330,7 @@ A single-page read (`GET /api/wiki/<id>`) and the projection returned after a pa
 
 #### Scenario: Single page review
 - **WHEN** `W0004` is requested from a wiki of 30 pages
-- **THEN** git review is derived for `W0004` alone and its `review` field is the same as the list reports for it
+- **THEN** no review ledger or Git history is read and no review field is returned
 
 ### Requirement: Explicit content freshness takes precedence
 An explicit CURRENT or STALE declaration SHALL take precedence over legacy source timestamp hints and SHALL be exposed with its reason. A source update SHALL NOT silently invalidate evidence or rewrite a declared freshness state.
@@ -424,3 +377,16 @@ Creation and deletion SHALL advance an optional `wiki` high-water mark in the tr
 #### Scenario: Delete the highest numbered page
 - **WHEN** the highest Wiki ID is removed and the derived index is rebuilt
 - **THEN** the next page receives a strictly higher ID
+
+### Requirement: Wiki content is independent of human review
+
+Wiki list, page, write, lint and backlink operations SHALL ignore existing human-review ledgers and legacy review metadata. They SHALL NOT invoke Git HEAD, log, status or blame for verification and SHALL NOT emit review-derived warnings or response fields. Wiki review CLI commands and API operations SHALL no longer be exposed. Other Git history functionality SHALL remain available.
+
+#### Scenario: Existing review data is inert
+- **GIVEN** a page marked `status: VERIFIED` and an old `.memon/wiki-review.csv`
+- **WHEN** the page is read or linted
+- **THEN** its declared status remains readable without a human-review warning and the CSV is neither read nor modified
+
+#### Scenario: Review commands removed
+- **WHEN** CLI help or Wiki routes are inspected
+- **THEN** there is no Wiki review log, diff, verify or unverify operation

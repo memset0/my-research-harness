@@ -86,8 +86,6 @@ The page rail SHALL list every page of the project as one flat list ordered by `
 
 Each page entry in the desktop rail and in the mobile page Sheet SHALL render as one compact card-like link. The list SHALL use consistent inset padding and spacing between cards instead of full-width divider rows. Each card SHALL use shadcn semantic surface, border, accent, foreground, and focus-ring tokens and SHALL expose, in this hierarchy: a kind badge (the `kind` label), the page title, then — when present — its `description` as a secondary line clamped to two lines, and a muted meta line with its `W<NNNN>` id and relative last-edit time. A page whose kind defines a status vocabulary SHALL show that status as a badge; a page whose list projection reports `stale: true` SHALL show an accessible stale indicator distinguishable from the status badge and SHALL expose the offending `staleSources` as hover or accessible description text.
 
-Each card SHALL additionally show the page's derived `review.state` as a review badge next to the status and stale signals, with a distinct visual treatment per value (`VERIFIED`, `CHANGED_SINCE_VERIFY`, `UNVERIFIED`) and an accessible label that names the state; a `REVIEWED` or `CHANGED_SINCE_REVIEW` badge SHALL expose `reviewedAt` as hover or accessible description text. The three axes SHALL stay individually readable: a card can carry a status badge, a stale indicator, and a review badge at once without truncating the title beyond its normal ellipsis.
-
 The entire card SHALL be a native link to the page's detail route. Hover SHALL provide a subtle accent treatment, keyboard focus SHALL have a visible focus ring, and the selected page SHALL have a primary-border (or equivalently prominent semantic) active treatment.
 
 #### Scenario: Entries render as spaced cards with metadata
@@ -103,10 +101,9 @@ The entire card SHALL be a native link to the page's detail route. Hover SHALL p
 - **AND** the stale indicator exposes the stale source ids as accessible text
 
 #### Scenario: Review badge sits beside status and stale
-- **GIVEN** `W0004` shows `status: VERIFIED` with `stale: true` and its body changed after the last verified wiki commit
+- **GIVEN** a page has status and stale metadata plus historical review marks
 - **WHEN** its card renders
-- **THEN** the card shows a `CHANGED_SINCE_VERIFY` review badge alongside the status badge and the stale indicator
-- **AND** a page none of whose lines are covered shows an `UNVERIFIED` review badge instead
+- **THEN** the status and stale indicator remain visible and no review badge is rendered
 
 #### Scenario: Whole card navigates
 - **WHEN** the user activates any non-action area of a card with pointer, Enter, or native link activation
@@ -190,48 +187,6 @@ The formatted value SHALL expose the source ISO timestamp, or its normalized ISO
 - **WHEN** the panel renders
 - **THEN** the invalid scalar remains visible unchanged
 - **AND** the empty value renders the em-dash placeholder
-
-### Requirement: Wiki bodies begin with a generated table of contents
-
-The full-page and side-pane wiki reading surfaces SHALL generate an accessible table of contents from the page Markdown's level-two through level-six headings. On desktop the table of contents SHALL render in the sticky right outline column; on narrower viewports it SHALL appear after the frontmatter and diagnostics presentation and before the rendered Markdown body. It SHALL omit the document-level H1 title, and SHALL NOT render when the body has no eligible section headings.
-
-Each directory entry SHALL link to the matching rendered heading. Heading IDs SHALL be stable for the same content, scoped with a wiki-specific prefix so they do not collide with the left document, preserve readable Unicode heading text, and disambiguate repeated heading labels deterministically. Visual indentation SHALL reflect the source heading depth.
-
-Activating a directory entry, an in-body fragment link, or opening a page URL whose fragment names a heading SHALL scroll only the reading surface that owns that heading so the heading lands below the surface's sticky toolbar. Ancestor containers (the application content scroller, the sidebar inset, the document body) SHALL keep their scroll position, and the reading surface SHALL remain wheel-scrollable afterwards. The URL fragment SHALL reflect the activated heading without causing a second native scroll.
-
-#### Scenario: Full page exposes linked sections
-- **GIVEN** a full-page wiki body contains an H1 title, two H2 sections, and an H3 subsection
-- **WHEN** the page is rendered
-- **THEN** a table-of-contents navigation region appears before the H1 title
-- **AND** it contains links for the two H2 sections and the H3 subsection but not the H1 title
-- **AND** each link targets the matching heading ID
-
-#### Scenario: Side pane uses the same outline
-- **GIVEN** a wiki page is open in the right-side split or drawer
-- **WHEN** its Markdown body is rendered
-- **THEN** the same generated table of contents appears at the start of that body
-- **AND** its wiki-prefixed targets do not collide with headings in the left document
-
-#### Scenario: Duplicate and Unicode headings remain addressable
-- **GIVEN** a page contains repeated section labels and labels with Unicode characters
-- **WHEN** its table of contents is generated
-- **THEN** repeated labels receive distinct deterministic target IDs
-- **AND** Unicode labels remain readable in the directory and target anchors
-
-#### Scenario: Empty outline renders nothing
-- **WHEN** a page contains only its H1 title
-- **THEN** no generated table of contents is rendered for that body
-
-#### Scenario: Outline activation keeps the layout anchored
-- **GIVEN** a desktop wiki page whose last heading is below the fold
-- **WHEN** the user activates that heading's outline entry
-- **THEN** the reading surface scrolls so the heading is visible below the toolbar
-- **AND** the sidebar inset and application content scroller report a scroll offset of zero
-- **AND** scrolling the reading surface back to its top restores the original layout without a reload
-
-#### Scenario: Fragment deep link positions inside the surface
-- **WHEN** the user opens a page URL ending in a heading fragment
-- **THEN** the reading surface positions that heading below the toolbar and no ancestor container is scrolled
 
 ### Requirement: Rendered wiki body uses a distinct document surface
 
@@ -386,38 +341,6 @@ The wiki editor SHALL submit writes to the page write endpoint with `expectedMti
 - **THEN** the rejection surfaces as an actionable error naming the field
 - **AND** the editor keeps the buffer so the user can revert the field
 
-### Requirement: Wiki review History panel verifies commits in order
-
-The wiki surface SHALL expose an owner-only "History" panel listing every wiki commit from `GET /api/wiki/review` oldest first with SHA (abbreviated), authored time, subject, touched page ids (each a link), and a verified mark. A single "Verify next" action SHALL target the oldest unverified commit, show its diff (via the existing git history dialog machinery, filtered to `docs/wiki/`), and on confirmation issue `POST /api/wiki/review/<sha>`; each verified row SHALL offer "Unverify" (cascading, with a confirmation naming how many newer marks are removed). Per-commit marks SHALL never be offered out of order. The panel SHALL be hidden for viewers and for non-git projects, and the older commit-marks entry points in the git history dialog SHALL be labelled "(deprecated)" while they remain.
-
-#### Scenario: Verify next
-- **GIVEN** wiki commits `c1` (verified), `c2`, `c3`
-- **WHEN** the owner activates "Verify next" and confirms
-- **THEN** `c2` is marked, the row shows the mark, and "Verify next" now targets `c3`
-
-#### Scenario: Viewer sees no panel
-- **GIVEN** a viewer share session
-- **WHEN** the wiki surface renders
-- **THEN** no History panel or review actions are rendered
-
-### Requirement: Rendered pages distinguish unverified content
-
-The reading pane SHALL render a review badge (`VERIFIED` / `CHANGED_SINCE_VERIFY` / `UNVERIFIED`) in the frontmatter panel with `verifiedThrough` and a "changes since verification" link that opens the page diff from `verifiedThrough` to the working tree. For `CHANGED_SINCE_VERIFY` pages the body blocks intersecting `unverifiedRanges` SHALL be rendered with a distinct left border and tinted background and a hover title naming the commit(s) (or "uncommitted") that introduced them; `UNVERIFIED` pages SHALL keep their review badge and explanatory hover title but SHALL NOT wrap the whole body in a tinted background, left border, rounded quote box, or quote-like padding; `VERIFIED` pages SHALL render without tint. The tint SHALL use theme tokens (never hard-coded colours) and SHALL be present in both light and dark themes.
-
-#### Scenario: Partially verified page
-- **GIVEN** `W0004` with `unverifiedRanges: [[12,18]]`
-- **WHEN** the page renders
-- **THEN** only the block(s) covering lines 12-18 carry the unverified tint and hover title
-
-#### Scenario: Verified page is clean
-- **GIVEN** `W0001` is `VERIFIED`
-- **WHEN** the page renders
-- **THEN** no block carries the tint and the badge reads `VERIFIED`
-
-#### Scenario: Unverified page remains plain prose
-- **WHEN** an entirely unverified page renders
-- **THEN** its body has no whole-page quote decoration and its UNVERIFIED review badge remains visible
-
 ### Requirement: Empty wiki state points at the skill and CLI
 
 When the project has no wiki pages, the reading pane SHALL render an empty state whose copy names the `memon-wiki` skill and the `memon wiki create` command as the ways to add the first page, and the rail SHALL show a small "no pages" placeholder. Inline code in that copy SHALL render with the shared chip treatment: no literal backtick characters, muted background fill, rounded corners, and a font size and weight not exceeding the surrounding body text.
@@ -457,25 +380,6 @@ The wiki surface SHALL react to page additions, deletions, and content edits per
 - **THEN** the wiki list is refetched and a bare `R0007` token now resolves to that wiki page
 - **AND** no full-page reload is required
 
-### Requirement: Experiment detail lists the wiki pages that cite it
-
-The Experiment detail page SHALL render a "Cited by wiki" list under its action bar, populated from the Experiment detail response's `citedBy` entries, each showing the page's `W<NNNN>` id, title, kind, status badge when its kind defines one, stale indicator when stale, and the entry's `reviewState` as a review badge using the same treatment as the rail cards. Activating an entry SHALL open that page in the side wiki surface without navigating away from the Experiment. When `citedBy` is empty the section SHALL be omitted rather than rendering an empty container.
-
-#### Scenario: Citing pages are listed
-- **GIVEN** `W0004` (finding, VERIFIED) and `W0009` (bottleneck, OPEN) both cite `E0017`
-- **WHEN** the Experiment detail page for `E0017` renders
-- **THEN** a "Cited by wiki" list shows both entries with their ids, titles, kinds, status badges, and review badges
-
-#### Scenario: Entry opens the page beside the Experiment
-- **GIVEN** the "Cited by wiki" list shows `W0004`
-- **WHEN** the user activates that entry
-- **THEN** `W0004` opens in the side wiki surface
-- **AND** the Experiment remains on the left with its existing state
-
-#### Scenario: No citations hides the section
-- **WHEN** an Experiment's `citedBy` list is empty
-- **THEN** no "Cited by wiki" section is rendered on its detail page
-
 ### Requirement: Wiki reading body declares its language
 
 The wiki reading body SHALL carry a `lang` attribute matching the page's effective language: `en` for English pages and `zh-CN` for `language: zh` pages.
@@ -509,3 +413,65 @@ filters, the available options and the filtering result SHALL be unchanged.
 - **WHEN** the Wiki rail renders at desktop width
 - **THEN** the category, freshness and presentation selects appear side by side
   in one row, each with its own icon, above the unchanged kind and text filters
+
+### Requirement: Wiki presentation has no verification controls
+
+Wiki cards, reading surfaces and Experiment backlinks SHALL omit review badges, verification actions, review-history panels, verification diff links and line-range review decorations. Existing Markdown, callouts, HTML assets, checklists and optimistic document editing SHALL continue to work.
+
+#### Scenario: Page renders without review UI
+- **WHEN** an owner or viewer opens a Wiki page
+- **THEN** the content renders without any verification controls or review decoration
+
+### Requirement: Wiki pages begin with a generated table of contents
+
+The wiki reading surface SHALL generate an accessible table of contents from the page Markdown's level-two through level-six headings. On desktop the table of contents SHALL render in the sticky right outline column; on narrower viewports it SHALL appear after the frontmatter and diagnostics presentation and before the rendered Markdown body. It SHALL omit the document-level H1 title, and SHALL NOT render when the body has no eligible section headings.
+
+Each directory entry SHALL link to the matching rendered heading. Heading IDs SHALL be stable for the same content, scoped with a wiki-specific prefix so they do not collide with other headings on the page, preserve readable Unicode heading text, and disambiguate repeated heading labels deterministically. Visual indentation SHALL reflect the source heading depth.
+
+Activating a directory entry, an in-body fragment link, or opening a page URL whose fragment names a heading SHALL scroll only the reading surface that owns that heading so the heading lands below the surface's sticky toolbar. Ancestor containers (the application content scroller, the sidebar inset, the document body) SHALL keep their scroll position, and the reading surface SHALL remain wheel-scrollable afterwards. The URL fragment SHALL reflect the activated heading without causing a second native scroll.
+
+#### Scenario: Full page exposes linked sections
+- **GIVEN** a full-page wiki body contains an H1 title, two H2 sections, and an H3 subsection
+- **WHEN** the page is rendered
+- **THEN** a table-of-contents navigation region appears before the H1 title
+- **AND** it contains links for the two H2 sections and the H3 subsection but not the H1 title
+- **AND** each link targets the matching heading ID
+
+#### Scenario: Duplicate and Unicode headings remain addressable
+- **GIVEN** a page contains repeated section labels and labels with Unicode characters
+- **WHEN** its table of contents is generated
+- **THEN** repeated labels receive distinct deterministic target IDs
+- **AND** Unicode labels remain readable in the directory and target anchors
+
+#### Scenario: Empty outline renders nothing
+- **WHEN** a page contains only its H1 title
+- **THEN** no generated table of contents is rendered for that body
+
+#### Scenario: Outline activation keeps the layout anchored
+- **GIVEN** a desktop wiki page whose last heading is below the fold
+- **WHEN** the user activates that heading's outline entry
+- **THEN** the reading surface scrolls so the heading is visible below the toolbar
+- **AND** the sidebar inset and application content scroller report a scroll offset of zero
+- **AND** scrolling the reading surface back to its top restores the original layout without a reload
+
+#### Scenario: Fragment deep link positions inside the surface
+- **WHEN** the user opens a page URL ending in a heading fragment
+- **THEN** the reading surface positions that heading below the toolbar and no ancestor container is scrolled
+
+### Requirement: Experiment detail links the wiki pages that cite it
+
+The Experiment detail page SHALL render a "Cited by wiki" list under its action bar, populated from the Experiment detail response's `citedBy` entries, each showing the page's `W<NNNN>` id, title, kind, status badge when its kind defines one, stale indicator when stale. Each entry SHALL be a link to that page's full wiki route. When `citedBy` is empty the section SHALL be omitted rather than rendering an empty container.
+
+#### Scenario: Citing pages are listed
+- **GIVEN** `W0004` (finding, VERIFIED) and `W0009` (bottleneck, OPEN) both cite `E0017`
+- **WHEN** the Experiment detail page for `E0017` renders
+- **THEN** a "Cited by wiki" list shows both entries with their ids, titles, kinds, status badges, and stale indicators
+
+#### Scenario: Entry opens the wiki page
+- **GIVEN** the "Cited by wiki" list shows `W0004`
+- **WHEN** the user activates that entry
+- **THEN** the browser navigates to the full page of `W0004`
+
+#### Scenario: No citations hides the section
+- **WHEN** an Experiment's `citedBy` list is empty
+- **THEN** no "Cited by wiki" section is rendered on its detail page
