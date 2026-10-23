@@ -13,8 +13,8 @@ mock-runtime/
 memon-ui-preferences.sqlite3*
 .memon-cache/
 
-# Machine-local deployment notes (hostnames, paths, project names, secret
-# locations). See CLAUDE.md "Local deployment info lives in LOCAL.md".
+# Machine-local deployment and development notes (hostnames, paths, project
+# names, secret locations, dev setup). Never committed; see AGENTS.md §1.1.
 LOCAL.md
 
 # sshfs mount points for the real memon-deployed projects (+ mount helper).

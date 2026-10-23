@@ -46,7 +46,7 @@ repository-specific requirements at the end of this file supplement it.
   `fast-glob` → `fs`). Use `import type { … }` only.
 - **Never fork shadcn primitives** in `apps/web/components/ui/` (F3).
 
-### 1.1 Local deployment facts live in `LOCAL.md` (gitignored)
+### 1.1 Local deployment and development facts live in `LOCAL.md` (gitignored)
 
 This is public code for a generic tool. Nothing about the operator's real
 research projects or deployment may enter Git — no real project names,
@@ -56,17 +56,24 @@ in commits, commit messages, PR text, OpenSpec artifacts, fixtures, mock data
 or comments. Tracked examples use the neutral placeholders already in the repo
 (`project-a`, `project-b`, `./mock/`, `localhost:3737`).
 
-1. Read `LOCAL.md` at the start of any session touching deployment, release,
-   CLI nodes, Caddy, systemd or the central instance; it is the only record of
-   real hosts, ports, paths and config locations.
-2. Write newly learned deployment facts to `LOCAL.md` (never AGENTS.md, README
-   or OpenSpec) in the same turn, and bump its `Last verified:` line.
+`LOCAL.md` at the repository root is this machine's own notebook. It is never
+committed (`.gitignore` lists it) and records how this machine deploys and
+develops memon: real hosts, ports, paths, config locations, the dev server
+setup, shell and permission quirks, verification commands and incident notes.
+
+1. Read `LOCAL.md` at the start of every session that develops, tests,
+   releases or deploys memon; it is the only record of real hosts, ports, paths,
+   config locations and the local development setup.
+2. Write newly learned deployment or development facts to `LOCAL.md` (never
+   AGENTS.md, README or OpenSpec) in the same turn, and bump its `Last verified:`
+   line.
 3. `LOCAL.md` holds pointers to secrets, not secrets (those stay in
    `config.yml` / `~/.config/memon/*.yml`).
 4. Before committing, move anything that belongs in `LOCAL.md` out of the diff;
    `git diff --cached | grep -iE '<real host/project name>'` is the last check.
 5. On a fresh clone `LOCAL.md` is missing by design; recreate it with sections
-   Operator / central node / CLI nodes / dev server / where secrets live.
+   Operator / central node / CLI nodes / dev server and environment / where
+   secrets live.
 
 ## 2. Repository map
 
@@ -264,6 +271,10 @@ for css in $(printf '%s' "$PAGE" | grep -oE '<link rel="stylesheet" href="[^"]+"
   curl -sS "http://localhost:3737$css" | grep -oE -- '--(background|foreground|card|muted|primary):[^;}]+'
 done   # every token must print an oklch(...) value
 # 5. mobile-sensitive changes: also grep the markup for the responsive classes used
+# 6. rendered check in headless Chrome: waits for client rendering, reports failed
+#    requests and page exceptions, exits 1 on a missing selector, 5xx or exception
+node scripts/verify-page.mjs http://localhost:3737/local/project-a --auth-file <user:password file> \
+  --wait '<selector the change renders>' --eval '<expression>' [--click 'text=<label>'] [--screenshot <png>]
 ```
 
 ## 5. Web app conventions (`apps/web`)
