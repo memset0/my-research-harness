@@ -46,7 +46,7 @@
 ## 4. Tests, docs and verification
 
 - [x] 4.1 Update the remaining test files and AGENTS.md runbook examples that hard-code `/h/…/p/…` or `/p/…` page paths. Verify by running the touched web, core and CLI test files, `pnpm typecheck` and Biome on the changed files.
-- [ ] 4.2 Before deployment, check the live project catalogs for duplicate Experiment numbers and report any. After deployment, verify:
+- [x] 4.2 Before deployment, check the live project catalogs for duplicate Experiment numbers and report any. After deployment, verify:
   - an old `/h/…` URL for every page kind 308s to its canonical page;
   - canonical pages render, checked with headless Chrome by clicking an Experiment's Report link;
   - an old `?share=` link and `/s/<token>` still admit an anonymous viewer;
