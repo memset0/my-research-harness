@@ -22,11 +22,13 @@ import {
   type ProjectTarget,
   projectHost,
   projectName,
-  projectWebPath,
+  projectRouteTarget,
   putReport,
   type ReportListItem,
 } from '../lib/api'
+import { canonicalReportHref } from '../lib/artifact-navigation'
 import { splitFrontmatter } from '../lib/frontmatter'
+import { projectPagePath } from '../lib/project-routes'
 import { queryKeys } from '../lib/query-keys'
 import { useUserPreferenceState } from '../lib/use-user-preference-state'
 import { cn } from '../lib/utils'
@@ -297,6 +299,13 @@ function ReportRailToggleButton({
   )
 }
 
+/** A Report's page; an id outside the `R<NNNN>` scheme opens the Report list. */
+function reportItemHref(project: ProjectTarget, id: string): string {
+  return /^R\d{4}$/.test(id)
+    ? canonicalReportHref(project, id)
+    : projectPagePath(projectRouteTarget(project), { kind: 'reports' })
+}
+
 function RailList({
   kind,
   project,
@@ -316,7 +325,6 @@ function RailList({
   onRetry?: () => void
   onSelect?: () => void
 }) {
-  const base = projectWebPath(project, `/${kind}`)
   if (loading && items.length === 0) {
     return (
       <div className="p-3">
@@ -357,7 +365,7 @@ function RailList({
         return (
           <li key={`${it.id}:${it.path ?? ''}`}>
             <Link
-              href={`${base}/${encodeURIComponent(it.id)}`}
+              href={reportItemHref(project, it.id)}
               onClick={onSelect}
               aria-current={active ? 'page' : undefined}
               data-report-card={kind === 'reports' ? '' : undefined}

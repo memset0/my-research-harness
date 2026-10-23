@@ -9,29 +9,24 @@ import type { ScopedShareRow } from '@/lib/dto/shares'
 import { publicOrigin } from './auth/public-url'
 import { directCentralRuntime } from './central/direct-runtime'
 import { getRuntime, type Runtime } from './runtime'
-import { type ShareRegistryRecord, shareRegistryFor } from './share-registry'
+import { canonicalLandingPath, type ShareRegistryRecord, shareRegistryFor } from './share-registry'
 import { standaloneServices } from './standalone-services'
 
 export async function shareRegistry(runtime?: Runtime) {
   return shareRegistryFor((runtime ?? (await getRuntime())).configPath)
 }
 
-/**
- * The configured Project for `{host, project}`: in central mode the Host must
- * be the Project's configured Host; outside central mode no Host is allowed.
- */
+/** The configured Project for `{host, project}`: the Host must be the Project's configured Host. */
 export function configuredShareProject(
   runtime: Runtime,
   host: string | null | undefined,
   project: string,
-): { host: string | null; project: string } | null {
-  const entry = runtime.config.projects.find((candidate) => candidate.name === project)
-  if (!entry) return null
-  if (runtime.config.central) {
-    if (!host || entry.host !== host) return null
-    return { host, project }
-  }
-  return host ? null : { host: null, project }
+): { host: string; project: string } | null {
+  if (!host) return null
+  const entry = runtime.config.projects.find(
+    (candidate) => candidate.name === project && candidate.host === host,
+  )
+  return entry ? { host, project } : null
 }
 
 /**
@@ -111,15 +106,22 @@ export async function runResource(
 }
 
 /**
- * The link to copy: the landing page's own URL, plus `share=<token>` for a
- * token link (a public page needs none).
+ * The link to copy: the landing page's canonical URL, plus `share=<token>`
+ * for a token link (a public page needs none). Null for a record that names
+ * no Host.
  */
-export function shareUrl(origin: string, record: ShareRegistryRecord): string {
-  const page = `${origin}${record.path}`
+export function shareUrl(origin: string, record: ShareRegistryRecord): string | null {
+  const path = canonicalLandingPath(record)
+  if (path === null) return null
+  const page = `${origin}${path}`
   if (record.public) return page
-  return `${page}${record.path.includes('?') ? '&' : '?'}share=${encodeURIComponent(record.token)}`
+  return `${page}${path.includes('?') ? '&' : '?'}share=${encodeURIComponent(record.token)}`
 }
 
 export function shareRow(req: NextRequest, record: ShareRegistryRecord): ScopedShareRow {
-  return { ...record, share_url: shareUrl(publicOrigin(req), record) }
+  return {
+    ...record,
+    path: canonicalLandingPath(record) ?? record.path,
+    share_url: shareUrl(publicOrigin(req), record) ?? '',
+  }
 }

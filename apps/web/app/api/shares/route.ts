@@ -2,7 +2,7 @@
 //
 // GET  [?host=NAME&project=NAME]  every issued link (optionally one Project),
 //                                 with token, scope, landing path and share_url.
-// POST { host?, project, scope, label?, expires?, currentPath?, public?, service? }
+// POST { host, project, scope, label?, expires?, currentPath?, public?, service? }
 //      service: true issues a service link for a service Report/Wiki page
 //      (its token also reaches that page's live service); never with public.
 //      public: true makes a Report/Wiki page public (idempotent) instead of

@@ -7,13 +7,13 @@ import {
   resolveBareArtifactReference,
 } from './artifact-links'
 
-const ROOT = '/srv/vsqa'
+const ROOT = '/srv/project-a'
 const INVENTORY: ArtifactInventory = {
-  project: 'vsqa',
+  project: 'project-a',
   experiments: [
     {
-      id: 'E0017-vsqa-fvfa4-inference',
-      path: `${ROOT}/docs/experiments/E0017-vsqa-fvfa4-inference/README.md`,
+      id: 'E0017-inference-kernels',
+      path: `${ROOT}/docs/experiments/E0017-inference-kernels/README.md`,
     },
     {
       id: 'E0018-legacy',
@@ -44,11 +44,11 @@ describe('resolveBareArtifactReference', () => {
     })
     expect(resolveBareArtifactReference('E0017', INVENTORY)).toEqual({
       kind: 'experiment',
-      id: 'E0017-vsqa-fvfa4-inference',
+      id: 'E0017-inference-kernels',
     })
-    expect(resolveBareArtifactReference('E0017-vsqa-fvfa4-inference', INVENTORY)).toEqual({
+    expect(resolveBareArtifactReference('E0017-inference-kernels', INVENTORY)).toEqual({
       kind: 'experiment',
-      id: 'E0017-vsqa-fvfa4-inference',
+      id: 'E0017-inference-kernels',
     })
   })
 
@@ -144,11 +144,11 @@ describe('resolveArtifactMarkdownHref', () => {
   it('resolves bundled and legacy Experiments from standalone and bundled Reports', () => {
     expect(
       resolveArtifactMarkdownHref(
-        '../experiments/E0017-vsqa-fvfa4-inference/README.md',
+        '../experiments/E0017-inference-kernels/README.md',
         standaloneReportSource,
         INVENTORY,
       ),
-    ).toMatchObject({ kind: 'experiment', id: 'E0017-vsqa-fvfa4-inference' })
+    ).toMatchObject({ kind: 'experiment', id: 'E0017-inference-kernels' })
     expect(
       resolveArtifactMarkdownHref(
         '../../experiments/E0018-legacy.md',
@@ -158,7 +158,7 @@ describe('resolveArtifactMarkdownHref', () => {
     ).toMatchObject({ kind: 'experiment', id: 'E0018-legacy' })
   })
 
-  it('resolves both wiki page forms and the canonical wiki route', () => {
+  it('resolves both wiki page forms and the hostless wiki route', () => {
     expect(
       resolveArtifactMarkdownHref(
         '../../wiki/finding/W0001-zero-snr.md',
@@ -174,18 +174,18 @@ describe('resolveArtifactMarkdownHref', () => {
       ),
     ).toMatchObject({ kind: 'wiki', id: 'W0006' })
     expect(
-      resolveArtifactMarkdownHref('/p/vsqa/wiki/W0006', experimentSource, INVENTORY),
+      resolveArtifactMarkdownHref('/p/project-a/wiki/W0006', experimentSource, INVENTORY),
     ).toMatchObject({ kind: 'wiki', id: 'W0006' })
   })
 
   it('resolves portable Backend resources without requiring absolute cluster paths', () => {
     const portable: ArtifactInventory = {
-      project: 'vsqa',
+      project: 'project-a',
       host: 'host-a',
       experiments: [
         {
-          id: 'E0017-vsqa-fvfa4-inference',
-          path: 'docs/experiments/E0017-vsqa-fvfa4-inference/README.md',
+          id: 'E0017-inference-kernels',
+          path: 'docs/experiments/E0017-inference-kernels/README.md',
         },
       ],
       reports: [{ id: 'R0003', path: 'docs/reports/R0003-summary.md' }],
@@ -219,44 +219,83 @@ describe('resolveArtifactMarkdownHref', () => {
     ).toMatchObject({ kind: 'report', id: 'R0008', fragment: '#findings' })
   })
 
-  it('recognizes canonical current-project web routes', () => {
+  it('recognizes hostless current-project web routes', () => {
     expect(
-      resolveArtifactMarkdownHref('/p/vsqa/reports/R0007?view=full', experimentSource, INVENTORY),
+      resolveArtifactMarkdownHref(
+        '/p/project-a/reports/R0007?view=full',
+        experimentSource,
+        INVENTORY,
+      ),
     ).toMatchObject({ kind: 'report', id: 'R0007' })
     expect(
       resolveArtifactMarkdownHref(
-        '/p/vsqa/e/E0017-vsqa-fvfa4-inference#results',
+        '/p/project-a/e/E0017-inference-kernels#results',
         bundledReportSource,
         INVENTORY,
       ),
     ).toMatchObject({
       kind: 'experiment',
-      id: 'E0017-vsqa-fvfa4-inference',
+      id: 'E0017-inference-kernels',
       fragment: '#results',
     })
   })
 
-  it('requires the exact Host on central canonical routes', () => {
+  it('resolves canonical, legacy Host-qualified, and hostless routes on a central Project', () => {
     const central: ArtifactInventory = { ...INVENTORY, host: 'host-a' }
     expect(
-      resolveArtifactMarkdownHref('/h/host-a/p/vsqa/reports/R0007', experimentSource, central),
+      resolveArtifactMarkdownHref('/host-a/project-a/r/7?view=full', experimentSource, central),
     ).toMatchObject({ kind: 'report', id: 'R0007' })
+    expect(
+      resolveArtifactMarkdownHref('/host-a/project-a/e/17#results', bundledReportSource, central),
+    ).toMatchObject({ kind: 'experiment', id: 'E0017-inference-kernels', fragment: '#results' })
+    expect(
+      resolveArtifactMarkdownHref('/host-a/project-a/w/6', experimentSource, central),
+    ).toMatchObject({ kind: 'wiki', id: 'W0006' })
+    expect(
+      resolveArtifactMarkdownHref('/h/host-a/p/project-a/reports/R0007', experimentSource, central),
+    ).toMatchObject({ kind: 'report', id: 'R0007' })
+    expect(
+      resolveArtifactMarkdownHref(
+        '/h/host-a/p/project-a/e/E0017-inference-kernels',
+        experimentSource,
+        central,
+      ),
+    ).toMatchObject({ kind: 'experiment', id: 'E0017-inference-kernels' })
+    expect(
+      resolveArtifactMarkdownHref('/h/host-a/p/project-a/wiki/W0001', experimentSource, central),
+    ).toMatchObject({ kind: 'wiki', id: 'W0001' })
+    // A hostless link resolves within the document's own Host.
+    expect(
+      resolveArtifactMarkdownHref('/p/project-a/reports/R0007', experimentSource, central),
+    ).toMatchObject({ kind: 'report', id: 'R0007' })
+  })
+
+  it('requires the exact Host and Project on canonical and legacy Host-qualified routes', () => {
+    const central: ArtifactInventory = { ...INVENTORY, host: 'host-a' }
     for (const href of [
-      '/h/host-b/p/vsqa/reports/R0007',
-      '/h/host-a/p/other/reports/R0007',
-      '/p/vsqa/reports/R0007',
+      '/host-b/project-a/r/7',
+      '/host-a/project-b/r/7',
+      '/host-a/project-a/r/99',
+      '/host-a/project-a/reports',
+      '/h/host-b/p/project-a/reports/R0007',
+      '/h/host-a/p/project-b/reports/R0007',
+      '/p/project-b/reports/R0007',
     ]) {
       expect(resolveArtifactMarkdownHref(href, experimentSource, central), href).toBeNull()
+    }
+    // Without a known Host, no Host-qualified route can name this Project.
+    for (const href of ['/host-a/project-a/r/7', '/h/host-a/p/project-a/reports/R0007']) {
+      expect(resolveArtifactMarkdownHref(href, experimentSource, INVENTORY), href).toBeNull()
     }
   })
 
   it('rejects external, cross-project, malformed, and unresolved paths', () => {
     const hrefs = [
       'https://example.com/R0007.md',
-      'file:///srv/vsqa/docs/reports/R0003-summary.md',
+      'file:///srv/project-a/docs/reports/R0003-summary.md',
       '//example.com/R0007.md',
-      '/p/other/reports/R0007',
-      '/srv/other/docs/reports/R0003-summary.md',
+      '/p/project-b/reports/R0007',
+      '/srv/project-b/docs/reports/R0003-summary.md',
       '../../reports/notes.md',
       '../../reports/%ZZ.md',
       '../../reports/%2Fetc.md',
@@ -282,7 +321,7 @@ describe('resolveArtifactMarkdownHref', () => {
       ),
     ).toBeNull()
     expect(
-      resolveArtifactMarkdownHref('/p/vsqa/reports/R0007', experimentSource, ambiguous),
+      resolveArtifactMarkdownHref('/p/project-a/reports/R0007', experimentSource, ambiguous),
     ).toBeNull()
   })
 })

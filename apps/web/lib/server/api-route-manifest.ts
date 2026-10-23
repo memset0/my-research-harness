@@ -135,20 +135,6 @@ export const API_ROUTE_MANIFEST = {
     'git',
   ),
   'projects/[project]/git-status/route.ts': backend(['GET'], 'project-path', 'read', 'none', 'git'),
-  'projects/[project]/shares/[id]/route.ts': composed(
-    ['DELETE'],
-    'project-path',
-    'mutating',
-    'none',
-    'shares',
-  ),
-  'projects/[project]/shares/route.ts': composed(
-    ['GET', 'POST'],
-    'project-path',
-    'mutating',
-    'none',
-    'shares',
-  ),
   'projects/[project]/submodules/route.ts': backend(['GET'], 'project-path', 'read', 'none', 'git'),
   'projects/route.ts': composed(['GET'], 'global', 'read'),
   'readme/route.ts': backend(['GET', 'PUT'], 'resource', 'mixed'),
@@ -202,39 +188,14 @@ export interface DirectRuntimeSurface {
  */
 export const DIRECT_RUNTIME_SURFACES = {
   'app/login/page.tsx': { owner: 'central', scope: 'global', purpose: 'auth' },
-  'app/h/[host]/p/[project]/layout.tsx': {
+  'app/[host]/[project]/layout.tsx': {
     owner: 'composed',
     scope: 'project-path',
-    purpose: 'project-data',
-  },
-  'app/p/[project]/e/[id]/page.tsx': {
-    owner: 'composed',
-    scope: 'resource',
-    purpose: 'project-data',
-  },
-  'app/p/[project]/layout.tsx': {
-    owner: 'composed',
-    scope: 'project-path',
-    purpose: 'project-data',
-  },
-  'app/p/[project]/r/[id]/page.tsx': {
-    owner: 'composed',
-    scope: 'resource',
     purpose: 'project-data',
   },
   'app/page.tsx': { owner: 'composed', scope: 'global', purpose: 'project-data' },
   'lib/server/share-api.ts': { owner: 'central', scope: 'global', purpose: 'auth' },
   'app/s/[token]/route.ts': { owner: 'central', scope: 'global', purpose: 'share-landing' },
-  'app/share/[host]/[project]/route.ts': {
-    owner: 'composed',
-    scope: 'project-path',
-    purpose: 'share-landing',
-  },
-  'app/share/[host]/[project]/[token]/route.ts': {
-    owner: 'central',
-    scope: 'project-path',
-    purpose: 'share-landing',
-  },
   'components/runtime-config-bootstrap.tsx': {
     owner: 'composed',
     scope: 'global',
@@ -244,6 +205,11 @@ export const DIRECT_RUNTIME_SURFACES = {
     owner: 'central',
     scope: 'global',
     purpose: 'server-entry',
+  },
+  'lib/server/experiment-number.ts': {
+    owner: 'composed',
+    scope: 'resource',
+    purpose: 'project-data',
   },
   'lib/server/data.ts': {
     owner: 'composed',

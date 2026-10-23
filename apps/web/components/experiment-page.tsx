@@ -1,6 +1,6 @@
 'use client'
 
-// v3 experiment-doc detail page (`/p/<project>/e/<E-id>`). Renders the
+// v3 experiment-doc detail page (`/<host>/<project>/e/<n>`). Renders the
 // exp doc's body sections plus a Runs section listing the roster declared by
 // the document's own `runs` frontmatter. Nothing about a Run is read until
 // its panel is opened; `?run=<dir>` opens that one panel on arrival.

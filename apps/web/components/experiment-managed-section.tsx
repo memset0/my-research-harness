@@ -31,7 +31,8 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { createContext, type ReactNode, useContext } from 'react'
-import { type ProjectTarget, projectWebPath } from '../lib/api'
+import type { ProjectTarget } from '../lib/api'
+import { canonicalCodeReviewHref } from '../lib/artifact-navigation'
 import type { ComponentDocumentRef } from '../lib/components/types'
 import { cn } from '../lib/utils'
 import { TranslatedLiteral } from './body-translation'
@@ -615,8 +616,7 @@ function codeReviewHref(project: ProjectTarget, experimentId: string, review: st
   const normalized = withoutExtension.startsWith('code-review/')
     ? `experiments/${experimentId}/${withoutExtension}`
     : withoutExtension
-  const encoded = normalized.split('/').map(encodeURIComponent).join('/')
-  return projectWebPath(project, `/code-review/${encoded}`)
+  return canonicalCodeReviewHref(project, normalized)
 }
 
 function withOccurrenceKeys(values: string[]): Array<{ key: string; value: string }> {

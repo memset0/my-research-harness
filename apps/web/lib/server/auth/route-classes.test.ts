@@ -82,9 +82,24 @@ describe('classify (pure class only)', () => {
 
   it('classifies page routes as read', () => {
     expect(classify('GET', '/')).toBe('read')
-    expect(classify('GET', '/p/project-a')).toBe('read')
-    expect(classify('GET', '/p/project-a/e/exp-id')).toBe('read')
-    expect(classify('GET', '/h/host-a/p/project-a/e/exp-id')).toBe('read')
+    for (const path of [
+      '/host-a/project-a',
+      '/host-a/project-a/experiments',
+      '/host-a/project-a/e/10',
+      '/host-a/project-a/e/5/cr/2026-05-22-guard',
+      '/host-a/project-a/w/4',
+      '/host-a/project-a/r/7',
+      '/host-a/project-a/cr/2026-05-24-fsdp',
+      '/host-a/project-a/journal',
+    ])
+      expect(classify('GET', path), path).toBe('read')
+  })
+
+  it('never classifies retired or reserved page prefixes as project reads', () => {
+    // `/h/…` and `/p/…` are redirected or answered 404 before classification.
+    expect(classify('GET', '/p/project-a')).toBe('mutating')
+    expect(classify('GET', '/h/host-a/p/project-a/e/E0001-demo')).toBe('mutating')
+    expect(classify('GET', '/manage/file-access')).not.toBe('read')
   })
 
   it('classifies /login as anon (NOT read — anon is reachable without identity)', () => {
@@ -113,15 +128,16 @@ describe('classify (pure class only)', () => {
 })
 
 describe('classifyAndExtract — project extraction', () => {
-  it('extracts project from /p/<project>/...', () => {
-    const r = classifyAndExtract('GET', '/p/project-a/journal', emptySearch(), stubCtx())
+  it('extracts project from a canonical /<host>/<project>/... page', () => {
+    const r = classifyAndExtract('GET', '/host-a/project-a/journal', emptySearch(), stubCtx())
     expect(r).toEqual({ class: 'read', project: 'project-a' })
   })
 
-  it('extracts project from a Host-qualified central page and share landing', () => {
-    expect(
-      classifyAndExtract('GET', '/h/host-a/p/project-a/e/E0001-demo', emptySearch(), stubCtx()),
-    ).toEqual({ class: 'read', project: 'project-a' })
+  it('extracts project from a canonical page and share landing', () => {
+    expect(classifyAndExtract('GET', '/host-a/project-a/e/1', emptySearch(), stubCtx())).toEqual({
+      class: 'read',
+      project: 'project-a',
+    })
     expect(
       classifyAndExtract('GET', '/share/host-a/project-a/token-a', emptySearch(), stubCtx()),
     ).toEqual({ class: 'anon', project: 'project-a' })

@@ -3,7 +3,8 @@
 import { ChartSpline, CircleAlert, Layers, Snowflake, Split } from 'lucide-react'
 import Link from 'next/link'
 import { type ComponentProps, Fragment, type ReactNode } from 'react'
-import { type ProjectTarget, projectWebPath } from '../../lib/api'
+import type { ProjectTarget } from '../../lib/api'
+import { canonicalExperimentHref } from '../../lib/artifact-navigation'
 import type { ResultsCellPayload } from '../../lib/dto/experiments'
 import { resultValueText } from '../../lib/experiment-results/columns'
 import {
@@ -135,7 +136,7 @@ export function StatusCell({
 }
 
 function runHref(project: ProjectTarget, experimentId: string, run: string): string {
-  return `${projectWebPath(project, `/e/${encodeURIComponent(experimentId)}`)}?run=${encodeURIComponent(run)}`
+  return `${canonicalExperimentHref(project, experimentId)}?run=${encodeURIComponent(run)}`
 }
 
 function RunLink({

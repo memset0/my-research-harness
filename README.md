@@ -202,25 +202,30 @@ Hypotheses is retired: no dedicated page, API, CLI option, background read or
 automatic reference maintenance. Existing project documents remain untouched;
 choose any migration separately for each project.
 
-- **/p/[project]** — vertical-stack experiment-card grid (one card per
-  exp doc), each card embedding its member runs as a compact table with
-  status pills, plus a pinned anomaly banner at the top when the
-  `/api/anomalies` endpoint reports any.
-- **/p/[project]/e/[id]** — exp doc detail page: header (id + title +
-  tags) + Edit markdown action; Runs section with collapsible
-  per-run panels (default folded, persisted in localStorage); all canonical v6
-  sections in README order; YAML-rendered Implementation / Investigation /
-  Results; compatibility diagnostics that keep unknown/duplicate/conflicting
-  content visible; Warnings and aggregated Artifacts.
-- **/p/[project]/r/[id]** — legacy URL; redirects to the parent exp's
-  detail page with `?run=<id>` so the corresponding run panel is
-  auto-expanded.
-- **/p/[project]/journal** — reverse-chronological timeline, filter by
-  tag and experiment id, browser-tz timestamps.
-- **/p/[project]/reports** — index pages for single-file or directory-bundle
-  Reports. Historical Digests move to Wiki's `digest` kind through the reviewed
-  v7 migration; standalone Digest routes are retired. Local `.html` image references render
-  as unsandboxed iframes; normal links remain links.
+Every project page lives under `/<host>/<project>`; numbers are written
+without leading zeros or slugs, and older `/h/<host>/p/<project>/…` links
+redirect to the same page.
+
+- **`/<host>/<project>`** (also `/experiments`) — vertical-stack
+  experiment-card grid (one card per exp doc), plus a pinned anomaly banner at
+  the top when the `/api/anomalies` endpoint reports any.
+- **`/<host>/<project>/e/<n>`** — exp doc detail page for
+  `E<NNNN>-<slug>`: header (id + title + tags) + Edit markdown action; Runs
+  section with collapsible per-run panels (`?run=<run-dir>` expands one); all
+  canonical v6 sections in README order; YAML-rendered Implementation /
+  Investigation / Results; compatibility diagnostics that keep
+  unknown/duplicate/conflicting content visible; Warnings and aggregated
+  Artifacts.
+- **`/<host>/<project>/journal`** — reverse-chronological timeline,
+  filter by tag and experiment id, browser-tz timestamps.
+- **`/<host>/<project>/reports`** and **`/r/<n>`** — single-file or
+  directory-bundle Reports. Historical Digests move to Wiki's `digest` kind
+  through the reviewed v7 migration; standalone Digest routes are retired.
+  Local `.html` image references render as unsandboxed iframes; normal links
+  remain links.
+- **`/<host>/<project>/wiki`** and **`/w/<n>`** — the project wiki.
+- **`/<host>/<project>/code-review`**, **`/cr/<date>-<slug>`**
+  and **`/e/<n>/cr/<date>-<slug>`** — code reviews.
 
 The exp detail page's action bar exposes:
 
@@ -325,23 +330,18 @@ at memon.
 
 ### Sharing a project read-only
 
-To let a collaborator look at ONE project's runs / experiments / reports
-without giving them owner credentials, issue a per-project share link:
-
-```bash
-# In the project directory (or pass --project-root):
-memon share create project-a --label "Reviewer Alice" --expires 30d \
-  --url-base https://memon.example.com
-# → prints: https://memon.example.com/share/project-a/<token>
-```
+To let a collaborator look at ONE project (or one Experiment, Report or Wiki
+page) without giving them owner credentials, open the "Share" dialog in the
+project page header and copy a link. A link is the page URL with
+`?share=<token>` appended; tokens live in the central share registry
+(`shares.json` beside the instance config, owner-only permissions).
 
 What the link does when opened:
 
-1. Validates the token against `<projectRoot>/.memon/shares.json` (created
-   atomically; gitignored).
+1. Validates the token against the central share registry.
 2. Sets a signed `memon-shares` cookie scoped to that project on the
    visitor's browser, HttpOnly + SameSite=Lax + Max-Age=90 days.
-3. Redirects to `/p/<project>` — viewer mode.
+3. Redirects to the same page without the token — viewer mode.
 
 In viewer mode the dashboard:
 
@@ -356,8 +356,8 @@ entry per project; the cookie is a signed list). Viewers can also click
 "Log in as owner" on the banner to elevate to owner mode for the rest of
 the session.
 
-To revoke a share, run `memon share revoke <id-prefix>` (or use the "Share"
-button on the project page header). The cookie holder silently loses
+To revoke a share, delete it in the "Share" dialog (or `DELETE
+/api/shares/<id>` with owner credentials). The cookie holder silently loses
 access on their next request; no error message reveals the revocation.
 
 Rotate `auth.session_secret` in `config.yml` to invalidate every open

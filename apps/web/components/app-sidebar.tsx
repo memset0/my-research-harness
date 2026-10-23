@@ -23,6 +23,12 @@ import {
   experimentGroup,
   shortExperimentId,
 } from '../lib/experiment-navigation'
+import {
+  artifactNumber,
+  parseProjectPath,
+  projectBasePath,
+  projectOfPath,
+} from '../lib/project-routes'
 import { queryKeys } from '../lib/query-keys'
 import { cn } from '../lib/utils'
 import { ExperimentNavigationGroup } from './experiment-navigation-group'
@@ -50,15 +56,6 @@ import {
 
 const STORAGE_KEY = 'memon:sidebar:expanded'
 
-function decodeSegment(value: string | undefined): string {
-  if (!value) return ''
-  try {
-    return decodeURIComponent(value)
-  } catch {
-    return ''
-  }
-}
-
 export function projectSummaryTarget(project: ProjectSummary): ProjectTarget {
   return project.mode === 'central'
     ? ({ host: project.host, project: project.project } as ProjectTarget)
@@ -72,21 +69,27 @@ export function sidebarProjectIdentity(target: ProjectTarget): string {
     : projectName(target)
 }
 
+/**
+ * `/<host>/<project>`. A hostless Project has no page route (the Web entry
+ * refuses such configs); its links stay same-origin paths, never a
+ * protocol-relative `//…` URL.
+ */
 export function sidebarProjectBasePath(target: ProjectTarget): string {
-  const host = projectHost(target)
-  const project = encodeURIComponent(projectName(target))
-  return host ? `/h/${encodeURIComponent(host)}/p/${project}` : `/p/${project}`
+  return typeof target === 'string' ? '' : projectBasePath(target)
 }
 
 function activeProjectTarget(pathname: string): ProjectTarget | null {
-  const central = pathname.match(/^\/h\/([^/]+)\/p\/([^/]+)/)
-  if (central) {
-    const host = decodeSegment(central[1])
-    const project = decodeSegment(central[2])
-    return host && project ? ({ host, project } as ProjectTarget) : null
-  }
-  const standalone = decodeSegment(pathname.match(/^\/p\/([^/]+)/)?.[1])
-  return standalone || null
+  return (projectOfPath(pathname) as ProjectTarget | null) ?? null
+}
+
+function isActiveRow(id: string, activeNumber: number | null): boolean {
+  return activeNumber !== null && artifactNumber(id) === activeNumber
+}
+
+/** The Experiment number of an Experiment detail page `/<host>/<project>/e/<n>`. */
+function activeExperimentNumber(pathname: string): number | null {
+  const page = parseProjectPath(pathname)?.page
+  return page?.kind === 'experiment' ? page.number : null
 }
 
 export function AppSidebar() {
@@ -97,9 +100,7 @@ export function AppSidebar() {
   const pathname = usePathname() ?? ''
   const activeTarget = activeProjectTarget(pathname)
   const activeProjectKey = activeTarget ? sidebarProjectIdentity(activeTarget) : ''
-  // v3 exp-doc detail URLs: `/p/<project>/e/<E-id>` (and the alias
-  // `/p/<project>/r/<run-id>` already redirects to the same exp page).
-  const activeExpDocId = decodeURIComponent(pathname.match(/\/e\/([^/]+)/)?.[1] ?? '')
+  const activeNumber = activeExperimentNumber(pathname)
 
   const { data: projectsData } = useQuery({
     queryKey: queryKeys.projects(),
@@ -265,7 +266,7 @@ export function AppSidebar() {
                         isActive={identity === activeProjectKey}
                         isOpen={expanded.has(identity)}
                         readDocs={identity === activeProjectKey || requested.has(identity)}
-                        activeExpDocId={activeExpDocId}
+                        activeNumber={activeNumber}
                         onOpenChange={(open) => onToggle(identity, open)}
                         onPillClick={() => setDiffDialogProject(target)}
                       />
@@ -315,7 +316,7 @@ export function AppSidebar() {
                 isActive={identity === activeProjectKey}
                 isOpen={expanded.has(identity)}
                 readDocs={identity === activeProjectKey || requested.has(identity)}
-                activeExpDocId={activeExpDocId}
+                activeNumber={activeNumber}
                 onOpenChange={(open) => onToggle(identity, open)}
                 onPillClick={() => setDiffDialogProject(target)}
               />
@@ -395,7 +396,7 @@ function ProjectGroup({
   isActive,
   isOpen,
   readDocs,
-  activeExpDocId,
+  activeNumber,
   onOpenChange,
   onPillClick,
 }: {
@@ -409,7 +410,7 @@ function ProjectGroup({
    *  or the user expanded its section in this session. Persisted expansion
    *  alone renders chrome without issuing a project data read. */
   readDocs: boolean
-  activeExpDocId: string
+  activeNumber: number | null
   onOpenChange: (open: boolean) => void
   onPillClick: () => void
 }) {
@@ -570,7 +571,7 @@ function ProjectGroup({
               <ProjectExperimentDocs
                 project={target}
                 basePath={basePath}
-                activeId={isActive ? activeExpDocId : ''}
+                activeNumber={isActive ? activeNumber : null}
                 enabled={isOpen && readDocs}
               />
             </SidebarGroupContent>
@@ -585,12 +586,12 @@ function ProjectGroup({
 function ProjectExperimentDocs({
   project,
   basePath,
-  activeId,
+  activeNumber,
   enabled,
 }: {
   project: ProjectTarget
   basePath: string
-  activeId: string
+  activeNumber: number | null
   enabled: boolean
 }) {
   // Persisted expansion alone does not authorize either query.
@@ -640,11 +641,11 @@ function ProjectExperimentDocs({
             group={group}
             count={members.length}
             compact
-            forceOpen={members.some((row) => row.id === activeId)}
+            forceOpen={members.some((row) => isActiveRow(row.id, activeNumber))}
           >
             <SidebarMenu>
               {members.map(({ id, summary }) => {
-                const isActive = id === activeId
+                const isActive = isActiveRow(id, activeNumber)
                 const title = summary?.frontMatter.title || id
                 const known = experimentGroup(summary) !== 'UNKNOWN'
                 return (
@@ -664,7 +665,7 @@ function ProjectExperimentDocs({
                         className="h-auto min-h-12 min-w-0 flex-1 py-1.5 hover:bg-transparent data-[active=true]:bg-transparent"
                       >
                         <Link
-                          href={`${basePath}/e/${encodeURIComponent(id)}`}
+                          href={`${basePath}/e/${artifactNumber(id) ?? encodeURIComponent(id)}`}
                           prefetch={false}
                           title={`${id} · ${title}`}
                           aria-current={isActive ? 'page' : undefined}

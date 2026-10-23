@@ -9,11 +9,9 @@ import { ProjectCatalogError } from '../project-catalogs.js'
 // of HTTP concerns.
 
 import {
-  AmbiguousShareError,
   BackendDocumentConflictResponseSchema,
   type BackendErrorCode,
   JournalRecordingError,
-  ShareNotFoundError,
 } from '@memon/core'
 import { type FileAccessError, isFileAccessError } from '@memon/file-protocol'
 import { BackendActorContextError } from '../actor-context.js'
@@ -208,10 +206,6 @@ const MAPPERS: readonly Mapper<never>[] = [
   mapper(BackendStreamServiceError, (error) => resourceError(error.code, 'stream')),
   mapper(BackendStreamDeadlineError, () =>
     httpError(504, 'UNAVAILABLE', 'Backend stream control deadline exceeded', true),
-  ),
-  mapper(ShareNotFoundError, () => httpError(404, 'NOT_FOUND', 'Share record not found')),
-  mapper(AmbiguousShareError, () =>
-    httpError(409, 'CONFLICT', 'Share record selection is ambiguous'),
   ),
 ] as unknown as readonly Mapper<never>[]
 

@@ -1,10 +1,8 @@
 import type { AddressInfo } from 'node:net'
 import {
-  AmbiguousShareError,
   type BackendCapabilities,
   JournalRecordingError,
   type JournalRecordingFailure,
-  ShareNotFoundError,
 } from '@memon/core'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BACKEND_ACTOR_CONTEXT_HEADER, BackendActorContextError } from './actor-context.js'
@@ -115,8 +113,6 @@ describe('toHttpError: one status per error class', () => {
     ['stream ambiguous', new BackendStreamServiceError('AMBIGUOUS_RESOURCE', 'x'), 409, 'CONFLICT'],
     ['stream missing', new BackendStreamServiceError('RESOURCE_NOT_FOUND', 'x'), 404, 'NOT_FOUND'],
     ['stream deadline', new BackendStreamDeadlineError('x'), 504, 'UNAVAILABLE'],
-    ['share missing', new ShareNotFoundError('x'), 404, 'NOT_FOUND'],
-    ['share ambiguous', new AmbiguousShareError('x', []), 409, 'CONFLICT'],
   ]
   it.each(cases)('%s', (_name, error, status, code) => {
     expect(toHttpError(error)).toMatchObject({ status, code })

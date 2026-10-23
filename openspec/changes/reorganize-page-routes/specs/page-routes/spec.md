@@ -39,7 +39,7 @@ Every project page SHALL have exactly one canonical path under `/<host>/<project
 - **THEN** both render the Experiment overview with status 200 and neither redirects
 
 ### Requirement: Numbers in canonical routes are strict
-The number segment of `/e/`, `/w/` and `/r/` SHALL be resolved by its numeric value. A number written with leading zeros or with its kind letter (`/r/0010`, `/r/R0010`, `/e/E0010`, `/e/E0010-inference-kernels`) SHALL be answered with a permanent redirect (308) to the unpadded form, keeping the rest of the path and the query. A segment that is not such a number SHALL be a 404. An Experiment number SHALL resolve to the one Experiment directory registered with that number. When no Experiment has the number the response SHALL be the not-found page; a Report or Wiki number that is absent from its catalog SHALL show that surface's own not-found or "Not refreshed" state while its list stays usable. When two Experiment directories carry the same number the page SHALL show a repair error that names both directories and SHALL NOT pick one.
+The number segment of `/e/`, `/w/` and `/r/` SHALL be resolved by its numeric value. A number written with leading zeros or with its kind letter (`/r/0010`, `/r/R0010`, `/e/E0010`, `/e/E0010-inference-kernels`) SHALL be answered with a permanent redirect (308) to the unpadded form, keeping the rest of the path and the query. A segment that is not such a number SHALL be a 404. An Experiment number SHALL resolve to the one Experiment directory registered with that number. When no Experiment has the number the response SHALL be the not-found page; a Report or Wiki number that is absent from its catalog SHALL show that surface's own not-found or "Not refreshed" state while its list stays usable. When two Experiment directories carry the same number the page SHALL show a repair error that names both directories and SHALL NOT pick one. When the Project's Experiment catalog cannot be read, the page SHALL say the Experiment is temporarily unavailable rather than answer not-found.
 
 #### Scenario: Padded number redirects
 - **WHEN** a browser opens `/host-a/project-a/r/0010?expanded=1`
@@ -52,6 +52,10 @@ The number segment of `/e/`, `/w/` and `/r/` SHALL be resolved by its numeric va
 #### Scenario: Duplicate Experiment number is not guessed
 - **WHEN** a Project registers both `E0010-a` and `E0010-b` and a browser opens `/host-a/project-a/e/10`
 - **THEN** the page reports that `E0010-a` and `E0010-b` share number 10 and renders neither Experiment
+
+#### Scenario: Unreadable catalog is not a missing number
+- **WHEN** the source of `project-a` is unreachable and a browser opens `/host-a/project-a/e/10`
+- **THEN** the page says Experiment 10 is temporarily unavailable and does not answer not-found
 
 #### Scenario: Missing number
 - **WHEN** no Experiment has number 99 and a browser opens `/host-a/project-a/e/99`

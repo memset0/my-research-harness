@@ -3,7 +3,6 @@ import { runComponentsRun } from './commands/components.js'
 import { runJournalRead } from './commands/journal.js'
 import { runMockSeed } from './commands/mock.js'
 import { runServe } from './commands/serve.js'
-import { runShareCreate, runShareList, runShareRevoke } from './commands/share.js'
 import { runUpdate, updateFailed } from './commands/update.js'
 import { runWikiCreate, runWikiDelete, runWikiMove } from './commands/wiki.js'
 import { emitErrorAndExit } from './lib/emit-error.js'
@@ -140,50 +139,6 @@ export function registerToolsCommands(program: Command): void {
         await runJournalRead({ ...g, ...opts })
       },
     )
-
-  const share = program
-    .command('share')
-    .description('per-project share-link commands (writes <projectRoot>/.memon/shares.json)')
-
-  share
-    .command('create <project>')
-    .description('issue a new share link for the project; prints the URL')
-    .option('--label <text>', 'human-readable label (≤ 64 chars)')
-    .option('--expires <duration>', '"never" | "<int>d" | "<int>h" (default never)')
-    .option(
-      '--url-base <base>',
-      'origin to prepend to the share path (e.g. https://memon.example.com); falls back to $MEMON_PUBLIC_URL, else path-only output',
-    )
-    .action(
-      async (projectName: string, opts: { label?: string; expires?: string; urlBase?: string }) => {
-        const g = readGlobals()
-        await runShareCreate({
-          ...g,
-          projectName,
-          label: opts.label,
-          expires: opts.expires,
-          urlBase: opts.urlBase,
-        })
-      },
-    )
-
-  share
-    .command('list')
-    .description('list share records for the project (tokens redacted)')
-    .option('--project <name>', 'project name to display (default: derived from --project-root)')
-    .action(async (opts: { project?: string }) => {
-      const g = readGlobals()
-      await runShareList({ ...g, projectName: opts.project })
-    })
-
-  share
-    .command('revoke <id-or-label>')
-    .description('remove a share by id-prefix or exact label')
-    .option('--force', 'revoke ALL matching records on ambiguity', false)
-    .action(async (idOrLabel: string, opts: { force?: boolean }) => {
-      const g = readGlobals()
-      await runShareRevoke({ ...g, idOrLabel, force: !!opts.force })
-    })
 
   const components = program
     .command('components')

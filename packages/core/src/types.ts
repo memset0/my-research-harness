@@ -942,8 +942,6 @@ export interface CentralConfig {
   bindAddr: string
   bindPort: number
   publicUrl?: string
-  /** Optional bounded migration target for legacy `/share/<project>/<token>` links. */
-  legacyShareHost?: string
   /**
    * Registered peer Backends. Empty for a central instance that serves every
    * configured Project directly from its own filesystem (local directories or

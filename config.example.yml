@@ -26,20 +26,27 @@
 # over `.memon/project.yml`, but log CENTRAL_LAYOUT_DEPRECATED. Move them with
 # `memon project init --project-root <root> --from-central <this file>
 # --project <name>`, commit the new file in the project, then delete them here.
+#
+# Every Project the dashboard serves names its Host namespace with `host:`;
+# its pages live under `/<host>/<project>`. (Standalone, hostless Web serving
+# was removed; `memon` CLI commands on a project root need no Host.) A Host id
+# may not be a top-level route name: api, h, login, manage, p, s, share.
 projects:
   - name: project-a
     root: ./mock/project-a
+    host: local
+    execution: { kind: local }
 
   - name: project-b
     root: ./mock/project-b
+    host: local
+    execution: { kind: local }
 
 # ── host-qualified Projects (direct central role) ────────────────────
-# A Project MAY name the Host namespace it belongs to. Declaring `host:` on
-# any Project selects the central Web role and serves configured Projects
+# Declaring `host:` selects the central Web role and serves configured Projects
 # straight from this instance's filesystem — an ordinary directory or a mount
 # of another machine — with no peer memon service, service token, or
-# availability probe. Public routes, share scopes and `{host, project}`
-# identity are unchanged. `poll:` is rejected in this mode: file access is
+# availability probe. `poll:` is rejected in this mode: file access is
 # scheduled by `fileAccess:` below instead of a whole-project scanner.
 #
 #   projects:
@@ -109,13 +116,14 @@ projects:
 # media:
 #   ffmpeg: /usr/bin/ffmpeg
 
-# Polling policy. Each watched directory has its own per-path interval that
-# doubles after each unchanged check, capped between min and max. Defaults
-# below match the spec.
-poll:
-  min_interval_ms: 1000
-  max_interval_ms: 300000
-  backoff_factor: 2
+# Polling policy (Backend instances only). Each watched directory has its own
+# per-path interval that doubles after each unchanged check, capped between min
+# and max. A central instance serving Projects directly rejects `poll:`.
+#
+# poll:
+#   min_interval_ms: 1000
+#   max_interval_ms: 300000
+#   backoff_factor: 2
 
 
 
@@ -206,7 +214,8 @@ poll:
 # fileAccessRestart: ["example-service-wrapper", "restart", "memon-candidate"]
 
 # ── central / Backend roles (multi-Host) ──────────────────────
-# No role block means standalone (the default represented by this file).
+# Host-qualified `projects:` alone select the direct central role (the default
+# represented by this file).
 # A split deployment uses separate instance files: one with `central:` and no
 # Project roots, and one `backend:` instance per Host with local Project roots.
 # `central:` and `backend:` are mutually exclusive. Legacy `hub:` / `node:`
@@ -228,8 +237,6 @@ poll:
 #   bind_addr: "127.0.0.1"          # optional; default 127.0.0.1
 #   bind_port: 3737                 # optional; default 3737
 #   public_url: "https://central.example.test"
-#   # Optional temporary migration target for legacy name-only share links.
-#   # legacy_share_host: host-a
 #   hosts: []                       # no peer Backend; Projects are local/mounted
 #   # hosts:
 #     - id: host-a

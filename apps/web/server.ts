@@ -12,6 +12,7 @@ import { createContentServiceGateway } from './lib/server/content-service-gatewa
 import { prewarmRoutes } from './lib/server/route-prewarm'
 import { getRuntime } from './lib/server/runtime'
 import { createMemonServer } from './lib/server/server-core'
+import { assertHostQualifiedWebConfig } from './lib/server/web-config'
 
 const dev = process.env.NODE_ENV !== 'production'
 
@@ -28,6 +29,7 @@ if (runtime.config.backend) {
     'memon: Backend instance config cannot run the Web entry; serve its Projects from a central instance',
   )
 }
+assertHostQualifiedWebConfig(runtime.config)
 const port = Number(process.env.PORT ?? runtime.config.central?.bindPort ?? 3737)
 const hostname = process.env.HOST ?? runtime.config.central?.bindAddr ?? 'localhost'
 const globalAny = globalThis as unknown as { __memonWarmedAt?: number }

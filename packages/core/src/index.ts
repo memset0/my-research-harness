@@ -89,6 +89,7 @@ export {
   isStaleRunning,
   staleAgeMs,
 } from './discovery/stale.js'
+export { type ParsedDuration, parseDuration } from './duration.js'
 export type { DiscoverExperimentsResult } from './experiments/discover.js'
 export {
   discoverExperiments,
@@ -499,28 +500,9 @@ export type {
 export {
   CodeReviewFrontMatterRawSchema,
   ExperimentFrontMatterRawSchema,
+  RESERVED_HOST_IDS,
   RunFrontMatterRawSchema,
 } from './schemas.js'
-export type {
-  AddShareOptions,
-  RevokeShareOptions,
-  ShareRecord,
-  SharesFile,
-} from './shares/index.js'
-export {
-  AmbiguousShareError,
-  addShare,
-  emptySharesFile,
-  listShares,
-  parseDuration,
-  readShares,
-  resolveSharesFilePath,
-  revokeShare,
-  ShareNotFoundError,
-  ShareStoreError,
-  validateShare,
-  writeShares,
-} from './shares/index.js'
 export * from './status.js'
 export {
   formatIsoLocal,

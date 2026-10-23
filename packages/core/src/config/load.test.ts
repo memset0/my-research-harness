@@ -867,23 +867,31 @@ central:
     }
   })
 
-  it('accepts only a configured Host as the legacy share migration target', async () => {
-    const valid = `
+  it('rejects the removed legacy share migration Host', async () => {
+    const config = `
 central:
   legacy_share_host: host-a
   hosts:
     - { id: host-a, tokens: { current: ${TOKEN_A} }, transport: { kind: url, base_url: https://a.example.test } }
 `
-    await fs.writeFile(join(dir, 'config.yml'), valid, { mode: 0o600 })
+    await fs.writeFile(join(dir, 'config.yml'), config, { mode: 0o600 })
     await fs.chmod(join(dir, 'config.yml'), 0o600)
-    expect((await loadConfig({ cwd: dir }))?.central?.legacyShareHost).toBe('host-a')
+    await expect(loadConfig({ cwd: dir })).rejects.toThrow(/legacy_share_host was removed/)
+  })
 
-    await fs.writeFile(
-      join(dir, 'config.yml'),
-      valid.replace('legacy_share_host: host-a', 'legacy_share_host: missing'),
-      { mode: 0o600 },
-    )
-    await expect(loadConfig({ cwd: dir })).rejects.toThrow(/must name one configured Host/)
+  it('rejects Host ids that a top-level route would shadow', async () => {
+    for (const reserved of ['login', 'share', 'p']) {
+      const config = `
+central:
+  hosts:
+    - { id: ${reserved}, tokens: { current: ${TOKEN_A} }, transport: { kind: url, base_url: https://a.example.test } }
+`
+      await fs.writeFile(join(dir, 'config.yml'), config, { mode: 0o600 })
+      await fs.chmod(join(dir, 'config.yml'), 0o600)
+      await expect(loadConfig({ cwd: dir })).rejects.toThrow(
+        new RegExp(`Host id "${reserved}" is reserved`),
+      )
+    }
   })
 
   it('rejects invalid rotation, URL, role fields, guards, and restart argv', async () => {

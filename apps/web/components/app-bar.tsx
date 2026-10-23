@@ -2,7 +2,8 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { type ProjectTarget, projectWebPath } from '../lib/api'
+import { type ProjectTarget, projectRouteTarget } from '../lib/api'
+import { type ProjectPage, parseProjectPath, projectPagePath } from '../lib/project-routes'
 import { ManageSharesDialog } from './manage-shares-dialog'
 import { useIsDocumentOnlyViewer } from './session-provider'
 import { TabBadge, type TabKind } from './tab-badge'
@@ -13,57 +14,45 @@ interface TabSpec {
   name: string
   kind: TabKind
   href: string
-  matches: (p: string) => boolean
+  /** The canonical page kinds (see project-routes) that make this tab active. */
+  pages: readonly ProjectPage['kind'][]
 }
 
 export function AppBar({ project }: { project: ProjectTarget }) {
   const pathname = usePathname() ?? ''
   // A document-only share viewer has no Project navigation.
   const documentOnly = useIsDocumentOnlyViewer()
-  const projectBase = projectWebPath(project)
+  const target = projectRouteTarget(project)
+  const href = (page: ProjectPage) => projectPagePath(target, page)
   const tabs: TabSpec[] = [
     {
       name: 'Experiments',
       kind: 'experiments',
-      href: projectBase,
-      // Active for the project root, v3 exp-doc detail (`/e/<id>`), the
-      // legacy v2 detail (`/experiments/<id>`), and the legacy run URL
-      // (`/r/<id>`) which permanent-redirects to `/e/<id>` — including
-      // it here keeps the highlight stable across the redirect. Each
-      // sub-segment match uses a trailing `/` so a hypothetical sibling
-      // segment (`/eats`, `/reports`) cannot false-positive.
-      matches: (p) =>
-        p === projectBase ||
-        p.startsWith(`${projectBase}/e/`) ||
-        p.startsWith(`${projectBase}/r/`) ||
-        p.startsWith(`${projectBase}/experiments/`) ||
-        p === `${projectBase}/experiments`,
+      href: href({ kind: 'overview' }),
+      pages: ['overview', 'experiments', 'experiment'],
     },
-    {
-      name: 'Journal',
-      kind: 'journal',
-      href: `${projectBase}/journal`,
-      matches: (p) => p.startsWith(`${projectBase}/journal`),
-    },
+    { name: 'Journal', kind: 'journal', href: href({ kind: 'journal' }), pages: ['journal'] },
     {
       name: 'Reports',
       kind: 'reports',
-      href: `${projectBase}/reports`,
-      matches: (p) => p.startsWith(`${projectBase}/reports`),
+      href: href({ kind: 'reports' }),
+      pages: ['reports', 'report'],
     },
     {
       name: 'Code Review',
       kind: 'code-review',
-      href: `${projectBase}/code-review`,
-      matches: (p) => p.startsWith(`${projectBase}/code-review`),
+      href: href({ kind: 'code-reviews' }),
+      pages: ['code-reviews', 'code-review'],
     },
-    {
-      name: 'Wiki',
-      kind: 'wiki',
-      href: `${projectBase}/wiki`,
-      matches: (p) => p.startsWith(`${projectBase}/wiki`),
-    },
+    { name: 'Wiki', kind: 'wiki', href: href({ kind: 'wiki-list' }), pages: ['wiki-list', 'wiki'] },
   ]
+  // Matching compares parsed path segments, so `/r/<n>` never matches
+  // `/reports` and an Experiment review activates Code Review only.
+  const parsed = parseProjectPath(pathname)
+  const current =
+    parsed && parsed.target.host === target.host && parsed.target.project === target.project
+      ? parsed.page.kind
+      : null
 
   return (
     <header className="sticky top-0 z-20 flex min-h-12 shrink-0 items-center gap-2 border-b bg-background px-3 py-1.5 md:px-4">
@@ -97,7 +86,7 @@ export function AppBar({ project }: { project: ProjectTarget }) {
       <div className="flex flex-1 flex-wrap items-center gap-1 min-w-0">
         <div className="contents" role="tablist">
           {(documentOnly ? [] : tabs).map((t) => {
-            const isActive = t.matches(pathname)
+            const isActive = current !== null && t.pages.includes(current)
             return (
               <Button key={t.href} asChild size="sm" variant={isActive ? 'default' : 'ghost'}>
                 <Link href={t.href} prefetch={false} role="tab" aria-selected={isActive}>

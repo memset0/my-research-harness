@@ -1,35 +1,39 @@
 // Canonical full-page destinations for artifact links. Every Experiment,
-// Report and wiki link opens the target's own page; nothing is carried over
+// Report, wiki and code-review link opens the target's own page; nothing is carried over
 // from the page the link was activated on.
 
-import { type ProjectTarget, projectWebPath } from './api'
+import { type ProjectTarget, projectRouteTarget } from './api'
+import {
+  codeReviewPage,
+  experimentPath,
+  projectPagePath,
+  reportPath,
+  wikiPath,
+} from './project-routes'
 
 export type ArtifactNavigationTarget =
   | { kind: 'experiment'; id: string }
   | { kind: 'report'; id: string }
   | { kind: 'wiki'; id: string }
 
-const EXPERIMENT_ID_RE = /^E\d{4}(?:-[^/?#]+)?$/u
-const REPORT_ID_RE = /^R\d{4}$/
-const WIKI_ID_RE = /^W\d{4}$/
-
-function assertId(re: RegExp, id: string, label: string): void {
-  if (id.includes('\0') || !re.test(id)) throw new TypeError(`Invalid ${label} ID: ${id}`)
-}
-
 export function canonicalExperimentHref(project: ProjectTarget, experimentId: string): string {
-  assertId(EXPERIMENT_ID_RE, experimentId, 'Experiment')
-  return projectWebPath(project, `/e/${encodeURIComponent(experimentId)}`)
+  return experimentPath(projectRouteTarget(project), experimentId)
 }
 
 export function canonicalReportHref(project: ProjectTarget, reportId: string): string {
-  assertId(REPORT_ID_RE, reportId, 'Report')
-  return projectWebPath(project, `/reports/${encodeURIComponent(reportId)}`)
+  return reportPath(projectRouteTarget(project), reportId)
 }
 
 export function canonicalWikiHref(project: ProjectTarget, wikiId: string): string {
-  assertId(WIKI_ID_RE, wikiId, 'wiki page')
-  return projectWebPath(project, `/wiki/${encodeURIComponent(wikiId)}`)
+  return wikiPath(projectRouteTarget(project), wikiId)
+}
+
+/** A code review's page; an id that names no review opens the review list. */
+export function canonicalCodeReviewHref(project: ProjectTarget, reviewId: string): string {
+  return projectPagePath(
+    projectRouteTarget(project),
+    codeReviewPage(reviewId) ?? { kind: 'code-reviews' },
+  )
 }
 
 /** The full page of an artifact link's target. */

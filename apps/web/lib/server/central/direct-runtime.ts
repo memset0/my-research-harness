@@ -44,7 +44,6 @@ import {
   parseFileOperationReason,
   prepareProjectFileAccess,
   projectSourceGroup,
-  validateShare,
   withFileWriterLock,
   withProjectFileContext,
 } from '@memon/core'
@@ -95,8 +94,6 @@ export interface DirectCentralRuntime {
   readonly instanceEpoch: string
   /** Execute one already-authenticated host-qualified API request in process. */
   dispatch(input: DirectDispatchInput): Promise<Response>
-  /** Validate a viewer share token against the Project's own share file. */
-  validateShare(host: string, project: string, token: string): Promise<boolean>
   /**
    * Answer one central-owned document read for a directly served Project:
    * runs inside the Project's file context and returns the same freshness
@@ -128,7 +125,6 @@ function createHostRuntime(
   capabilities: BackendCapabilities,
   instanceEpoch: string,
   slurmTotalNodes: number,
-  shareLookup: (project: string, token: string) => Promise<boolean>,
 ): HostRuntime {
   // Service authentication remains mandatory inside the handler; the token is
   // generated per process and never leaves it, so no operator secret exists.
@@ -177,7 +173,6 @@ function createHostRuntime(
             totalNodes: slurmTotalNodes,
             execution: resolveProjectExecution(slurmExecution),
           }),
-    shareValidator: shareLookup,
   })
   return {
     projects,
@@ -392,7 +387,6 @@ function createRuntime(config: Config): DirectCentralRuntime {
   configureFileAgentAdapters(config.fileAgents ?? {}, config.projects)
   const registry = new DirectProjectRegistry(config)
   const instanceEpoch = resourceInstanceEpoch()
-  const shareRoots = new Map<string, string>()
   const hosts = new Map<string, HostRuntime>()
   const unqualifiedDocuments = new FilesystemDocumentService(
     config.projects.filter((project) => project.host === undefined),
@@ -402,49 +396,18 @@ function createRuntime(config: Config): DirectCentralRuntime {
     },
   )
 
-  const validateProjectShare = async (
-    host: string,
-    project: string,
-    token: string,
-  ): Promise<boolean> => {
-    const root = shareRoots.get(`${host}/${project}`)
-    if (root === undefined) return false
-    const configured = registry.resolve(host, project)
-    if (!configured) return false
-    return withProjectFileContext(
-      {
-        root,
-        storage: configured.storage,
-        cachePolicy: configured.access?.cache,
-        reason: 'write',
-        readOnly: true,
-        persistentCache: false,
-      },
-      async () => (await validateShare(root, token).catch(() => null)) !== null,
-    )
-  }
-
   for (const { host, projects } of registry.listHosts()) {
-    for (const project of projects) shareRoots.set(`${host}/${project.name}`, project.root)
     const capabilities = registry.capabilities(host)
     if (!capabilities) continue
     hosts.set(
       host,
-      createHostRuntime(
-        host,
-        projects,
-        capabilities,
-        instanceEpoch,
-        config.slurm.totalNodes,
-        (project, token) => validateProjectShare(host, project, token),
-      ),
+      createHostRuntime(host, projects, capabilities, instanceEpoch, config.slurm.totalNodes),
     )
   }
 
   const runtime: DirectCentralRuntime = {
     registry,
     instanceEpoch,
-    validateShare: validateProjectShare,
     readJsonResource: async (selector, read) => {
       const resolved = registry.resolveByName(selector.project, selector.host ?? undefined)
       const hostRuntime = resolved ? hosts.get(resolved.host) : undefined

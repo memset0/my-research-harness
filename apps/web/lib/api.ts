@@ -231,8 +231,8 @@ export {
   projectHost,
   projectName,
   projectQueryKey,
+  projectRouteTarget,
   projectSearchParams,
-  projectWebPath,
 } from './project-target'
 
 function projectQueryUrl(path: string, target: ProjectTarget, extras?: URLSearchParams): string {

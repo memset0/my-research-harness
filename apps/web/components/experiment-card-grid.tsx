@@ -8,10 +8,9 @@ import {
   type ExperimentListRow,
   fetchExperimentDocs,
   type ProjectTarget,
-  projectHost,
-  projectName,
   projectQueryKey,
 } from '../lib/api'
+import { canonicalExperimentHref } from '../lib/artifact-navigation'
 import {
   compareExperimentNavigation,
   EXPERIMENT_GROUPS,
@@ -26,12 +25,6 @@ import { Badge } from './ui/badge'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
-
-function projectBasePath(project: ProjectTarget): string {
-  const name = encodeURIComponent(projectName(project))
-  const host = projectHost(project)
-  return host ? `/h/${encodeURIComponent(host)}/p/${name}` : `/p/${name}`
-}
 
 export function ExperimentCardGrid({ project }: { project: ProjectTarget }) {
   return <ExperimentGroups key={projectQueryKey(project).join(':')} project={project} />
@@ -190,7 +183,7 @@ function ExperimentGroups({ project }: { project: ProjectTarget }) {
 function ExperimentCard({ project, exp }: { project: ProjectTarget; exp: ExperimentListRow }) {
   const group = experimentGroup(exp)
   const historical = ['ARCHIVED', 'RETIRED', 'LEGACY_ARCHIVED'].includes(group)
-  const href = `${projectBasePath(project)}/e/${encodeURIComponent(exp.id)}`
+  const href = canonicalExperimentHref(project, exp.id)
   return (
     <article
       className={cn(

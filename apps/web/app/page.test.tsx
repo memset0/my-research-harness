@@ -38,15 +38,7 @@ describe('home route role-aware project redirect', () => {
       failures: [],
     } as never)
 
-    await expect(Home()).rejects.toThrow('REDIRECT:/h/host-a/p/project-a')
-  })
-
-  it('preserves the standalone project-only redirect', async () => {
-    vi.mocked(getRuntime).mockResolvedValue({
-      config: { projects: [{ name: 'project-a' }] },
-    } as never)
-
-    await expect(Home()).rejects.toThrow('REDIRECT:/p/project-a')
+    await expect(Home()).rejects.toThrow('REDIRECT:/host-a/project-a')
   })
 
   it('opens a directly configured project without any remote Backend', async () => {
@@ -62,7 +54,7 @@ describe('home route role-aware project redirect', () => {
       registry: { listProjects: () => [{ host: 'host-a', project: 'research' }] },
     } as never)
 
-    await expect(Home()).rejects.toThrow('REDIRECT:/h/host-a/p/research')
+    await expect(Home()).rejects.toThrow('REDIRECT:/host-a/research')
   })
 
   it('selects the viewer-authorized host when direct project names collide', async () => {
@@ -89,6 +81,6 @@ describe('home route role-aware project redirect', () => {
       },
     } as never)
 
-    await expect(Home()).rejects.toThrow('REDIRECT:/h/host-b/p/research')
+    await expect(Home()).rejects.toThrow('REDIRECT:/host-b/research')
   })
 })

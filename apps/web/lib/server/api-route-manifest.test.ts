@@ -70,15 +70,10 @@ describe('API route ownership manifest', () => {
     expect(API_ROUTE_MANIFEST['ui-preferences/route.ts'].owner).toBe('central')
   })
 
-  it('keeps share CRUD in the central composition layer', () => {
-    expect(API_ROUTE_MANIFEST['projects/[project]/shares/route.ts']).toMatchObject({
-      owner: 'composed',
-      capability: 'shares',
-    })
-    expect(API_ROUTE_MANIFEST['projects/[project]/shares/[id]/route.ts']).toMatchObject({
-      owner: 'composed',
-      capability: 'shares',
-    })
+  it('keeps share CRUD in the central registry layer', () => {
+    expect(API_ROUTE_MANIFEST['shares/route.ts']).toMatchObject({ owner: 'central' })
+    expect(API_ROUTE_MANIFEST['shares/[id]/route.ts']).toMatchObject({ owner: 'central' })
+    expect(Object.keys(API_ROUTE_MANIFEST)).not.toContain('projects/[project]/shares/route.ts')
   })
 
   it('inventories every non-API direct Runtime consumer', () => {

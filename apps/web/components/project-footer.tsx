@@ -1,6 +1,6 @@
 'use client'
 
-// VSCode-style fixed bottom bar shown on every `/p/<project>/**` page.
+// VSCode-style fixed bottom bar shown on every `/<host>/<project>/**` page.
 // Bottom-left carries the current page's dependency freshness (see
 // `<PageFreshness />`); bottom-right carries the existing Git/version
 // affordances. The bar is `position: fixed` and on desktop indents from the
@@ -19,8 +19,9 @@ import {
   projectHost,
   projectName,
   projectQueryKey,
-  projectWebPath,
+  projectRouteTarget,
 } from '../lib/api'
+import { projectBasePath } from '../lib/project-routes'
 import { queryKeys } from '../lib/query-keys'
 import { cn } from '../lib/utils'
 import { GitDiffDialog } from './git-diff-dialog'
@@ -68,7 +69,7 @@ export function ProjectFooter({ project }: ProjectFooterProps) {
         <PageFreshness project={projectName(project)} />
         <div className="ml-auto flex min-w-0 items-center gap-2">
           <Link
-            href={projectWebPath(project)}
+            href={projectBasePath(projectRouteTarget(project))}
             className="hidden truncate font-mono font-medium text-foreground hover:underline sm:inline"
           >
             {projectHost(project) ? `${projectHost(project)}/` : ''}

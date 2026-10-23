@@ -26,6 +26,7 @@
 // /_next/image, /favicon.ico — these never hit middleware.
 
 import { type NextRequest, NextResponse } from 'next/server'
+import { canonicalFromLegacy, canonicalNumberRedirect, projectOfPath } from './lib/project-routes'
 import { TOO_MANY_HEADERS, UNAUTHORIZED_HEADERS } from './lib/server/auth/basic-auth'
 import {
   buildClearCookieHeader,
@@ -70,9 +71,8 @@ import {
   SHARE_TOKEN_PATTERN,
   shareLandingResponse,
 } from './lib/server/share-landing'
-import { projectRoutePrefix, publicDocuments, shareRegistryFor } from './lib/server/share-registry'
+import { publicDocuments, shareRegistryFor } from './lib/server/share-registry'
 import { withShareRegistry } from './lib/server/share-validator'
-import { standaloneServices } from './lib/server/standalone-services'
 
 export const config = {
   runtime: 'nodejs',
@@ -130,21 +130,47 @@ function isViewerVisibleMutation(method: string, pathname: string): boolean {
 /** Query parameters of the retired side Report/wiki workspace. */
 const RETIRED_SIDE_PARAMS = ['report', 'reportSurface', 'wiki', 'wikiSurface'] as const
 
-/** An old page link with side-document parameters: the same page without them. */
-function retiredSideParamsRedirect(req: NextRequest): NextResponse | null {
-  if ((req.method !== 'GET' && req.method !== 'HEAD') || req.nextUrl.pathname.startsWith('/api/'))
-    return null
-  if (!RETIRED_SIDE_PARAMS.some((name) => req.nextUrl.searchParams.has(name))) return null
-  const location = new URL(`${req.nextUrl.pathname}${req.nextUrl.search}`, publicOrigin(req))
-  for (const name of RETIRED_SIDE_PARAMS) location.searchParams.delete(name)
-  return NextResponse.redirect(location, 308)
+/** A permanent redirect that browsers must not cache, so a rollback stays safe. */
+function uncachedPermanentRedirect(location: URL): NextResponse {
+  const response = NextResponse.redirect(location, 308)
+  response.headers.set('Cache-Control', 'no-store')
+  return response
+}
+
+/**
+ * Old page URLs reach their canonical page in one redirect, before
+ * authentication and from the path alone: `/h/<host>/p/<project>/…` paths,
+ * padded or prefixed numbers (`/r/0010`) and the retired side-document
+ * parameters. Hostless `/p/…` paths and legacy paths with no canonical page
+ * are a 404.
+ */
+function canonicalPageRedirect(req: NextRequest): NextResponse | null {
+  const { pathname } = req.nextUrl
+  if ((req.method !== 'GET' && req.method !== 'HEAD') || pathname.startsWith('/api/')) return null
+  if (pathname === '/p' || pathname.startsWith('/p/')) return notFoundResponse()
+  const legacy = canonicalFromLegacy(pathname)
+  if (legacy === 'not-found') return notFoundResponse()
+  const path = legacy ?? canonicalNumberRedirect(pathname) ?? pathname
+  const search = new URLSearchParams(req.nextUrl.search)
+  const strips = RETIRED_SIDE_PARAMS.filter((name) => search.has(name))
+  if (path === pathname && !strips.length) return null
+  for (const name of strips) search.delete(name)
+  const query = search.toString()
+  return uncachedPermanentRedirect(new URL(`${path}${query ? `?${query}` : ''}`, publicOrigin(req)))
+}
+
+function notFoundResponse(): NextResponse {
+  return new NextResponse('Not Found', {
+    status: 404,
+    headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' },
+  })
 }
 
 export async function middleware(req: NextRequest): Promise<NextResponse> {
   const { pathname } = req.nextUrl
   if (isAuthBypass(pathname)) return NextResponse.next()
-  const retired = retiredSideParamsRedirect(req)
-  if (retired) return retired
+  const canonical = canonicalPageRedirect(req)
+  if (canonical) return canonical
 
   // Classify the route + compute projectFor. We do this BEFORE any auth
   // work to know whether to evaluate mode 3 (viewer share cookie) at all.
@@ -177,24 +203,19 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   )
     return redeemPageShare(req, runtime, ip, shareParam)
 
-  // Share validation: the central share registry first, then legacy
-  // project-file shares (see share-validator.ts).
+  // Share validation: the central share registry first, then peer Backend
+  // Hosts (see share-validator.ts). Hostless entries never validate.
   const shareValidator: ShareValidator = withShareRegistry(runtime.configPath, {
     validate: async (projectName, token, host) => {
-      if (host !== undefined) {
-        if (!runtime.config.central) return false
-        const fleet = await getCentralFleet().catch(() => null)
-        if (!fleet) return false
-        return validateCentralShare({
-          registry: fleet.registry,
-          host,
-          project: projectName,
-          token,
-        })
-      }
-      return standaloneServices(runtime.config)
-        .shares.validate(projectName, token)
-        .catch(() => false)
+      if (host === undefined || !runtime.config.central) return false
+      const fleet = await getCentralFleet().catch(() => null)
+      if (!fleet) return false
+      return validateCentralShare({
+        registry: fleet.registry,
+        host,
+        project: projectName,
+        token,
+      })
     },
   })
 
@@ -388,9 +409,15 @@ async function redeemPageShare(
   const record = await shareRegistryFor(runtime.configPath)
     .find(token)
     .catch(() => null)
-  const prefix = record ? projectRoutePrefix(record.host, record.project) : null
   const { pathname } = req.nextUrl
-  if (!record || !prefix || (pathname !== prefix && !pathname.startsWith(`${prefix}/`)))
+  const page = projectOfPath(pathname)
+  if (
+    !record ||
+    record.host === null ||
+    !page ||
+    page.host !== record.host ||
+    page.project !== record.project
+  )
     return invalidShareLinkResponse()
   refund(ip)
   const location = new URL(`${pathname}${req.nextUrl.search}`, publicOrigin(req))
@@ -407,8 +434,7 @@ async function redeemPageShare(
 function hostFromRequest(pathname: string, search: URLSearchParams): string | null {
   const queryHost = search.get('host')
   if (queryHost) return queryHost
-  const match = /^\/h\/([^/]+)(?:\/|$)/.exec(pathname)
-  return match?.[1] ? decodeURIComponent(match[1]) : null
+  return projectOfPath(pathname)?.host ?? null
 }
 
 function checkViewerScope(

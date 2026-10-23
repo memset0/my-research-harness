@@ -1,15 +1,16 @@
 // @vitest-environment node
 
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { AuthConfig } from '@memon/core'
 import { NextRequest } from 'next/server'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { signSharesCookie } from './lib/server/auth/cookies'
 import { __limits, __resetForTests } from './lib/server/auth/rate-limit'
+import { shareRegistryFor } from './lib/server/share-registry'
 
 vi.mock('./lib/server/runtime', () => ({ getRuntime: vi.fn() }))
-vi.mock('./lib/server/standalone-services', () => ({
-  standaloneServices: () => ({ shares: { validate: vi.fn().mockResolvedValue(true) } }),
-}))
 
 import { getRuntime } from './lib/server/runtime'
 import { middleware } from './middleware'
@@ -70,21 +71,32 @@ describe('middleware', () => {
     expect(res.headers.get('www-authenticate')).toBeNull()
   })
 
-  it('redirects old side-document links to the same page without their parameters', async () => {
-    const res = await middleware(
-      req(
-        'http://localhost/h/host-a/p/project-a/e/E0017-kernels?run=sample&report=R0007&reportSurface=split#top',
-        { accept: 'text/html', 'x-forwarded-for': '203.0.113.9' },
-      ),
-    )
-    expect(res.status).toBe(308)
-    expect(res.headers.get('location')).toBe(
-      'http://localhost/h/host-a/p/project-a/e/E0017-kernels?run=sample',
-    )
-    const wiki = await middleware(
-      req('http://localhost/h/host-a/p/project-a?wiki=W0004&wikiSurface=drawer'),
-    )
-    expect(wiki.headers.get('location')).toBe('http://localhost/h/host-a/p/project-a')
+  it('redirects old page URLs to their canonical page in one uncached 308', async () => {
+    const cases: Array<[string, string]> = [
+      [
+        '/h/host-a/p/project-a/e/E0017-kernels?run=sample&report=R0007&reportSurface=split',
+        '/host-a/project-a/e/17?run=sample',
+      ],
+      ['/h/host-a/p/project-a?wiki=W0004&wikiSurface=drawer', '/host-a/project-a'],
+      ['/h/host-a/p/project-a/reports/R0010?expanded=1', '/host-a/project-a/r/10?expanded=1'],
+      ['/h/host-a/p/project-a/wiki/W0004?share=tok', '/host-a/project-a/w/4?share=tok'],
+      [
+        '/h/host-a/p/project-a/code-review/experiments/E0005-bf16/code-review/2026-05-22-guard',
+        '/host-a/project-a/e/5/cr/2026-05-22-guard',
+      ],
+      ['/host-a/project-a/r/0010?expanded=1', '/host-a/project-a/r/10?expanded=1'],
+      ['/host-a/project-a/e/E0010-kernels', '/host-a/project-a/e/10'],
+      ['/host-a/project-a/w/4?wikiSurface=split', '/host-a/project-a/w/4'],
+    ]
+    for (const [from, to] of cases) {
+      // Anonymous: the redirect happens before authentication.
+      const res = await middleware(
+        req(`http://localhost${from}`, { accept: 'text/html', 'x-forwarded-for': '203.0.113.9' }),
+      )
+      expect(res.status, from).toBe(308)
+      expect(res.headers.get('location'), from).toBe(`http://localhost${to}`)
+      expect(res.headers.get('cache-control'), from).toBe('no-store')
+    }
     // API routes keep their own `report`/`wiki` query parameters.
     const api = await middleware(
       req('http://localhost/api/reports?project=project-a&report=R0007', {
@@ -94,9 +106,24 @@ describe('middleware', () => {
     expect(api.status).not.toBe(308)
   })
 
+  it('answers 404 for hostless and unmapped legacy page URLs before authentication', async () => {
+    for (const path of [
+      '/p/project-a',
+      '/p/project-a/reports/R0010',
+      '/p/project-a/r/run-1',
+      '/h/host-a/p/project-a/unknown',
+      '/h/host-a',
+    ]) {
+      const res = await middleware(
+        req(`http://localhost${path}`, { accept: 'text/html', 'x-forwarded-for': '203.0.113.10' }),
+      )
+      expect(res.status, path).toBe(404)
+    }
+  })
+
   it('returns 302 to /login on anonymous HTML page request', async () => {
     const res = await middleware(
-      req('http://localhost/p/project-a', {
+      req('http://localhost/host-a/project-a', {
         accept: 'text/html',
         'x-forwarded-for': '203.0.113.2',
       }),
@@ -104,7 +131,7 @@ describe('middleware', () => {
     expect(res.status).toBe(302)
     const location = res.headers.get('location') ?? ''
     expect(location).toContain('/login')
-    expect(location).toContain('next=%2Fp%2Fproject-a')
+    expect(location).toContain('next=%2Fhost-a%2Fproject-a')
   })
 
   it('returns 401 on wrong password (API)', async () => {
@@ -128,23 +155,32 @@ describe('middleware', () => {
   })
 
   it('returns an explicit 403 when a valid share viewer invokes a viewer-visible write', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'memon-middleware-'))
+    vi.mocked(getRuntime).mockResolvedValue({
+      configPath: join(directory, 'config.yml'),
+      auth,
+      config: { central: { hosts: [] }, projects: [] },
+      index: { get: () => undefined },
+      experiments: new Map(),
+      reportsCache: { getList: () => [] },
+      projectFor: () => null,
+      reportsDir: () => null,
+      digestsDir: () => null,
+    } as unknown as Awaited<ReturnType<typeof getRuntime>>)
+    const record = await shareRegistryFor(join(directory, 'config.yml')).create({
+      host: 'host-a',
+      project: 'project-a',
+      scope: { kind: 'project' },
+    })
     const viewerCookie = signSharesCookie(
-      [{ project: 'project-a', token: 'valid-share-token' }],
+      [{ host: 'host-a', project: 'project-a', token: record.token }],
       auth.sessionSecret!,
     )
+    const query = 'host=host-a&project=project-a&experiment=E0001-demo'
     const requests = [
-      [
-        'POST',
-        'http://localhost/api/experiment-results-views?project=project-a&experiment=E0001-demo',
-      ],
-      [
-        'PATCH',
-        'http://localhost/api/experiment-results-views/view-a?project=project-a&experiment=E0001-demo',
-      ],
-      [
-        'DELETE',
-        'http://localhost/api/experiment-results-views/view-a?project=project-a&experiment=E0001-demo',
-      ],
+      ['POST', `http://localhost/api/experiment-results-views?${query}`],
+      ['PATCH', `http://localhost/api/experiment-results-views/view-a?${query}`],
+      ['DELETE', `http://localhost/api/experiment-results-views/view-a?${query}`],
     ] as const
 
     for (const [method, url] of requests) {
@@ -160,6 +196,7 @@ describe('middleware', () => {
       )
       expect(response.status).toBe(403)
     }
+    await rm(directory, { recursive: true, force: true })
   })
 
   it('bypasses auth for /api/auth/check (own validation)', async () => {

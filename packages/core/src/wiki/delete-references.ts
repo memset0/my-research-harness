@@ -6,6 +6,7 @@ import remarkParse from 'remark-parse'
 import { unified } from 'unified'
 import { isAlias, isMap, isScalar, isSeq, parseDocument } from 'yaml'
 import { derivePayload } from '../components/payload.js'
+import { RESERVED_HOST_IDS } from '../schemas.js'
 import { COMPONENT_LATEST_VERSION, COMPONENT_TYPES } from './component-names.generated.js'
 import { parseWikiComponentBlocks } from './components.js'
 import { extractWikiReferences, resolvesWikiReference } from './lint.js'
@@ -162,9 +163,34 @@ function pointsAtTarget(
       (isWikiPage && (id === target.id || id === target.slug)) ||
       legacyReport ||
       (!isWikiPage && collection !== 'wiki' && url.searchParams.get('wiki') === target.id)
+    // A hostless `/p/<project>/…` link resolves within the Host of the
+    // document that contains it, which is the target's own Project.
     return addressed
-      ? deploymentScope(parts[p + 1] ?? null, p === 2 ? parts[1]! : null, origin, target)
+      ? deploymentScope(
+          parts[p + 1] ?? null,
+          p === 2 ? parts[1]! : (target.host ?? null),
+          origin,
+          target,
+        )
       : false
+  }
+  // Canonical page `/<host>/<project>/w/<n>` (or `/r/<n>` for a page that
+  // inherited a Report id).
+  if (
+    parts.length === 4 &&
+    /^[a-z0-9][a-z0-9-]*$/.test(parts[0]!) &&
+    !(RESERVED_HOST_IDS as readonly string[]).includes(parts[0]!) &&
+    /^(?:0|[1-9]\d{0,3})$/.test(parts[3]!)
+  ) {
+    const number = Number(parts[3])
+    const addressed =
+      (parts[2] === 'w' && number === Number(target.id.slice(1))) ||
+      (parts[2] === 'r' &&
+        target.legacyId !== undefined &&
+        /^R\d{4}$/.test(target.legacyId) &&
+        number === Number(target.legacyId.slice(1)) &&
+        identity(target.legacyId, target))
+    return addressed ? deploymentScope(parts[1]!, parts[0]!, origin, target) : false
   }
   if (parts[0] === 'api') {
     let addressed = false,

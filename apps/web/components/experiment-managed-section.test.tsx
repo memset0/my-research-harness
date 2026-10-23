@@ -1,7 +1,9 @@
-import type { ImplementationDocument, InvestigationDocument } from '@memon/core'
+import type { ImplementationDocument, InvestigationDocument, ProjectRef } from '@memon/core'
 import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { ExperimentManagedSection } from './experiment-managed-section'
+
+const PROJECT = { host: 'host-a', project: 'project-a' } as ProjectRef
 
 const IMPLEMENTATION: ImplementationDocument = {
   schemaVersion: 1,
@@ -65,7 +67,7 @@ describe('ExperimentManagedSection', () => {
       <ExperimentManagedSection
         kind="implementation"
         document={IMPLEMENTATION}
-        project="research"
+        project={PROJECT}
         experimentId="E0001-structured"
       />,
     )
@@ -84,10 +86,7 @@ describe('ExperimentManagedSection', () => {
     )
     expect(
       screen.getByRole('link', { name: 'code-review/2026-08-13-precision.md' }),
-    ).toHaveAttribute(
-      'href',
-      '/p/research/code-review/experiments/E0001-structured/code-review/2026-08-13-precision',
-    )
+    ).toHaveAttribute('href', '/host-a/project-a/e/1/cr/2026-08-13-precision')
     expect(container.querySelector('[data-item-id="IMP0002"]')).toBeInTheDocument()
     expect(container.querySelector('[data-depth="1"]')).toBeInTheDocument()
   })
@@ -97,7 +96,7 @@ describe('ExperimentManagedSection', () => {
       <ExperimentManagedSection
         kind="investigation"
         document={INVESTIGATION}
-        project="research"
+        project={PROJECT}
         experimentId="E0001-structured"
       />,
     )

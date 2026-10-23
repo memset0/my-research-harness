@@ -210,14 +210,14 @@ describe('content service gateway', () => {
     const registry = shareRegistryFor(configPath)
     const scope = { kind: 'wiki', id: 'W0001' } as const
     const service = await registry.create({
-      host: null,
+      host: 'host-a',
       project: 'project-a',
       scope,
       service: true,
     })
-    const page = await registry.create({ host: null, project: 'project-a', scope })
+    const page = await registry.create({ host: 'host-a', project: 'project-a', scope })
     const config = {
-      projects: [{ name: 'project-a', root: temp.root, include: [], exclude: [] }],
+      projects: [{ name: 'project-a', host: 'host-a', root: temp.root, include: [], exclude: [] }],
     } as unknown as Config
     const gateway = createContentServiceGateway(
       config,
@@ -228,7 +228,7 @@ describe('content service gateway', () => {
     const port = await listen(
       createMemonServer({ contentGateway: gateway, handle: (_req, res) => void res.end() }),
     )
-    const prefix = '/api/content-services/-/project-a/wiki/W0001/'
+    const prefix = '/api/content-services/host-a/project-a/wiki/W0001/'
     const url = `http://127.0.0.1:${port}${prefix}`
 
     const landing = await fetch(`${url}?view=1&share=${service.token}`, { redirect: 'manual' })

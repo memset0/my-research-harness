@@ -15,19 +15,13 @@ import {
   resolveProjectExecution,
 } from '@memon/backend'
 import {
-  addShare,
   type Config,
   configureFileAgentAdapters,
   getProjectFileContext,
-  listShares,
   parseFileOperationReason,
   prepareProjectFileAccess,
   projectSourceGroup,
-  revokeShare,
-  type ShareRecord,
-  validateShare,
   withFileWriterLock,
-  withJournalInvocation,
   withProjectFileContext,
 } from '@memon/core'
 import { isCollectionResourcePath } from '../resource-policy'
@@ -41,7 +35,6 @@ export const STANDALONE_SERVICE_MIGRATION = {
   git: 'shared',
   streaming: 'shared',
   slurm: 'shared',
-  shares: 'shared-core-adapter',
   runtimeCaches: 'shared-file-observations',
   runtimePoller: 'shared-conditional-observations',
   runtimeSse: 'resource-polling',
@@ -54,12 +47,6 @@ export interface StandaloneServices {
   git: FilesystemGitService
   streaming: FilesystemStreamService
   slurm: BackendSlurmService | null
-  shares: {
-    list(project: string, includeTokens: boolean): Promise<ShareRecord[]>
-    add(project: string, input: { label?: string; expires?: string }): Promise<ShareRecord>
-    revoke(project: string, id: string): Promise<ShareRecord[]>
-    validate(project: string, token: string): Promise<boolean>
-  }
 }
 
 const servicesByConfig = new WeakMap<Config, StandaloneServices>()
@@ -76,11 +63,6 @@ export function standaloneServices(config: Config): StandaloneServices {
   configureFileAgentAdapters(config.fileAgents ?? {}, config.projects)
   const projects = config.projects.filter((project) => project.host === undefined)
   enableDerivedIndex(projects, { validator: process.env.MEMON_INDEX_VALIDATOR !== 'off' })
-  const projectRoot = (name: string): string => {
-    const project = projects.find((candidate) => candidate.name === name)
-    if (!project) throw new Error('Project is not configured')
-    return project.root
-  }
   const services: StandaloneServices = {
     projects: scopeService(
       config,
@@ -114,33 +96,6 @@ export function standaloneServices(config: Config): StandaloneServices {
           ),
         })
       : null,
-    shares: scopeService(
-      config,
-      {
-        list: (project, includeTokens) => listShares(projectRoot(project), { includeTokens }),
-        add: (project, input) => {
-          const root = projectRoot(project)
-          return withJournalInvocation(
-            root,
-            { command: 'share create', origin: 'web', parameters: { project } },
-            () => addShare(root, input),
-            { standalone: true },
-          )
-        },
-        revoke: (project, id) => {
-          const root = projectRoot(project)
-          return withJournalInvocation(
-            root,
-            { command: 'share revoke', origin: 'web', parameters: { project, id } },
-            () => revokeShare(root, id),
-            { standalone: true },
-          )
-        },
-        validate: async (project, token) =>
-          (await validateShare(projectRoot(project), token).catch(() => null)) !== null,
-      },
-      'shares',
-    ),
   }
   servicesByConfig.set(config, services)
   return services

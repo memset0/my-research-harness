@@ -132,11 +132,20 @@ export type CodeReviewFrontMatterRaw = z.infer<typeof CodeReviewFrontMatterRawSc
 // Declared before the Project schema because a Project may name its Host
 // namespace and its own SSH execution target.
 
+/** Host ids that a top-level Web route would shadow (`/<host>/<project>` pages). */
+export const RESERVED_HOST_IDS = ['api', 'h', 'login', 'manage', 'p', 's', 'share'] as const
+
 export const HostIdRawSchema = z
   .string()
   .min(1)
   .max(63)
   .regex(/^[a-z0-9][a-z0-9-]*$/, 'must match [a-z0-9][a-z0-9-]*')
+  .refine(
+    (id) => !(RESERVED_HOST_IDS as readonly string[]).includes(id),
+    (id) => ({
+      message: `Host id "${id}" is reserved: it would be shadowed by the top-level /${id} route`,
+    }),
+  )
 
 const SafeSshTargetRawSchema = z
   .string()
@@ -456,7 +465,8 @@ export const CentralConfigRawSchema = z
     bind_addr: z.string().min(1).optional(),
     bind_port: z.number().int().min(1).max(65535).optional(),
     public_url: z.string().url().optional(),
-    legacy_share_host: HostIdRawSchema.optional(),
+    /** Removed with hostless share links; the loader rejects it with a message. */
+    legacy_share_host: z.unknown().optional(),
     hosts: z.array(CentralHostRawSchema).default([]),
   })
   .strict()

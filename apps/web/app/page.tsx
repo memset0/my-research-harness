@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation'
+import { projectBasePath } from '../lib/project-routes'
 import { readIdentityFromHeaders } from '../lib/server/auth/request-context'
 import { aggregateCentralProjects } from '../lib/server/central/central-projects'
 import { servesProjectsDirectly } from '../lib/server/central/direct-projects'
@@ -9,7 +10,7 @@ import { getRuntime } from '../lib/server/runtime'
 export const dynamic = 'force-dynamic'
 
 export default async function Home() {
-  let firstProject: { host: string | null; project: string } | null = null
+  let firstProject: { host: string; project: string } | null = null
   let centralMode = false
   let configError: string | null = null
   try {
@@ -39,21 +40,13 @@ export default async function Home() {
         first = payload.projects[0]
       }
       firstProject = first ? { host: first.host, project: first.project } : null
-    } else {
-      const first = rt.config.projects[0]
-      firstProject = first ? { host: null, project: first.name } : null
     }
   } catch (err) {
     configError = (err as Error).message
   }
 
   // Note: redirect() throws — call it outside the try/catch so it isn't swallowed.
-  if (firstProject?.host) {
-    redirect(
-      `/h/${encodeURIComponent(firstProject.host)}/p/${encodeURIComponent(firstProject.project)}`,
-    )
-  }
-  if (firstProject) redirect(`/p/${encodeURIComponent(firstProject.project)}`)
+  if (firstProject) redirect(projectBasePath(firstProject))
 
   return (
     <main className="mx-auto max-w-2xl p-6">

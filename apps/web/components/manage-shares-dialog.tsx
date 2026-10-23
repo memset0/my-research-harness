@@ -19,6 +19,7 @@ import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import {
+  fetchExperimentsInventory,
   fetchReport,
   fetchWikiPage,
   type ProjectTarget,
@@ -31,6 +32,7 @@ import type {
   ScopedSharesResponse,
   ShareScopeDto,
 } from '../lib/dto/shares'
+import { artifactIdPrefix, parseProjectPath } from '../lib/project-routes'
 import { queryKeys } from '../lib/query-keys'
 import { useSession } from './session-provider'
 import { Button } from './ui/button'
@@ -53,22 +55,29 @@ interface Props {
 
 type DocumentScope = Exclude<ShareScopeDto, { kind: 'project' }>
 
-const PAGE = /^(?:\/h\/[^/]+)?\/p\/[^/]+\/(wiki|reports|e)\/([^/?#]+)\/?$/
-const PAGE_KIND = { wiki: 'wiki', reports: 'report', e: 'experiment' } as const
 const KIND_LABEL = { wiki: 'Wiki', report: 'Report', experiment: 'Experiment' } as const
 
+/** The document a page shows; an Experiment page names only its number. */
+export type PageDocument = DocumentScope | { kind: 'experiment'; number: number }
+
 /** The document the current page shows, when it is an Experiment, Report or Wiki page. */
-export function pageDocument(pathname: string): DocumentScope | null {
-  const match = PAGE.exec(pathname)
-  if (!match) return null
-  try {
-    return {
-      kind: PAGE_KIND[match[1] as keyof typeof PAGE_KIND],
-      id: decodeURIComponent(match[2]!),
-    }
-  } catch {
-    return null
-  }
+export function pageDocument(pathname: string): PageDocument | null {
+  const page = parseProjectPath(pathname)?.page
+  if (page?.kind === 'wiki') return { kind: 'wiki', id: artifactIdPrefix('W', page.number) }
+  if (page?.kind === 'report') return { kind: 'report', id: artifactIdPrefix('R', page.number) }
+  if (page?.kind === 'experiment') return { kind: 'experiment', number: page.number }
+  return null
+}
+
+/** The page's document with a full id, resolving an Experiment number against the inventory. */
+export function resolvedPageDocument(
+  page: PageDocument | null,
+  experimentIds: readonly string[] | undefined,
+): DocumentScope | null {
+  if (!page || 'id' in page) return page
+  const prefix = `${artifactIdPrefix('E', page.number)}-`
+  const matches = (experimentIds ?? []).filter((id) => id.startsWith(prefix))
+  return matches.length === 1 ? { kind: 'experiment', id: matches[0]! } : null
 }
 
 export function scopeLabel(scope: ShareScopeDto): string {
@@ -176,7 +185,7 @@ async function copyToClipboard(text: string): Promise<void> {
 export function ManageSharesDialog({ project }: Props) {
   const { role } = useSession()
   const pathname = usePathname() ?? ''
-  const pageDoc = pageDocument(pathname)
+  const pageRef = pageDocument(pathname)
   const [open, setOpen] = useState(false)
   const [label, setLabel] = useState('')
   const [expires, setExpires] = useState('never')
@@ -190,6 +199,17 @@ export function ManageSharesDialog({ project }: Props) {
     enabled: open && role === 'owner',
     staleTime: 5_000,
   })
+
+  // `/e/<n>` names an Experiment by number; a share scope needs its full id.
+  const { data: experiments } = useQuery({
+    queryKey: queryKeys.experimentsInventory(project),
+    queryFn: () => fetchExperimentsInventory(project),
+    enabled: open && role === 'owner' && pageRef !== null && !('id' in pageRef),
+  })
+  const pageDoc = resolvedPageDocument(
+    pageRef,
+    experiments?.items.map((item) => item.id),
+  )
 
   // Only Report and Wiki pages can be public or carry a service.
   const publishable = pageDoc && pageDoc.kind !== 'experiment' ? pageDoc : null

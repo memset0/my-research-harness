@@ -2,7 +2,8 @@
 
 import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
-import { fetchCodeReviews, type ProjectTarget, projectQueryKey, projectWebPath } from '../lib/api'
+import { fetchCodeReviews, type ProjectTarget, projectQueryKey } from '../lib/api'
+import { canonicalCodeReviewHref } from '../lib/artifact-navigation'
 import { queryKeys } from '../lib/query-keys'
 import { SuccessBadge } from './colored-badge'
 import { useIsDocumentOnlyViewer } from './session-provider'
@@ -13,8 +14,6 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 // from the same ['code-reviews', project] cache the viewer uses (so it stays
 // live via the code-reviews-change SSE topic) and filters to this experiment.
 // Renders nothing when the experiment has no associated reviews.
-
-const encId = (id: string) => id.split('/').map(encodeURIComponent).join('/')
 
 export function ExperimentCodeReviews({
   project,
@@ -46,7 +45,7 @@ export function ExperimentCodeReviews({
         {items.map((i) => (
           <Link
             key={i.id}
-            href={projectWebPath(project, `/code-review/${encId(i.id)}`)}
+            href={canonicalCodeReviewHref(project, i.id)}
             className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-accent"
             data-slot="experiment-code-review-row"
           >

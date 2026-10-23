@@ -1,4 +1,4 @@
-import type { WikiBacklink } from '@memon/core'
+import type { ProjectRef, WikiBacklink } from '@memon/core'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -13,6 +13,8 @@ vi.mock('../lib/api', async (importOriginal) => ({
   ...(await importOriginal<typeof Api>()),
   fetchWikiBacklinks,
 }))
+
+const PROJECT = { host: 'host-a', project: 'project-a' } as ProjectRef
 
 const CITATION: WikiBacklink = {
   id: 'W0004',
@@ -30,14 +32,14 @@ function renderCitations(pages?: WikiBacklink[]) {
     defaultOptions: { queries: { staleTime: Infinity, retry: false } },
   })
   if (pages) {
-    client.setQueryData(['wiki-backlinks', ...projectQueryKey('project-a'), 'E0017-kernels'], {
+    client.setQueryData(['wiki-backlinks', ...projectQueryKey(PROJECT), 'E0017-kernels'], {
       artifact: 'E0017-kernels',
       pages,
     })
   }
   const result = render(
     <QueryClientProvider client={client}>
-      <ExperimentWikiCitations project="project-a" experimentId="E0017-kernels" />
+      <ExperimentWikiCitations project={PROJECT} experimentId="E0017-kernels" />
     </QueryClientProvider>,
   )
   return { ...result, client }
@@ -64,7 +66,7 @@ describe('ExperimentWikiCitations', () => {
     await userEvent.click(screen.getByRole('button', { name: /Cited by wiki/i }))
 
     const link = screen.getByRole('link', { name: /W0004.*Kernel drift/i })
-    expect(link).toHaveAttribute('href', '/p/project-a/wiki/W0004')
+    expect(link).toHaveAttribute('href', '/host-a/project-a/w/4')
     expect(within(link).getByText('finding')).toBeInTheDocument()
     expect(within(link).getByText('VERIFIED')).toBeInTheDocument()
     expect(within(link).getByText('stale')).toBeInTheDocument()

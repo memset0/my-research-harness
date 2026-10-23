@@ -29,17 +29,23 @@ describe('prewarmRoutes', () => {
     await prewarmRoutes({
       host: 'localhost',
       port: 3737,
-      projects: [{ name: 'project-a' }, { name: 'project-b' }],
+      projects: [
+        { name: 'project-a', host: 'host-a' },
+        { name: 'project-b', host: 'host-b' },
+        // Hostless Projects have no page route and are skipped.
+        { name: 'project-c' },
+      ],
       auth: { username: 'admin', password: 'pw' },
     })
 
     const calls = fetchMock.mock.calls.map((c) => String(c[0]))
     expect(calls).toContain('http://localhost:3737/api/projects')
-    for (const project of ['project-a', 'project-b']) {
+    for (const base of ['host-a/project-a', 'host-b/project-b']) {
       for (const sub of ['', '/journal', '/reports']) {
-        expect(calls).toContain(`http://localhost:3737/p/${project}${sub}`)
+        expect(calls).toContain(`http://localhost:3737/${base}${sub}`)
       }
     }
+    expect(calls.some((url) => url.includes('/p/'))).toBe(false)
     expect(fetchMock).toHaveBeenCalledTimes(7)
 
     const expectedHeader = `Basic ${Buffer.from('admin:pw', 'utf8').toString('base64')}`
@@ -57,12 +63,12 @@ describe('prewarmRoutes', () => {
     await prewarmRoutes({
       host: 'localhost',
       port: 3737,
-      projects: [{ name: 'pro ject/x' }],
+      projects: [{ name: 'pro ject/x', host: 'host-a' }],
       auth: { username: 'u', password: 'p' },
     })
     const calls = fetchMock.mock.calls.map((c) => String(c[0]))
-    expect(calls).toContain('http://localhost:3737/p/pro%20ject%2Fx')
-    expect(calls).not.toContain('http://localhost:3737/p/pro%20ject%2Fx/hypotheses')
+    expect(calls).toContain('http://localhost:3737/host-a/pro%20ject%2Fx')
+    expect(calls).not.toContain('http://localhost:3737/host-a/pro%20ject%2Fx/hypotheses')
   })
 
   it('does not throw when one fetch rejects', async () => {
@@ -76,7 +82,7 @@ describe('prewarmRoutes', () => {
       prewarmRoutes({
         host: 'localhost',
         port: 3737,
-        projects: [{ name: 'p1' }],
+        projects: [{ name: 'p1', host: 'host-a' }],
         auth: { username: 'u', password: 'p' },
       }),
     ).resolves.toBeUndefined()
@@ -89,11 +95,13 @@ describe('prewarmRoutes', () => {
     await prewarmRoutes({
       host: 'h',
       port: 1,
-      projects: [{ name: 'x' }],
+      projects: [{ name: 'x', host: 'host-a' }],
       auth: { username: 'u', password: 'p' },
     })
     const messages = logSpy.mock.calls.map((c) => String(c[0]))
     expect(messages.some((m) => m.startsWith('[prewarm] GET /api/projects -> 404 in'))).toBe(true)
-    expect(messages.some((m) => m.startsWith('[prewarm] GET /p/x/journal -> 404 in'))).toBe(true)
+    expect(messages.some((m) => m.startsWith('[prewarm] GET /host-a/x/journal -> 404 in'))).toBe(
+      true,
+    )
   })
 })

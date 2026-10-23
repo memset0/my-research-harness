@@ -3,7 +3,7 @@
 // The token is validated against the central share registry (constant time,
 // expiry checked). Success adds `{host, project, token}` to the viewer cookie
 // (deduplicated by token, bounded) and redirects to the page the link was
-// issued for — the stored landing path, never a request parameter. Unknown or
+// issued for — its canonical landing page, never a request parameter. Unknown or
 // expired tokens get the generic invalid-link page and keep the consumed
 // rate-limit token.
 
@@ -17,7 +17,7 @@ import {
   SHARE_TOKEN_PATTERN,
   shareLandingResponse,
 } from '@/lib/server/share-landing'
-import { shareRegistryFor } from '@/lib/server/share-registry'
+import { canonicalLandingPath, shareRegistryFor } from '@/lib/server/share-registry'
 
 export async function GET(
   req: NextRequest,
@@ -45,13 +45,14 @@ export async function GET(
   const record = await shareRegistryFor(runtime.configPath)
     .find(token)
     .catch(() => null)
-  if (!record) return invalidShareLinkResponse()
+  const landing = record ? canonicalLandingPath(record) : null
+  if (!record || landing === null) return invalidShareLinkResponse()
   refund(ip)
   return shareLandingResponse({
     record,
     existingCookie: req.cookies.get(SHARES_COOKIE_NAME)?.value ?? null,
     secret,
-    location: new URL(record.path, publicOrigin(req)).toString(),
+    location: new URL(landing, publicOrigin(req)).toString(),
     secure: isHttps(req),
   })
 }

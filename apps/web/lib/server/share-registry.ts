@@ -14,6 +14,14 @@ import { promises as fs } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { formatIsoLocal, parseDuration } from '@memon/core'
 import { z } from 'zod'
+import {
+  canonicalFromLegacy,
+  experimentPath,
+  projectBasePath,
+  projectOfPath,
+  reportPath,
+  wikiPath,
+} from '../project-routes'
 
 export const SHARE_REGISTRY_FILENAME = 'shares.json'
 export const SHARE_DOCUMENT_KINDS = ['experiment', 'wiki', 'report'] as const
@@ -24,12 +32,6 @@ const DOCUMENT_ID: Record<ShareDocumentKind, RegExp> = {
   wiki: /^W\d{4}$/,
   report: /^R\d{4}$/,
 }
-const DOCUMENT_ROUTE: Record<ShareDocumentKind, string> = {
-  experiment: 'e',
-  wiki: 'wiki',
-  report: 'reports',
-}
-
 export const ShareScopeSchema = z.union([
   z.object({ kind: z.literal('project') }).strict(),
   z
@@ -80,42 +82,69 @@ export function isDocumentScope(scope: ShareScope): scope is ShareDocumentScope 
   return scope.kind !== 'project'
 }
 
-/** The Project's route prefix: `/h/<host>/p/<project>` in central mode, else `/p/<project>`. */
-export function projectRoutePrefix(host: string | null, project: string): string {
-  const base = `/p/${encodeURIComponent(project)}`
-  return host === null ? base : `/h/${encodeURIComponent(host)}${base}`
+/** The canonical page of a shared document. */
+function documentPagePath(host: string, project: string, scope: ShareDocumentScope): string {
+  const target = { host, project }
+  if (scope.kind === 'experiment') return experimentPath(target, scope.id)
+  if (scope.kind === 'wiki') return wikiPath(target, scope.id)
+  return reportPath(target, scope.id)
 }
 
-/**
- * The page a link lands on. Document scope: the document's own page. Project
- * scope: the client's current page only when it lies inside the Project's
- * route and carries no dot-segment or scheme tricks, else the Project root.
- */
-export function shareLandingPath(
-  host: string | null,
-  project: string,
-  scope: ShareScope,
-  currentPath?: string | null,
-): string {
-  const base = projectRoutePrefix(host, project)
-  if (isDocumentScope(scope))
-    return `${base}/${DOCUMENT_ROUTE[scope.kind]}/${encodeURIComponent(scope.id)}`
-  if (!currentPath || currentPath.length > 2048) return base
-  const path = currentPath.split('#')[0]!
-  if (path !== base && !path.startsWith(`${base}/`) && !path.startsWith(`${base}?`)) return base
+/** `path` (pathname and optional query) when it is a clean page path under the Project, else null. */
+function pagePathWithin(host: string, project: string, path: string): string | null {
+  if (path.length > 2048 || /[\\\0]/.test(path)) return null
   const pathname = path.split('?')[0]!
-  if (/[\\\0]/.test(path) || pathname.includes('//')) return base
+  if (pathname.includes('//')) return null
   try {
     if (
       decodeURIComponent(pathname)
         .split('/')
         .some((part) => part === '.' || part === '..')
     )
-      return base
+      return null
   } catch {
-    return base
+    return null
   }
-  return path
+  const owner = projectOfPath(pathname)
+  return owner?.host === host && owner.project === project ? path : null
+}
+
+/**
+ * The page a link lands on, always a canonical path. Document scope: the
+ * document's own page. Project scope: the client's current page only when it
+ * is a clean page path under the Project's `/<host>/<project>`, else the
+ * Project root.
+ */
+export function shareLandingPath(
+  host: string,
+  project: string,
+  scope: ShareScope,
+  currentPath?: string | null,
+): string {
+  if (isDocumentScope(scope)) return documentPagePath(host, project, scope)
+  const base = projectBasePath({ host, project })
+  if (!currentPath) return base
+  return pagePathWithin(host, project, currentPath.split('#')[0]!) ?? base
+}
+
+/**
+ * The canonical landing page of a stored record. Records written before the
+ * canonical routes stored `/h/<host>/p/<project>/…` paths; they map to the
+ * same page without rewriting the registry. Null for a record without a Host,
+ * which grants nothing.
+ */
+export function canonicalLandingPath(record: ShareRegistryRecord): string | null {
+  if (record.host === null) return null
+  if (isDocumentScope(record.scope))
+    return documentPagePath(record.host, record.project, record.scope)
+  const [pathname = '', query] = record.path.split('?')
+  const legacy = canonicalFromLegacy(pathname)
+  const mapped = legacy === null ? pathname : legacy === 'not-found' ? null : legacy
+  const path = mapped === null ? null : query === undefined ? mapped : `${mapped}?${query}`
+  return (
+    (path && pagePathWithin(record.host, record.project, path)) ??
+    projectBasePath({ host: record.host, project: record.project })
+  )
 }
 
 function tokenMatches(candidate: string, token: string): boolean {
@@ -182,7 +211,7 @@ export function publicDocuments(
 const queues = new Map<string, Promise<unknown>>()
 
 export interface CreateShareInput {
-  host: string | null
+  host: string
   project: string
   scope: ShareScope
   label?: string

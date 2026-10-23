@@ -76,11 +76,11 @@ describe('/api/shares', () => {
       host: 'host-a',
       project: 'project-x',
       scope: { kind: 'wiki', id: 'W0004' },
-      path: '/h/host-a/p/project-x/wiki/W0004',
+      path: '/host-a/project-x/w/4',
       label: 'Alice',
     })
     expect(share.share_url).toBe(
-      `https://memon.example.test/h/host-a/p/project-x/wiki/W0004?share=${share.token}`,
+      `https://memon.example.test/host-a/project-x/w/4?share=${share.token}`,
     )
 
     const published = await create({
@@ -92,7 +92,7 @@ describe('/api/shares', () => {
     expect(published.status).toBe(201)
     expect((await published.json()).share).toMatchObject({
       public: true,
-      share_url: 'https://memon.example.test/h/host-a/p/project-x/wiki/W0004',
+      share_url: 'https://memon.example.test/host-a/project-x/w/4',
     })
 
     const listed = await GET(
@@ -166,7 +166,7 @@ describe('/api/shares', () => {
     const { share } = await created.json()
     expect(share).toMatchObject({ service: true, scope: { kind: 'wiki', id: 'W0004' } })
     expect(share.share_url).toBe(
-      `https://memon.example.test/h/host-a/p/project-x/wiki/W0004?share=${share.token}`,
+      `https://memon.example.test/host-a/project-x/w/4?share=${share.token}`,
     )
   })
 })

@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as ApiModule from '../lib/api'
 import { renderWithQuery } from '../test/utils'
 
-let currentPathname = '/p/project-a'
+let currentPathname = '/host-a/project-a'
 vi.mock('next/navigation', () => ({
   usePathname: () => currentPathname,
 }))
@@ -124,29 +124,12 @@ function centralProject(host: string, project: string) {
 
 describe('AppSidebar', () => {
   beforeEach(() => {
-    currentPathname = '/p/project-a'
+    currentPathname = '/host-a/project-a'
     localStorage.clear()
     vi.clearAllMocks()
-    vi.mocked(fetchHosts).mockRejectedValue(new Error('Host registry unavailable'))
+    vi.mocked(fetchHosts).mockResolvedValue({ hosts: [makeHost('host-a')] })
     vi.mocked(fetchProjects).mockResolvedValue({
-      projects: [
-        {
-          mode: 'standalone',
-          host: null,
-          project: 'project-a',
-          name: 'project-a',
-          root: '/p/a',
-          exclude: [],
-        },
-        {
-          mode: 'standalone',
-          host: null,
-          project: 'project-b',
-          name: 'project-b',
-          root: '/p/b',
-          exclude: [],
-        },
-      ],
+      projects: [centralProject('host-a', 'project-a'), centralProject('host-a', 'project-b')],
     })
     vi.mocked(fetchExperimentsInventory).mockResolvedValue({ items: [] })
     vi.mocked(fetchExperimentDocs).mockResolvedValue({ experiments: [] })
@@ -230,7 +213,7 @@ describe('AppSidebar', () => {
     })
 
     const links = Array.from(
-      container.querySelectorAll<HTMLAnchorElement>('a[href*="/p/project-a/e/"]'),
+      container.querySelectorAll<HTMLAnchorElement>('a[href*="/host-a/project-a/e/"]'),
     )
     const ids = links.map((a) => within(a).getByText(/^E\d+-/).textContent)
     expect(ids).toEqual(['E0001-alpha', 'E0002-bravo', 'E0003-charlie'])
@@ -247,13 +230,13 @@ describe('AppSidebar', () => {
     ).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /E0001.*Unknown.*E0001-alpha/ })).toHaveAttribute(
       'href',
-      '/p/project-a/e/E0001-alpha',
+      '/host-a/project-a/e/1',
     )
     expect(screen.queryByRole('button', { name: 'Active experiments (1)' })).not.toBeInTheDocument()
   })
 
   it('opens the current retired group and preserves inventory-only entries', async () => {
-    currentPathname = '/p/project-a/e/E0003-old'
+    currentPathname = '/host-a/project-a/e/3'
     vi.mocked(fetchExperimentsInventory).mockResolvedValue({
       items: [makeInventoryItem('E0003-old'), makeInventoryItem('E0004-unreadable')],
     })
@@ -294,7 +277,7 @@ describe('AppSidebar', () => {
       within(active as HTMLElement)
         .getAllByRole('link')
         .map((link) => link.getAttribute('href')),
-    ).toEqual(['/p/project-a/e/E0002-running', '/p/project-a/e/E0001-completed'])
+    ).toEqual(['/host-a/project-a/e/2', '/host-a/project-a/e/1'])
     await userEvent.click(screen.getByRole('button', { name: 'Archived experiments (1)' }))
     expect(screen.getByRole('link', { name: /Archived comparison/ })).toBeInTheDocument()
   })
@@ -302,7 +285,10 @@ describe('AppSidebar', () => {
   it('renders a compact git pill per project row when git status is available', async () => {
     vi.mocked(fetchGitStatus).mockImplementation(async (project) => ({
       enabled: true,
-      branch: project === 'project-a' ? 'main' : 'feature/x',
+      branch:
+        (typeof project === 'string' ? project : project.project) === 'project-a'
+          ? 'main'
+          : 'feature/x',
       detached: false,
       sha: '0123456',
       upstream: null,
@@ -451,7 +437,7 @@ describe('AppSidebar', () => {
     vi.mocked(fetchExperimentsInventory).mockResolvedValue({ items })
     const { container } = setup()
     await waitFor(() => {
-      const links = container.querySelectorAll('a[href*="/p/project-a/e/"]')
+      const links = container.querySelectorAll('a[href*="/host-a/project-a/e/"]')
       expect(links.length).toBe(12)
     })
     // Confirm no "View more" / "Show fewer" affordance in the DOM.
@@ -475,14 +461,16 @@ describe('AppSidebar', () => {
       items: [makeInventoryItem('E0001-alpha')],
     })
     await userEvent.click(screen.getByText('project-b'))
-    await waitFor(() => expect(fetchExperimentsInventory).toHaveBeenCalledWith('project-b'))
-    expect(fetchExperimentsInventory).not.toHaveBeenCalledWith('project-a')
-    expect(fetchExperimentDocs).toHaveBeenCalledWith('project-b')
-    expect(fetchExperimentDocs).not.toHaveBeenCalledWith('project-a')
+    const projectA = { host: 'host-a', project: 'project-a' }
+    const projectB = { host: 'host-a', project: 'project-b' }
+    await waitFor(() => expect(fetchExperimentsInventory).toHaveBeenCalledWith(projectB))
+    expect(fetchExperimentsInventory).not.toHaveBeenCalledWith(projectA)
+    expect(fetchExperimentDocs).toHaveBeenCalledWith(projectB)
+    expect(fetchExperimentDocs).not.toHaveBeenCalledWith(projectA)
   })
 
   it('central: keeps configured Host order and shows offline Hosts without Projects', async () => {
-    currentPathname = '/h/host-a/p/project-a'
+    currentPathname = '/host-a/project-a'
     vi.mocked(fetchHosts).mockResolvedValue({
       hosts: [
         makeHost('host-b', 'offline', 'Cluster B'),
@@ -509,7 +497,7 @@ describe('AppSidebar', () => {
   })
 
   it('central: duplicate Project names retain Host-qualified persistence, fetches, and links', async () => {
-    currentPathname = '/h/host-a/p/shared-project/e/E0001-alpha'
+    currentPathname = '/host-a/shared-project/e/1'
     vi.mocked(fetchHosts).mockResolvedValue({
       hosts: [makeHost('host-a'), makeHost('host-b')],
     })
@@ -536,8 +524,8 @@ describe('AppSidebar', () => {
       expect(within(hostB).getByText('E0001-alpha')).toBeInTheDocument()
     })
 
-    const hostALink = hostA.querySelector('a[href="/h/host-a/p/shared-project/e/E0001-alpha"]')
-    const hostBLink = hostB.querySelector('a[href="/h/host-b/p/shared-project/e/E0001-alpha"]')
+    const hostALink = hostA.querySelector('a[href="/host-a/shared-project/e/1"]')
+    const hostBLink = hostB.querySelector('a[href="/host-b/shared-project/e/1"]')
     expect(hostALink).toHaveAttribute('data-active', 'true')
     expect(hostBLink).toHaveAttribute('data-active', 'false')
     expect(fetchExperimentsInventory).toHaveBeenCalledWith({

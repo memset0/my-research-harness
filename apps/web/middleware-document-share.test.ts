@@ -9,7 +9,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('./lib/server/runtime', () => ({ getRuntime: vi.fn() }))
 vi.mock('./lib/server/central/fleet-runtime', () => ({ getCentralFleet: vi.fn() }))
 vi.mock('./lib/server/central/central-shares', () => ({ validateCentralShare: vi.fn() }))
-vi.mock('./lib/server/standalone-services', () => ({ standaloneServices: vi.fn() }))
 vi.mock('./lib/server/share-api', () => ({ runResource: vi.fn() }))
 
 import { signSharesCookie } from './lib/server/auth/cookies'
@@ -17,7 +16,6 @@ import { __resetForTests } from './lib/server/auth/rate-limit'
 import { getRuntime } from './lib/server/runtime'
 import { runResource } from './lib/server/share-api'
 import { shareRegistryFor } from './lib/server/share-registry'
-import { standaloneServices } from './lib/server/standalone-services'
 import { middleware } from './middleware'
 
 const SECRET = 'central-session-secret'
@@ -37,9 +35,6 @@ beforeEach(async () => {
     projectFor: () => null,
     reportsDir: () => null,
     digestsDir: () => null,
-  } as never)
-  vi.mocked(standaloneServices).mockReturnValue({
-    shares: { validate: vi.fn().mockResolvedValue(false) },
   } as never)
 })
 afterEach(async () => {
@@ -72,7 +67,7 @@ const allowed = (response: Response) => response.headers.get('x-middleware-next'
 describe('middleware document-scoped shares', () => {
   it('admits the shared page and its reads and denies the rest of the Project', async () => {
     const open = await viewerFor({ kind: 'wiki', id: 'W0004' })
-    const page = await open('/h/host-a/p/project-x/wiki/W0004')
+    const page = await open('/host-a/project-x/w/4')
     expect(allowed(page)).toBe(true)
     const forwardedScope = page.headers.get('x-middleware-request-x-memon-host-scope')
     expect(forwardedScope).toBeTruthy()
@@ -83,8 +78,9 @@ describe('middleware document-scoped shares', () => {
 
     expect(allowed(await open('/api/wiki/W0004?host=host-a&project=project-x'))).toBe(true)
     for (const path of [
-      '/h/host-a/p/project-x/wiki/W0001',
-      '/h/host-a/p/project-x',
+      '/host-a/project-x/w/1',
+      '/host-a/project-x',
+      '/host-a/project-x/wiki',
       '/api/wiki/W0001?host=host-a&project=project-x',
       '/api/reports?host=host-a&project=project-x',
     ]) {
@@ -105,7 +101,8 @@ describe('middleware document-scoped shares', () => {
 
   it('keeps Project-scoped links unchanged', async () => {
     const open = await viewerFor({ kind: 'project' })
-    expect(allowed(await open('/h/host-a/p/project-x/wiki/W0001'))).toBe(true)
+    expect(allowed(await open('/host-a/project-x/w/1'))).toBe(true)
+    expect(allowed(await open('/host-a/project-x/e/3/cr/2026-05-22-guard'))).toBe(true)
     expect(allowed(await open('/api/reports?host=host-a&project=project-x'))).toBe(true)
   })
 
@@ -122,20 +119,43 @@ describe('middleware document-scoped shares', () => {
           headers: { 'x-forwarded-for': '203.0.113.82' },
         }),
       )
-    const redeemed = await open(`/h/host-a/p/project-x/reports/R0005?share=${record.token}&tab=1`)
+    const redeemed = await open(`/host-a/project-x/r/5?share=${record.token}&tab=1`)
     expect(redeemed.status).toBe(302)
     expect(redeemed.headers.get('location')).toBe(
-      'https://memon.example.test/h/host-a/p/project-x/reports/R0005?tab=1',
+      'https://memon.example.test/host-a/project-x/r/5?tab=1',
     )
     expect(redeemed.headers.get('set-cookie')).toContain('memon-shares=')
     for (const path of [
-      `/h/host-a/p/project-y/reports/R0005?share=${record.token}`,
-      '/h/host-a/p/project-x/reports/R0005?share=not-a-valid-token-at-all',
+      `/host-a/project-y/r/5?share=${record.token}`,
+      `/host-b/project-x/r/5?share=${record.token}`,
+      '/host-a/project-x/r/5?share=not-a-valid-token-at-all',
     ]) {
       const refused = await open(path)
       expect(refused.status).toBe(404)
       expect(refused.headers.get('set-cookie')).toBeNull()
     }
+  })
+
+  it('redeems an old page link with a token after its canonical redirect', async () => {
+    const record = await shareRegistryFor(join(directory, 'config.yml')).create({
+      host: 'host-a',
+      project: 'project-x',
+      scope: { kind: 'report', id: 'R0005' },
+    })
+    const open = (path: string) =>
+      middleware(
+        new NextRequest(`https://memon.example.test${path}`, {
+          headers: { 'x-forwarded-for': '203.0.113.84' },
+        }),
+      )
+    const first = await open(`/h/host-a/p/project-x/reports/R0005?share=${record.token}`)
+    expect(first.status).toBe(308)
+    const next = new URL(first.headers.get('location')!)
+    expect(`${next.pathname}${next.search}`).toBe(`/host-a/project-x/r/5?share=${record.token}`)
+    const second = await open(`${next.pathname}${next.search}`)
+    expect(second.status).toBe(302)
+    expect(second.headers.get('location')).toBe('https://memon.example.test/host-a/project-x/r/5')
+    expect(second.headers.get('set-cookie')).toContain('memon-shares=')
   })
 
   it('lets anyone read a public page and nothing else', async () => {
@@ -151,14 +171,14 @@ describe('middleware document-scoped shares', () => {
           headers: { accept, 'x-forwarded-for': '203.0.113.83' },
         }),
       )
-    const page = await anonymous('/h/host-a/p/project-x/wiki/W0004', 'text/html')
+    const page = await anonymous('/host-a/project-x/w/4', 'text/html')
     expect(allowed(page)).toBe(true)
     expect(page.headers.get('x-middleware-request-x-memon-role')).toBe('viewer')
     expect(page.headers.get('x-middleware-request-x-memon-document-only')).toBe('1')
     expect(allowed(await anonymous('/api/wiki/W0004?host=host-a&project=project-x'))).toBe(true)
     expect((await anonymous('/api/wiki/W0001?host=host-a&project=project-x')).status).toBe(401)
     expect((await anonymous('/api/wiki?host=host-a&project=project-x')).status).toBe(401)
-    const other = await anonymous('/h/host-a/p/project-x/wiki/W0001', 'text/html')
+    const other = await anonymous('/host-a/project-x/w/1', 'text/html')
     expect(other.status).toBe(302)
     expect(other.headers.get('location')).toContain('/login')
   })

@@ -23,11 +23,12 @@ import {
   type ProjectTarget,
   projectHost,
   projectName,
-  projectWebPath,
+  projectRouteTarget,
   putWikiPage,
   type WikiListItem,
   type WikiPageDetail,
 } from '../lib/api'
+import { canonicalWikiHref } from '../lib/artifact-navigation'
 import { setChecklistStatus } from '../lib/components/checklist/v1/update'
 import {
   type ChecklistToggle,
@@ -40,6 +41,7 @@ import {
   type MarkdownOutlineEntry,
   normalizeHeadingIdPrefix,
 } from '../lib/markdown-outline'
+import { projectPagePath } from '../lib/project-routes'
 import { queryKeys } from '../lib/query-keys'
 import {
   handleFragmentClick,
@@ -90,6 +92,13 @@ const EMPTY_BODY =
   'No wiki pages yet. Pages are written by the `memon-wiki` skill, or from the shell with `memon wiki create <kind> <slug> --title "…"`.'
 
 /** Asset endpoint for a bundle-form page, mirroring `reportResourceBaseUrl`. */
+/** A wiki page's page; a value outside the `W<NNNN>` scheme opens the wiki list. */
+function wikiItemHref(project: ProjectTarget, id: string): string {
+  return /^W\d{4}$/.test(id)
+    ? canonicalWikiHref(project, id)
+    : projectPagePath(projectRouteTarget(project), { kind: 'wiki-list' })
+}
+
 export function wikiResourceBaseUrl(project: ProjectTarget, wikiId: string): string {
   const base = `/api/wiki-assets/${encodeURIComponent(projectName(project))}/${encodeURIComponent(wikiId)}`
   const host = projectHost(project)
@@ -384,7 +393,7 @@ function WikiCardList({
         <li key={page.id}>
           <WikiPageCard
             page={page}
-            href={projectWebPath(project, `/wiki/${encodeURIComponent(page.id)}`)}
+            href={wikiItemHref(project, page.id)}
             active={page.id === selectedId}
             onSelect={onSelect}
           />
@@ -759,10 +768,7 @@ export function WikiDocumentView({
               {' '}
               Superseded by{' '}
               <Link
-                href={projectWebPath(
-                  project,
-                  `/wiki/${encodeURIComponent(page.deprecated.superseded_by)}`,
-                )}
+                href={wikiItemHref(project, page.deprecated.superseded_by)}
                 className="underline"
               >
                 {page.deprecated.superseded_by}

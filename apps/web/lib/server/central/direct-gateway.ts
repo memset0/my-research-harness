@@ -128,12 +128,8 @@ export function createDirectCentralGateway(
       const auth = await authorize({
         request: incoming,
         route,
-        // Central-issued shares live in the central registry; older shares
-        // of a directly served Project live in that Project's own share file.
-        shareValidator: withShareRegistry(options.configPath, {
-          validate: async (project, token, host) =>
-            host === undefined ? false : options.runtime.validateShare(host, project, token),
-        }),
+        // Shares live only in the central registry.
+        shareValidator: withShareRegistry(options.configPath, { validate: async () => false }),
         documentAdmits: (selected, requestUrl, method, grants) =>
           documentGrantsAdmit(options.runtime, selected, requestUrl, method, grants),
         publicGrants: async (selected) =>

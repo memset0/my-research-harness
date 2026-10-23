@@ -29,8 +29,8 @@ import {
   projectHost,
   projectName,
   projectQueryKey,
+  projectRouteTarget,
   projectSearchParams,
-  projectWebPath,
   putWikiPage,
   setCommitMark,
 } from './api'
@@ -54,19 +54,20 @@ function lastCall(): [input: string | URL | Request, init?: RequestInit] {
 }
 
 describe('ProjectTarget helpers', () => {
-  it('preserves standalone identity and produces Host-qualified central identity', () => {
+  it('preserves hostless API identity and produces Host-qualified central identity', () => {
     expect(projectName('project-x')).toBe('project-x')
     expect(projectHost('project-x')).toBeNull()
     expect(projectSearchParams('project-x').toString()).toBe('project=project-x')
     expect(projectQueryKey('project-x')).toEqual(['project-x'])
-    expect(projectWebPath('project-x')).toBe('/p/project-x')
+    expect(() => projectRouteTarget('project-x')).toThrow(
+      'Project project-x has no Host, so it has no page route',
+    )
 
     expect(projectName(target)).toBe('project-x')
     expect(projectHost(target)).toBe('host-a')
     expect(projectSearchParams(target).toString()).toBe('host=host-a&project=project-x')
     expect(projectQueryKey(target)).toEqual(['host-a', 'project-x'])
-    expect(projectWebPath(target, '/reports/R0001')).toBe('/h/host-a/p/project-x/reports/R0001')
-    expect(() => projectWebPath(target, 'reports')).toThrow('start with /')
+    expect(projectRouteTarget(target)).toBe(target)
   })
 })
 

@@ -98,8 +98,8 @@ Other sources of truth — consult these instead of copying lists here:
 
 - `FS_CONVENTION_VERSION` lives in `packages/core/src/version.ts`.
 - **CLI**: routine leaves are `experiment create`, `run create`, `run update`,
-  `refresh`, `show` and `install-skills`. Another 14 optional leaves remain
-  under `memon` (20 total); independent entrypoints are deferred. No hidden retired aliases. Migration executors live under
+  `refresh`, `show` and `install-skills`. Another 11 optional leaves remain
+  under `memon` (17 total); independent entrypoints are deferred. No hidden retired aliases. Migration executors live under
   `packages/core/migrations/scripts/` and are invoked through their guides/Skill.
 - **FS11 Experiment**: `docs/experiments/E<NNNN>-<slug>/README.md` and
   `experiment.json` with `format: "lightweight"`, optional groups/columns and
@@ -201,8 +201,9 @@ place; after restart verify the page's referenced CSS/JS and real rendering.
 Three modes, evaluated in order (`openspec/specs/auth-system/`): owner session
 cookie `memon-session` (login page / `POST /api/auth/login`, rolling 30-day
 TTL); owner HTTP Basic (CLI/curl); viewer share cookie `memon-shares` (set by
-visiting `/share/<project>/<token>`, read-only, project-scoped, `read`-class
-routes only). For automation use Basic with the credentials in `config.yml`:
+opening a page URL carrying `?share=<token>`, read-only, project-scoped,
+`read`-class routes only). Pages live under `/<host>/<project>` (the dev
+config serves the mock projects under Host `local`). For automation use Basic with the credentials in `config.yml`:
 
 ```bash
 MEMON_USER=$(grep -E '^\s*username:' config.yml | sed -E 's/.*: *"?([^"]+)"?$/\1/' | head -1)
@@ -212,7 +213,8 @@ curl -sS -u "$MEMON_USER:$MEMON_PASS" http://localhost:3737/api/projects
 
 - If `auth.password` is absent, the server has never run: start it once; the
   first request writes a random password and `session_secret` to `config.yml`.
-- Viewer mode via curl: `SHARE_URL=$(memon share create project-a --label dev --format human)`,
+- Viewer mode via curl: create a link with `POST /api/shares`, e.g.
+  `SHARE_URL=$(curl -sS -u "$MEMON_USER:$MEMON_PASS" -H 'content-type: application/json' -d '{"host":"local","project":"project-a","scope":{"kind":"project"},"label":"dev"}' http://localhost:3737/api/shares | node -pe 'JSON.parse(require("fs").readFileSync(0)).share.share_url')`,
   then `curl -sS -c viewer.txt -L "$SHARE_URL" -o /dev/null` and reuse `-b viewer.txt`.
 - HTML pages rewrite 401 to `302 → /login?next=…`; `/api/*` returns a raw 401
   without `WWW-Authenticate`, so send `-u` preemptively. A 401 means missing
@@ -253,7 +255,7 @@ pnpm --filter @memon/web typecheck
 # 2. server is up
 curl -sS -o /dev/null -w "%{http_code}\n" --max-time 10 -u "$MEMON_USER:$MEMON_PASS" http://localhost:3737/
 # 3. the served markup contains what was added (class names, data-slot, text)
-PAGE=$(curl -sS -u "$MEMON_USER:$MEMON_PASS" http://localhost:3737/p/project-a)
+PAGE=$(curl -sS -u "$MEMON_USER:$MEMON_PASS" http://localhost:3737/local/project-a)
 printf '%s' "$PAGE" | grep -oE '<expected classes | data-slot | text>'
 # 4. the tokens the page relies on are defined in the CSS it actually loads.
 #    Stylesheet URLs come from the HTML: dev serves /_next/static/css/app/layout.css,

@@ -1,4 +1,6 @@
+import { PAGE_LINKS } from '@memon/test-utils'
 import { describe, expect, it } from 'vitest'
+import { RESERVED_HOST_IDS } from '../schemas.js'
 import { type WikiDeleteTarget, wikiDeleteReferences } from './delete-references.js'
 
 const target: WikiDeleteTarget = {
@@ -132,7 +134,8 @@ describe('wiki deletion static references', () => {
     expect(
       scan('[link](/h/host-a/p/registered-a/wiki/W0001)', 'README.md', { host: 'host-a' }),
     ).toHaveLength(1)
-    expect(scan('[link](/p/project-a/wiki/W0001)', 'README.md', { host: 'host-a' })).toEqual([])
+    // A hostless page link resolves within the document's own Host.
+    expect(scan('[link](/p/project-a/wiki/W0001)', 'README.md', { host: 'host-a' })).toHaveLength(1)
     expect(
       scan('[link](/api/content-assets/-/project-a/wiki/W0001/a.svg)', 'README.md', {
         host: 'host-a',
@@ -270,5 +273,85 @@ describe('wiki deletion static references', () => {
   it('excludes references owned by the removed bundle', () => {
     expect(scan('@W0001', 'docs/wiki/note/W0001-alpha/README.md')).toEqual([])
     expect(scan('sources: [W0001]', 'docs/wiki/note/W0001-alpha/manifest.json')).toEqual([])
+  })
+})
+
+// Page link forms from the shared `page-routes` example table: Wiki page W0004
+// (legacy Report id R0007) of project-a on host-a.
+describe('wiki deletion page links', () => {
+  const { wiki, report, experiment } = PAGE_LINKS
+  const page: Partial<WikiDeleteTarget> = {
+    id: wiki.id,
+    slug: 'kernels',
+    legacyId: report.id,
+    host: wiki.host,
+    ownedPaths: ['/tmp/project-a/docs/wiki/note/W0004-kernels'],
+  }
+  const scanLink = (href: string, overrides: Partial<WikiDeleteTarget> = {}) =>
+    scan(`[link](${href})`, 'docs/reports/R0001-summary/README.md', { ...page, ...overrides })
+
+  it.each([
+    ['canonical', wiki.canonical, wiki.host],
+    ['Host-qualified legacy', wiki.hosted, wiki.host],
+    ['hostless legacy', wiki.hostless, wiki.host],
+  ] as const)('a %s link %s blocks deletion', (_form, href, host) => {
+    const refs = scanLink(href, { host })
+    expect(refs).toHaveLength(1)
+    expect(refs[0]).toMatchObject({ reference: href })
+    expect(refs[0]!.ambiguous).toBeUndefined()
+  })
+
+  it.each([
+    `${wiki.canonical}?expanded=1#section`,
+    `http://localhost:3737${wiki.canonical}`,
+    '/host-a/registered-a/w/4',
+  ])('recognizes canonical variant %s', (href) => {
+    const refs = scanLink(href)
+    expect(refs).toHaveLength(1)
+    expect(refs[0]!.ambiguous).toBeUndefined()
+  })
+
+  it.each([
+    '/host-a/project-a/w/5',
+    '/host-a/project-a/w/40',
+    '/host-a/project-b/w/4',
+    '/host-b/project-a/w/4',
+    '/host-a/project-a/w/4/extra',
+    '/host-a/project-a/e/4',
+    'https://example.test/host-a/project-a/w/4',
+    experiment.canonical,
+  ])('a canonical link outside this page or deployment scope does not block: %s', (href) => {
+    expect(scanLink(href)).toEqual([])
+  })
+
+  it.each(RESERVED_HOST_IDS)('a reserved first segment %s is not a Host', (reserved) => {
+    expect(scanLink(`/${reserved}/project-a/w/4`)).toEqual([])
+  })
+
+  it('a canonical link outside a local deployment does not block', () => {
+    expect(scanLink(wiki.canonical, { host: null })).toEqual([])
+  })
+
+  it('fails closed for a canonical link whose deployment scope is unknown', () => {
+    for (const [href, overrides] of [
+      [wiki.canonical, { host: undefined }],
+      ['/host-a/unknown-name/w/4', {}],
+    ] as const) {
+      expect(scanLink(href, overrides)[0]).toMatchObject({
+        source: 'docs/reports/R0001-summary/README.md',
+        line: 1,
+        ambiguous: expect.stringMatching(/Cannot establish/),
+      })
+    }
+  })
+
+  it('a canonical Report link blocks a page that inherited that Report id', () => {
+    expect(scanLink(report.canonical)).toHaveLength(1)
+    expect(scanLink(report.hosted)).toHaveLength(1)
+    expect(scanLink('/host-a/project-a/r/8')).toEqual([])
+    expect(scanLink(report.canonical, { legacyId: undefined })).toEqual([])
+    // An existing Report keeps its own id.
+    expect(scanLink(report.canonical, { reportIds: [report.id] })).toEqual([])
+    expect(scanLink(report.hosted, { reportIds: [report.id] })).toEqual([])
   })
 })

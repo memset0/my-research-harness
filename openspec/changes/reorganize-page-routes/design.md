@@ -30,7 +30,7 @@ The live central config already declares a Host for every Project and does not s
 **Non-Goals:**
 - Changing service application URLs (`/api/content-services/…`) or API routes.
 - Rewriting stored share records or links already written in project documents.
-- Renaming the in-process "standalone services" layer, which central also uses. Only hostless *serving* is removed.
+- Deleting the `app/api` standalone handlers. They serve only hostless Projects, which the Web entry now refuses, so they become unreachable; their removal is a separate cleanup. Only hostless *serving* is removed here.
 
 ## Decisions
 
@@ -56,7 +56,7 @@ The live central config already declares a Host for every Project and does not s
 - `no-store` keeps browsers from caching the permanent redirect, so `deploy.sh --rollback` to a release without canonical routes does not strand users on URLs that release cannot serve. Once this release has proven stable, a later change can drop `no-store`.
 - `?share=` redemption runs after this step, so an old shared link takes two hops: 308 to the canonical URL, then 302 that sets the cookie and drops the token.
 
-**4. Number resolution happens in the page server components.**
+**4. Number resolution happens in the page server components.** It uses an owner read of the published Experiment inventory through the direct runtime, or through the peer Backend proxy for a Host this instance does not serve.
 - `/r/<n>` and `/w/<n>` map directly to `R<NNNN>` and `W<NNNN>` (zero-padded to at least four digits).
 - `/e/<n>` looks up the published Experiment catalog for ids starting with `E<NNNN>-`. Exactly one match renders it. None shows the not-found page. More than one shows a repair error naming every match.
 - The resolved full id is what existing services already accept, so no backend API changes.
@@ -80,7 +80,8 @@ The live central config already declares a Host for every Project and does not s
 **8. "Host-qualified only" is checked in Web startup, not in the shared loader.**
 - The CLI resolves project-only configs through the same core loader, so the hostless-Project rejection lives in the Web runtime's config entry.
 - The reserved-Host and `legacy_share_host` checks go in the loader, because no role may use them.
-- `config.example.yml`'s default block becomes Host-qualified mock projects with explicit `execution: {kind: local}`. Web tests move to the Host-qualified `@memon/test-utils` fixture.
+- `config.example.yml`'s default block becomes Host-qualified mock projects with explicit `execution: {kind: local}`. Web tests move to Host-qualified targets.
+- A Host-qualified config selects the central role, whose loader requires an owner-only (0700) config directory. A development instance config therefore lives in an owner-only directory, and its mock roots are absolute paths. This change does not relax that check.
 
 ## Risks / Trade-offs
 

@@ -1,8 +1,9 @@
 // Project addressing shared by fetchers, query keys and links. Pure and
-// browser-safe: a Project is either a plain standalone Project name or a
-// Host-qualified ProjectRef in central mode.
+// browser-safe: a Project is a Host-qualified ProjectRef (a plain name only
+// selects API data in tests and legacy callers; it has no page route).
 
 import type { ProjectRef } from '@memon/core'
+import type { ProjectRouteTarget } from './project-routes'
 
 export type ProjectTarget = string | ProjectRef
 
@@ -29,13 +30,13 @@ export function projectQueryKey(
   return host ? ([host, projectName(target)] as const) : ([projectName(target)] as const)
 }
 
-/** Canonical browser path for a standalone or Host-qualified Project. */
-export function projectWebPath(target: ProjectTarget, suffix = ''): string {
-  if (suffix !== '' && !suffix.startsWith('/')) {
-    throw new Error('Project path suffix must be empty or start with /')
+/**
+ * The Host-qualified route target of a Project. Pages exist only under
+ * `/<host>/<project>`; a hostless Project has none.
+ */
+export function projectRouteTarget(target: ProjectTarget): ProjectRouteTarget {
+  if (typeof target === 'string') {
+    throw new TypeError(`Project ${target} has no Host, so it has no page route`)
   }
-  const project = encodeURIComponent(projectName(target))
-  const host = projectHost(target)
-  const base = host ? `/h/${encodeURIComponent(host)}/p/${project}` : `/p/${project}`
-  return `${base}${suffix}`
+  return target
 }

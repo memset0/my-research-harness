@@ -1,7 +1,6 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import {
   fetchJournal,
@@ -9,7 +8,6 @@ import {
   type JournalInvocationRecordView,
   type ProjectTarget,
   projectQueryKey,
-  projectWebPath,
 } from '../lib/api'
 import { queryKeys } from '../lib/query-keys'
 import { SuccessBadge, WarningBadge } from './colored-badge'
@@ -250,14 +248,8 @@ export function JournalView({ project }: { project: ProjectTarget }) {
                 <TimestampLocal value={e.timestamp} variant="long" />
                 <TagBadge tag={e.tag} />
                 <div className="text-xs">
-                  {e.runId ? (
-                    <Link
-                      href={projectWebPath(project, `/experiments/${encodeURIComponent(e.runId)}`)}
-                      className="font-mono text-primary underline-offset-4 hover:underline"
-                    >
-                      {e.runId}
-                    </Link>
-                  ) : null}
+                  {/* Preserved entries name a run directory only; no page addresses it. */}
+                  {e.runId ? <span className="font-mono text-foreground">{e.runId}</span> : null}
                   {e.runId ? ' · ' : ''}
                   <span className="text-foreground/80">{e.body}</span>
                 </div>

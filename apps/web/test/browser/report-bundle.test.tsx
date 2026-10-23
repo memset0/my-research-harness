@@ -1,3 +1,4 @@
+import type { ProjectRef } from '@memon/core'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -18,6 +19,9 @@ vi.mock('../../lib/api', async (importOriginal) => {
 })
 
 import { fetchReport, fetchReports } from '../../lib/api'
+
+const PROJECT = { host: 'host-a', project: 'project-a' } as ProjectRef
+const PROJECT_B = { host: 'host-a', project: 'project-b' } as ProjectRef
 
 const REPORT_PICKER_PREFERENCE_KEY = 'memon:reports:picker-open'
 
@@ -73,7 +77,7 @@ describe('directory Report inbox rendering', () => {
       <RenderedItem
         kind="reports"
         content={'# Report title\n\n## Summary\n\n### Metrics'}
-        project="research"
+        project={PROJECT}
         reportId="R0002"
       />,
     )
@@ -92,7 +96,7 @@ describe('directory Report inbox rendering', () => {
 
   it('threads FullReport.format into the Markdown resource base', async () => {
     const { container } = renderWithQuery(
-      <InboxShell kind="reports" project="research" selectedId="R0002" />,
+      <InboxShell kind="reports" project={PROJECT} selectedId="R0002" />,
     )
 
     await waitFor(() =>
@@ -100,13 +104,15 @@ describe('directory Report inbox rendering', () => {
     )
     await waitFor(() => expect(container.querySelector('iframe[data-report-html]')).not.toBeNull())
     const iframe = container.querySelector('iframe[data-report-html]')
-    expect(iframe?.getAttribute('src')).toBe('/api/report-assets/research/R0002/chart.html')
+    expect(iframe?.getAttribute('src')).toBe(
+      '/api/report-assets/project-a/R0002/chart.html?host=host-a&project=project-a',
+    )
     expect(iframe?.hasAttribute('sandbox')).toBe(false)
   })
 
   it('uses a card reading surface and compact linked cards for Reports', async () => {
     const { container } = renderWithQuery(
-      <InboxShell kind="reports" project="research" selectedId="R0002" />,
+      <InboxShell kind="reports" project={PROJECT} selectedId="R0002" />,
     )
 
     await screen.findByRole('heading', { name: 'Rich report' })
@@ -121,7 +127,7 @@ describe('directory Report inbox rendering', () => {
 
     const cards = within(picker).getAllByRole('link')
     expect(cards).toHaveLength(2)
-    expect(cards[0]).toHaveAttribute('href', '/p/research/reports/R0002')
+    expect(cards[0]).toHaveAttribute('href', '/host-a/project-a/r/2')
     expect(cards[0]).toHaveAttribute('aria-current', 'page')
     expect(cards[0]).toHaveClass(
       'rounded-md',
@@ -139,7 +145,7 @@ describe('directory Report inbox rendering', () => {
 
   it('hides and restores the desktop Report picker without losing selection or edit state', async () => {
     const user = userEvent.setup()
-    renderWithQuery(<InboxShell kind="reports" project="research" selectedId="R0002" />)
+    renderWithQuery(<InboxShell kind="reports" project={PROJECT} selectedId="R0002" />)
     await screen.findByRole('heading', { name: 'Rich report' })
 
     await user.click(screen.getByRole('button', { name: 'Hide reports' }))
@@ -164,7 +170,7 @@ describe('directory Report inbox rendering', () => {
   it('restores the hidden Report picker preference across projects and rejects invalid values', async () => {
     localStorage.setItem(REPORT_PICKER_PREFERENCE_KEY, 'false')
     const first = renderWithQuery(
-      <InboxShell kind="reports" project="research" selectedId="R0002" />,
+      <InboxShell kind="reports" project={PROJECT} selectedId="R0002" />,
     )
     await screen.findByRole('heading', { name: 'Rich report' })
     await waitFor(() =>
@@ -174,7 +180,7 @@ describe('directory Report inbox rendering', () => {
     )
     first.unmount()
 
-    renderWithQuery(<InboxShell kind="reports" project="another-project" selectedId="R0002" />)
+    renderWithQuery(<InboxShell kind="reports" project={PROJECT_B} selectedId="R0002" />)
     await screen.findByRole('heading', { name: 'Rich report' })
     await waitFor(() =>
       expect(
@@ -185,7 +191,7 @@ describe('directory Report inbox rendering', () => {
 
   it('falls back to the open Report picker for a non-boolean saved preference', async () => {
     localStorage.setItem(REPORT_PICKER_PREFERENCE_KEY, '"collapsed"')
-    renderWithQuery(<InboxShell kind="reports" project="research" selectedId="R0002" />)
+    renderWithQuery(<InboxShell kind="reports" project={PROJECT} selectedId="R0002" />)
     await screen.findByRole('heading', { name: 'Rich report' })
 
     await waitFor(() =>
@@ -197,7 +203,7 @@ describe('directory Report inbox rendering', () => {
   it('opens a collapsed-state Report quick switcher and restores focus on Escape', async () => {
     localStorage.setItem(REPORT_PICKER_PREFERENCE_KEY, 'false')
     const user = userEvent.setup()
-    renderWithQuery(<InboxShell kind="reports" project="research" selectedId="R0002" />)
+    renderWithQuery(<InboxShell kind="reports" project={PROJECT} selectedId="R0002" />)
     await screen.findByRole('heading', { name: 'Rich report' })
 
     const trigger = await screen.findByRole('button', {
@@ -220,9 +226,9 @@ describe('directory Report inbox rendering', () => {
 
     const links = within(switcher).getAllByRole('link')
     expect(links).toHaveLength(2)
-    expect(links[0]).toHaveAttribute('href', '/p/research/reports/R0002')
+    expect(links[0]).toHaveAttribute('href', '/host-a/project-a/r/2')
     expect(links[0]).toHaveAttribute('aria-current', 'page')
-    expect(links[1]).toHaveAttribute('href', '/p/research/reports/R0003')
+    expect(links[1]).toHaveAttribute('href', '/host-a/project-a/r/3')
 
     await user.keyboard('{Escape}')
     await waitFor(() =>
@@ -236,7 +242,7 @@ describe('directory Report inbox rendering', () => {
   it('closes the quick switcher after selecting a native Report link without reopening the rail', async () => {
     localStorage.setItem(REPORT_PICKER_PREFERENCE_KEY, 'false')
     const user = userEvent.setup()
-    renderWithQuery(<InboxShell kind="reports" project="research" selectedId="R0002" />)
+    renderWithQuery(<InboxShell kind="reports" project={PROJECT} selectedId="R0002" />)
     await screen.findByRole('heading', { name: 'Rich report' })
 
     await user.click(
@@ -264,7 +270,7 @@ describe('directory Report inbox rendering', () => {
       }),
     )
     const user = userEvent.setup()
-    renderWithQuery(<InboxShell kind="reports" project="research" selectedId="R0002" />)
+    renderWithQuery(<InboxShell kind="reports" project={PROJECT} selectedId="R0002" />)
     await screen.findByRole('heading', { name: 'Rich report' })
 
     await user.click(
@@ -282,7 +288,7 @@ describe('directory Report inbox rendering', () => {
 
   it('keeps the Report picker restorable from an empty detail pane', async () => {
     const user = userEvent.setup()
-    renderWithQuery(<InboxShell kind="reports" project="research" selectedId={null} />)
+    renderWithQuery(<InboxShell kind="reports" project={PROJECT} selectedId={null} />)
 
     await user.click(screen.getByRole('button', { name: 'Hide reports' }))
     expect(screen.queryByRole('complementary', { name: 'Report picker' })).not.toBeInTheDocument()
@@ -292,11 +298,11 @@ describe('directory Report inbox rendering', () => {
 
   it('reuses Report cards inside the mobile list Sheet', async () => {
     const user = userEvent.setup()
-    renderWithQuery(<InboxShell kind="reports" project="research" selectedId="R0002" />)
+    renderWithQuery(<InboxShell kind="reports" project={PROJECT} selectedId="R0002" />)
     await screen.findByRole('heading', { name: 'Rich report' })
 
     await user.click(screen.getByRole('button', { name: 'Open list' }))
-    const drawer = screen.getByRole('dialog', { name: 'Reports · research' })
+    const drawer = screen.getByRole('dialog', { name: 'Reports · host-a/project-a' })
     const cards = within(drawer).getAllByRole('link')
     expect(cards).toHaveLength(2)
     expect(cards[0]).toHaveAttribute('data-report-card')

@@ -3,11 +3,17 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithQuery } from '../test/utils'
 
-const pathname = vi.fn(() => '/h/host-a/p/project-x/wiki/W0004')
+const pathname = vi.fn(() => '/host-a/project-x/w/4')
 vi.mock('next/navigation', () => ({ usePathname: () => pathname() }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
-import { copyUrlFor, ManageSharesDialog, pageDocument, scopeLabel } from './manage-shares-dialog'
+import {
+  copyUrlFor,
+  ManageSharesDialog,
+  pageDocument,
+  resolvedPageDocument,
+  scopeLabel,
+} from './manage-shares-dialog'
 
 const PROJECT = { host: 'host-a', project: 'project-x' } as never
 const row = (id: string, scope: unknown) => ({
@@ -16,7 +22,7 @@ const row = (id: string, scope: unknown) => ({
   host: 'host-a',
   project: 'project-x',
   scope,
-  path: '/h/host-a/p/project-x',
+  path: '/host-a/project-x',
   created_at: '2026-10-21T10:00:00+08:00',
   expires_at: null,
   share_url: `https://memon.example.test/s/${'a'.repeat(24)}`,
@@ -37,6 +43,12 @@ beforeEach(() => {
     'fetch',
     vi.fn(async (url: string, init?: RequestInit) => {
       if (/^\/api\/(wiki|reports)\/[WR]\d{4}/.test(url)) return Response.json(detail)
+      if (url.startsWith('/api/experiments?') && url.includes('inventory=1'))
+        return Response.json({
+          items: [
+            { id: 'E0001-pipeline', slug: 'pipeline', resource: 'docs/experiments/E0001-pipeline' },
+          ],
+        })
       if (init?.method === 'POST') {
         const body = JSON.parse(String(init.body))
         posted.push(body)
@@ -82,7 +94,7 @@ describe('ManageSharesDialog', () => {
   })
 
   it('offers only Project links away from document pages', async () => {
-    pathname.mockReturnValue('/h/host-a/p/project-x/reports')
+    pathname.mockReturnValue('/host-a/project-x/reports')
     renderWithQuery(<ManageSharesDialog project={PROJECT} />)
     await userEvent.click(screen.getByRole('button', { name: /Share/ }))
     expect(
@@ -94,19 +106,26 @@ describe('ManageSharesDialog', () => {
 
 describe('page helpers', () => {
   it('recognises document pages and labels scopes', () => {
-    expect(pageDocument('/h/host-a/p/project-x/e/E0001-pipeline')).toEqual({
+    expect(pageDocument('/host-a/project-x/e/1')).toEqual({ kind: 'experiment', number: 1 })
+    expect(pageDocument('/host-a/project-x/r/5')).toEqual({ kind: 'report', id: 'R0005' })
+    expect(pageDocument('/host-a/project-x/w/12')).toEqual({ kind: 'wiki', id: 'W0012' })
+    expect(pageDocument('/host-a/project-x/wiki')).toBeNull()
+    expect(pageDocument('/h/host-a/p/project-x/reports/R0005')).toBeNull()
+    expect(resolvedPageDocument({ kind: 'experiment', number: 1 }, ['E0001-a'])).toEqual({
       kind: 'experiment',
-      id: 'E0001-pipeline',
+      id: 'E0001-a',
     })
-    expect(pageDocument('/p/project-x/reports/R0005')).toEqual({ kind: 'report', id: 'R0005' })
-    expect(pageDocument('/h/host-a/p/project-x/wiki')).toBeNull()
+    expect(
+      resolvedPageDocument({ kind: 'experiment', number: 1 }, ['E0001-a', 'E0001-b']),
+    ).toBeNull()
+    expect(resolvedPageDocument({ kind: 'experiment', number: 1 }, undefined)).toBeNull()
     expect(scopeLabel({ kind: 'report', id: 'R0005' })).toBe('Report R0005')
   })
 })
 
 describe('ManageSharesDialog public pages', () => {
   it('makes the current Wiki page public and shows when it already is', async () => {
-    pathname.mockReturnValue('/h/host-a/p/project-x/wiki/W0004')
+    pathname.mockReturnValue('/host-a/project-x/w/4')
     const view = renderWithQuery(<ManageSharesDialog project={PROJECT} />)
     await userEvent.click(screen.getByRole('button', { name: /Share/ }))
     await userEvent.click(await screen.findByRole('button', { name: 'Make public' }))
@@ -124,7 +143,7 @@ describe('ManageSharesDialog public pages', () => {
   })
 
   it('does not offer public Experiment pages', async () => {
-    pathname.mockReturnValue('/h/host-a/p/project-x/e/E0001-pipeline')
+    pathname.mockReturnValue('/host-a/project-x/e/1')
     renderWithQuery(<ManageSharesDialog project={PROJECT} />)
     await userEvent.click(screen.getByRole('button', { name: /Share/ }))
     expect(
@@ -136,7 +155,7 @@ describe('ManageSharesDialog public pages', () => {
 
 describe('ManageSharesDialog service links', () => {
   it('offers a service link only on a service page and labels it', async () => {
-    pathname.mockReturnValue('/h/host-a/p/project-x/wiki/W0004')
+    pathname.mockReturnValue('/host-a/project-x/w/4')
     const view = renderWithQuery(<ManageSharesDialog project={PROJECT} />)
     await userEvent.click(screen.getByRole('button', { name: /Share/ }))
     await screen.findByRole('button', { name: 'Create link for Wiki W0004' })
@@ -161,12 +180,11 @@ describe('ManageSharesDialog service links', () => {
 
 describe('copyUrlFor', () => {
   const token = 'a'.repeat(24)
-  const current =
-    'http://127.0.0.1:3737/h/host-a/p/project-x/reports/R0006?expanded=1&share=old#top'
+  const current = 'http://127.0.0.1:3737/host-a/project-x/r/6?expanded=1&share=old#top'
 
   it('copies a whole-Project link for the page currently open', () => {
     expect(copyUrlFor(row('shr_project1', { kind: 'project' }) as never, current)).toBe(
-      `https://memon.example.test/h/host-a/p/project-x/reports/R0006?expanded=1&share=${token}`,
+      `https://memon.example.test/host-a/project-x/r/6?expanded=1&share=${token}`,
     )
   })
 

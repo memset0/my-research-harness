@@ -8,6 +8,7 @@
 // `grantCovers` decides whether a grant reaches that target. Run IDs carry no
 // path, so they are resolved by the caller before `grantCovers` is asked.
 
+import { artifactNumber, parseProjectPath } from '../../project-routes'
 import type { ShareDocumentGrant } from './identity'
 
 export type DocumentTarget =
@@ -15,13 +16,12 @@ export type DocumentTarget =
   | { kind: 'experiment' | 'wiki' | 'report'; id: string }
   /** Backlinks of a document ID of any kind. */
   | { kind: 'backlinks'; id: string }
+  /** A canonical page `/<host>/<project>/{e,w,r}/<n>`, matched by kind and number. */
+  | { kind: 'page'; page: 'experiment' | 'wiki' | 'report'; number: number }
   /** A project-relative file or directory path. */
   | { kind: 'path'; path: string }
   /** A Run by ID; resolve it to its `path` before checking coverage. */
   | { kind: 'run'; id: string }
-
-const PAGE = /^(?:\/h\/[^/]+)?\/p\/[^/]+\/(wiki|reports|e)\/([^/?]+)\/?$/
-const PAGE_KIND = { wiki: 'wiki', reports: 'report', e: 'experiment' } as const
 
 function decoded(value: string): string | null {
   try {
@@ -59,11 +59,11 @@ export function documentTargetFor(
   search: URLSearchParams,
 ): DocumentTarget | null {
   if (method !== 'GET' && method !== 'HEAD') return null
-  const page = PAGE.exec(pathname)
-  if (page) {
-    const id = decoded(page[2]!)
-    return id ? { kind: PAGE_KIND[page[1] as keyof typeof PAGE_KIND], id } : null
-  }
+  const page = parseProjectPath(pathname)?.page
+  if (page)
+    return page.kind === 'experiment' || page.kind === 'wiki' || page.kind === 'report'
+      ? { kind: 'page', page: page.kind, number: page.number }
+      : null
   const wikiBacklinks = segments(pathname, '/api/wiki/backlinks/')
   if (wikiBacklinks)
     return wikiBacklinks.length === 1 ? { kind: 'backlinks', id: wikiBacklinks[0]! } : null
@@ -147,6 +147,8 @@ export function grantCovers(grant: ShareDocumentGrant, target: DocumentTarget): 
       return ownsPath(grant, target.path)
     case 'run':
       return false
+    case 'page':
+      return target.page === grant.kind && artifactNumber(grant.id) === target.number
     default:
       return target.kind === grant.kind && target.id === grant.id
   }

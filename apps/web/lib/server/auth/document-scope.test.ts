@@ -18,7 +18,7 @@ const covers = (grant: ShareDocumentGrant, path: string) => {
 describe('document-scoped targets', () => {
   it('admits the shared Wiki page, its detail, backlinks and bundle assets only', () => {
     for (const path of [
-      '/h/host-a/p/project-x/wiki/W0004',
+      '/host-a/project-x/w/4',
       '/api/wiki/W0004?host=host-a&project=project-x',
       '/api/wiki/backlinks/W0004?host=host-a&project=project-x',
       '/api/wiki-assets/project-x/W0004/figure.png?host=host-a',
@@ -26,9 +26,12 @@ describe('document-scoped targets', () => {
     ])
       expect(covers(wiki, path)).toBe(true)
     for (const path of [
-      '/h/host-a/p/project-x/wiki/W0001',
-      '/h/host-a/p/project-x/wiki',
-      '/h/host-a/p/project-x',
+      '/host-a/project-x/w/1',
+      '/host-a/project-x/wiki',
+      '/host-a/project-x',
+      '/host-a/project-x/r/4',
+      // Legacy paths are redirected before authorization, never matched here.
+      '/h/host-a/p/project-x/wiki/W0004',
       '/api/wiki?host=host-a&project=project-x',
       '/api/wiki/W0001?host=host-a&project=project-x',
       '/api/wiki/kinds',
@@ -39,7 +42,8 @@ describe('document-scoped targets', () => {
   })
 
   it('admits a shared Report and its assets', () => {
-    expect(covers(report, '/h/host-a/p/project-x/reports/R0005')).toBe(true)
+    expect(covers(report, '/host-a/project-x/r/5')).toBe(true)
+    expect(covers(report, '/host-a/project-x/r/6')).toBe(false)
     expect(covers(report, '/api/report-assets/project-x/R0005/index.html?host=host-a')).toBe(true)
     expect(covers(report, '/api/doc-assets/project-x/docs/reports/methods/R0005-tools/a.png')).toBe(
       true,
@@ -50,7 +54,7 @@ describe('document-scoped targets', () => {
 
   it('admits an Experiment, its documents and its own run directory', () => {
     for (const path of [
-      '/h/host-a/p/project-x/e/E0001-pipeline',
+      '/host-a/project-x/e/1',
       '/api/experiments/E0001-pipeline?host=host-a&project=project-x',
       '/api/experiments/E0001-pipeline/results?host=host-a&project=project-x',
       '/api/experiments/E0001-pipeline/readme?host=host-a&project=project-x',
@@ -71,8 +75,21 @@ describe('document-scoped targets', () => {
       '/api/log?resource=logs/E0001/a&resource=logs/E0001/b',
       '/api/runs?host=host-a&project=project-x',
       '/api/code-reviews?host=host-a&project=project-x',
+      '/host-a/project-x/e/2',
+      '/host-a/project-x/e/1/cr/2026-05-22-guard',
+      '/host-a/project-x/experiments',
     ])
       expect(covers(experiment, path)).toBe(false)
+  })
+
+  it('matches canonical pages by kind and number', () => {
+    expect(target('/host-a/project-x/e/10?run=r-1')).toEqual({
+      kind: 'page',
+      page: 'experiment',
+      number: 10,
+    })
+    expect(covers({ ...experiment, id: 'E0010-kernels' }, '/host-a/project-x/e/10')).toBe(true)
+    expect(target('/host-a/project-x/journal')).toBeNull()
   })
 
   it('leaves Run IDs for resolution', () => {

@@ -68,17 +68,44 @@ describe('/s/<token>', () => {
 
     const first = await open(wiki.token)
     expect(first.status).toBe(302)
-    expect(first.headers.get('location')).toBe(
-      'https://memon.example.test/h/host-a/p/project-x/wiki/W0004',
-    )
+    expect(first.headers.get('location')).toBe('https://memon.example.test/host-a/project-x/w/4')
     const second = await open(report.token, cookieValue(first))
-    expect(second.headers.get('location')).toBe(
-      'https://memon.example.test/h/host-a/p/project-x/reports/R0005',
-    )
+    expect(second.headers.get('location')).toBe('https://memon.example.test/host-a/project-x/r/5')
     expect(verifySharesCookie(cookieValue(second), SECRET)?.entries).toEqual([
       { host: 'host-a', project: 'project-x', token: wiki.token },
       { host: 'host-a', project: 'project-x', token: report.token },
     ])
+  })
+
+  it('lands a record stored with an older page path on its canonical page', async () => {
+    const token = 'Ab12Cd34Ef56Gh78Ij90Kl12'
+    await fs.writeFile(
+      join(directory, 'shares.json'),
+      JSON.stringify({
+        version: 1,
+        shares: [
+          {
+            id: 'shr_abcdefgh',
+            token,
+            host: 'host-a',
+            project: 'project-x',
+            scope: { kind: 'project' },
+            path: '/h/host-a/p/project-x/reports/R0005?expanded=1',
+            created_at: '2026-10-01T00:00:00+08:00',
+            expires_at: null,
+          },
+        ],
+      }),
+      { mode: 0o600 },
+    )
+    const response = await open(token)
+    expect(response.status).toBe(302)
+    expect(response.headers.get('location')).toBe(
+      'https://memon.example.test/host-a/project-x/r/5?expanded=1',
+    )
+    expect(
+      JSON.parse(await fs.readFile(join(directory, 'shares.json'), 'utf8')).shares[0].path,
+    ).toBe('/h/host-a/p/project-x/reports/R0005?expanded=1')
   })
 
   it('answers unknown and revoked tokens with the generic page', async () => {

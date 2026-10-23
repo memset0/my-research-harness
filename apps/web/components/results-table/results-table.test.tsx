@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { resolve } from 'node:path'
+import type { ProjectRef } from '@memon/core'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
@@ -21,6 +22,8 @@ import { ResultsErrorCard } from './results-error-card'
 import { ResultsGrid } from './results-grid'
 import type { DragHandlers } from './use-drag-reorder'
 import { type ViewCollection, ViewSwitcher } from './view-switcher'
+
+const PROJECT = { host: 'host-a', project: 'project-a' } as ProjectRef
 
 const SUMMARY = resultsDocument(
   [
@@ -79,7 +82,7 @@ describe('ResultsGrid', () => {
         layout={layout}
         variants={SUMMARY.variants}
         context={{
-          project: 'project-a',
+          project: PROJECT,
           experimentId: 'E0001-demo',
           declaredRunIds: new Set(['logs/run-a-261001-000000']),
           maxLines: 2,
@@ -126,7 +129,7 @@ describe('ResultsGrid', () => {
     )
     expect(within(table).getByRole('link', { name: 'logs/run-a-261001-000000' })).toHaveAttribute(
       'href',
-      '/p/project-a/e/E0001-demo?run=logs%2Frun-a-261001-000000',
+      '/host-a/project-a/e/1?run=logs%2Frun-a-261001-000000',
     )
     expect(within(table).queryByRole('link', { name: 'logs/run-x-261001-000000' })).toBeNull()
   })
@@ -140,7 +143,7 @@ describe('cells', () => {
         <ResultCell
           column={column('metrics.loss')}
           variant={SUMMARY.variants[1]!}
-          project="project-a"
+          project={PROJECT}
           experimentId="E0001-demo"
           declaredRunIds={new Set()}
         />
@@ -156,7 +159,7 @@ describe('cells', () => {
         <ResultCell
           column={column('status')}
           variant={{ ...SUMMARY.variants[0]!, status: 'BLOCKED', declaredStatus: 'BLOCKED' }}
-          project="project-a"
+          project={PROJECT}
           experimentId="E0001-demo"
           declaredRunIds={new Set()}
         />
@@ -181,7 +184,7 @@ describe('cells', () => {
       <ResultCell
         column={column('attempts')}
         variant={row}
-        project="project-a"
+        project={PROJECT}
         experimentId="E0001-demo"
         declaredRunIds={new Set(['logs/f-261001-000000'])}
       />,

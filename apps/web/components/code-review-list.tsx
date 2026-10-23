@@ -8,8 +8,8 @@ import {
   fetchCodeReviews,
   type ProjectTarget,
   projectQueryKey,
-  projectWebPath,
 } from '../lib/api'
+import { canonicalCodeReviewHref } from '../lib/artifact-navigation'
 import { queryKeys } from '../lib/query-keys'
 import { cn } from '../lib/utils'
 import { SuccessBadge } from './colored-badge'
@@ -17,7 +17,6 @@ import { Badge } from './ui/badge'
 import { Card } from './ui/card'
 
 // Encode each path segment but keep the slashes so the catch-all route matches.
-const encId = (id: string) => id.split('/').map(encodeURIComponent).join('/')
 
 function CompletionBadge({ c }: { c: CodeReviewCompletion }) {
   if (c.isComplete) return <SuccessBadge>Complete</SuccessBadge>
@@ -88,7 +87,7 @@ function Group({
         {items.map((i) => (
           <Link
             key={i.id}
-            href={projectWebPath(project, `/code-review/${encId(i.id)}`)}
+            href={canonicalCodeReviewHref(project, i.id)}
             className="block"
             data-slot="code-review-row"
           >

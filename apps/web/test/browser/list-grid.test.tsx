@@ -71,6 +71,8 @@ const SAMPLE_DOCS = {
   ],
 } satisfies ExperimentDocsResponse
 
+const PROJECT = ProjectRefSchema.parse({ host: 'host-a', project: 'project-a' })
+
 describe('ExperimentCardGrid — list grid renders v3 exp docs', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -78,7 +80,7 @@ describe('ExperimentCardGrid — list grid renders v3 exp docs', () => {
   })
 
   it('renders one card per exp doc with id + title visible', async () => {
-    renderWithQuery(<ExperimentCardGrid project="project-a" />)
+    renderWithQuery(<ExperimentCardGrid project={PROJECT} />)
 
     // Cards show the short ID; the full ID is the card's accessible name.
     await waitFor(() => {
@@ -91,7 +93,7 @@ describe('ExperimentCardGrid — list grid renders v3 exp docs', () => {
   })
 
   it('renders no Run counts, Run ids, or roster rows', async () => {
-    renderWithQuery(<ExperimentCardGrid project="project-a" />)
+    renderWithQuery(<ExperimentCardGrid project={PROJECT} />)
     await waitFor(() => {
       expect(screen.getByRole('article', { name: 'E0001-fsdp' })).toBeInTheDocument()
     })
@@ -105,17 +107,15 @@ describe('ExperimentCardGrid — list grid renders v3 exp docs', () => {
   })
 
   it('uses Host-qualified queries, links, and persistence for a central Project', async () => {
-    const project = ProjectRefSchema.parse({ host: 'host-a', project: 'project-a' })
-    renderWithQuery(<ExperimentCardGrid project={project} />)
+    renderWithQuery(<ExperimentCardGrid project={PROJECT} />)
     await waitFor(() =>
       expect(screen.getByRole('article', { name: 'E0001-fsdp' })).toBeInTheDocument(),
     )
 
-    expect(fetchExperimentDocs).toHaveBeenCalledWith(project)
+    expect(fetchExperimentDocs).toHaveBeenCalledWith(PROJECT)
     const links = screen.getAllByRole('link', { name: /^E0001$|FSDP collective overlap study/ })
     expect(links).toHaveLength(2)
-    for (const link of links)
-      expect(link).toHaveAttribute('href', '/h/host-a/p/project-a/e/E0001-fsdp')
+    for (const link of links) expect(link).toHaveAttribute('href', '/host-a/project-a/e/1')
   })
 })
 
@@ -144,7 +144,7 @@ describe('ExperimentCardGrid — v4 manual status pill', () => {
     vi.mocked(fetchExperimentDocs).mockResolvedValue({
       experiments: [SAMPLE_DOCS.experiments[0]!, RESOLVED_DOC],
     } as never)
-    renderWithQuery(<ExperimentCardGrid project="project-a" />)
+    renderWithQuery(<ExperimentCardGrid project={PROJECT} />)
     await waitFor(() =>
       expect(screen.getByRole('article', { name: 'E0001-fsdp' })).toBeInTheDocument(),
     )

@@ -22,6 +22,7 @@
 // forces every new route to be added here explicitly to grant viewer access.
 
 import 'server-only'
+import { projectOfPath } from '../../project-routes'
 
 export type RouteClass = 'anon' | 'read' | 'mutating' | 'shell'
 export type ResolvedProject = string | 'multi' | 'global' | null
@@ -93,21 +94,13 @@ const projectGlobal = () => (): ResolvedProject => PROJECT_GLOBAL
 /** Always returns 'multi'. */
 const projectMulti = () => (): ResolvedProject => PROJECT_MULTI
 
-/** project from /p/<project>/... segment. */
-const projectFromPSegment =
+/** project from a canonical `/<host>/<project>/...` page path (the Host is read separately). */
+const projectFromCanonicalPage =
   () =>
-  (_m: string, p: string): ResolvedProject => {
-    const seg = segmentAfter(p, '/p/')
-    return seg ?? null
-  }
+  (_m: string, path: string): ResolvedProject =>
+    projectOfPath(path)?.project ?? null
 
-/** project from /h/<host>/p/<project>/... segment. */
-const projectFromHostProjectSegment =
-  () =>
-  (_m: string, path: string): ResolvedProject => {
-    const match = /^\/h\/[^/]+\/p\/([^/]+)(?:\/|$)/.exec(path)
-    return match?.[1] ? decodeURIComponent(match[1]) : null
-  }
+const isCanonicalPage = (_m: string, path: string): boolean => projectOfPath(path) !== null
 
 /** project from /api/report-assets/<project>/... segment. */
 const projectFromReportAssetsSegment =
@@ -269,12 +262,6 @@ const RULES: Rule[] = [
     match: methodIs(['GET'], startsWith('/s/')),
     class: 'anon',
     projectFor: () => null,
-  },
-
-  {
-    match: methodIs(['GET'], startsWith('/h/')),
-    class: 'read',
-    projectFor: projectFromHostProjectSegment(),
   },
 
   // File access settings: owner-only. The restart action invokes a configured
@@ -468,7 +455,11 @@ const RULES: Rule[] = [
 
   // ===== read: page-level GETs =====
   { match: methodIs(['GET'], exact('/')), class: 'read', projectFor: projectGlobal() },
-  { match: methodIs(['GET'], startsWith('/p/')), class: 'read', projectFor: projectFromPSegment() },
+  {
+    match: methodIs(['GET'], isCanonicalPage),
+    class: 'read',
+    projectFor: projectFromCanonicalPage(),
+  },
 ]
 
 /** Pure classification by `{method, pathname}`. Used by tests + middleware. */

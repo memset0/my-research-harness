@@ -17,7 +17,7 @@ export default async function ManageLayout({ children }: { children: React.React
   const queryClient = getQueryClient()
   await queryClient.prefetchQuery({ queryKey: queryKeys.projects(), queryFn: getProjectsData })
 
-  // Match `/p/[project]/layout.tsx`: read `sidebar_state` so the collapse
+  // Match `/[host]/[project]/layout.tsx`: read `sidebar_state` so the collapse
   // state survives navigation across the project / manage boundary.
   const cookieStore = await cookies()
   const sidebarStateCookie = cookieStore.get('sidebar_state')?.value

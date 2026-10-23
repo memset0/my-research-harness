@@ -10,6 +10,7 @@
  */
 
 import type { ArtifactNavigationTarget } from './artifact-navigation'
+import { artifactIdPrefix, parseProjectPath } from './project-routes'
 
 export type ArtifactKind = 'experiment' | 'report' | 'wiki'
 
@@ -23,7 +24,7 @@ export interface ArtifactDocument {
 
 export interface ArtifactInventory {
   project: string
-  /** Null/absent for standalone; required to recognize a central canonical route. */
+  /** The Project's Host; required to recognize a canonical or `/h/…` page route. */
   host?: string | null
   experiments: ReadonlyArray<{ id: string; path: string }>
   reports: ReadonlyArray<{ id: string; path: string }>
@@ -122,8 +123,9 @@ export function resolveBareArtifactReference(
  * Resolve an authored Markdown href to a discovered artifact document.
  *
  * Relative file paths use the source Markdown file (not the browser route) as
- * their base. Absolute local paths and canonical `/p/...` application routes
- * are also recognized. External, malformed, missing, cross-project, and
+ * their base. Absolute local paths and application page routes (canonical
+ * `/<host>/<project>/…` and the older `/h/…/p/…` and `/p/…` forms) are also
+ * recognized. External, malformed, missing, cross-project, and
  * route-ambiguous references return null so the ordinary anchor renderer can
  * retain its existing behavior.
  */
@@ -182,23 +184,36 @@ export function resolveArtifactMarkdownHref(
   return { kind: match.kind, id: match.id, path: match.path, fragment: split.fragment }
 }
 
+/**
+ * An application page link to an artifact of this Project: the canonical
+ * `/<host>/<project>/{e,w,r}/<n>`, or an older `/h/<host>/p/<project>/…` or
+ * hostless `/p/<project>/…` form already written in documents. A hostless
+ * link resolves within the document's own Host.
+ */
 function resolveCanonicalArtifactRoute(
   rawPath: string,
   inventory: ArtifactInventory,
 ): ArtifactTarget | null {
   if (!rawPath.startsWith('/')) return null
+  const canonical = parseProjectPath(rawPath)
+  if (canonical) {
+    const { target, page } = canonical
+    if (target.project !== inventory.project || target.host !== inventory.host) return null
+    if (page.kind === 'experiment')
+      return resolveBareArtifactReference(artifactIdPrefix('E', page.number), inventory)
+    if (page.kind === 'report')
+      return resolveBareArtifactReference(artifactIdPrefix('R', page.number), inventory)
+    if (page.kind === 'wiki')
+      return resolveBareArtifactReference(artifactIdPrefix('W', page.number), inventory)
+    return null
+  }
   const decoded = decodeHrefPath(rawPath)
   if (!decoded) return null
   const segments = decoded.segments.slice()
   if (segments.at(-1) === '') segments.pop()
   let collection: string | undefined
   let id: string | undefined
-  if (
-    !inventory.host &&
-    segments.length === 4 &&
-    segments[0] === 'p' &&
-    segments[1] === inventory.project
-  ) {
+  if (segments.length === 4 && segments[0] === 'p' && segments[1] === inventory.project) {
     collection = segments[2]
     id = segments[3]
   } else if (

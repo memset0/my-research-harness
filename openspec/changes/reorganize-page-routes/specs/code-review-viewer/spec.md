@@ -28,7 +28,9 @@ A project-wide review `docs/code-review/<date>-<slug>.md` SHALL be served at
 `/<host>/<project>/e/<n>/cr/<date>-<slug>`, where `<n>` is the Experiment
 number without leading zeros (see the page-routes capability). Legacy
 `/h/<host>/p/<project>/code-review/…` detail URLs redirect to these paths. A
-review path that names no review doc SHALL render the not-found page. Each
+review key that is not `<date>-<slug>` SHALL render the not-found page; a
+well-formed key that names no review doc SHALL show the detail view's
+not-found state. Each
 route SHALL render:
 - the markdown body via the shared `<Markdown>` component (LaTeX math via
   KaTeX and GFM already supported), so `$...$` / `$$...$$` formulas and

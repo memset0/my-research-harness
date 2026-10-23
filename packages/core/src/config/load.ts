@@ -520,9 +520,11 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
         candidate,
       )
     }
-    const legacyShareHost = cfg.central?.legacy_share_host
-    if (legacyShareHost && !hosts.some((host) => host.id === legacyShareHost)) {
-      throw new ConfigError('central.legacy_share_host must name one configured Host', candidate)
+    if (cfg.central?.legacy_share_host !== undefined) {
+      throw new ConfigError(
+        'central.legacy_share_host was removed together with hostless /share/<project>/<token> links; delete it from the config',
+        candidate,
+      )
     }
 
     const centralBindPort = cfg.central?.bind_port ?? DEFAULT_CENTRAL_BIND_PORT
@@ -559,7 +561,6 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
       bindAddr: cfg.central?.bind_addr ?? DEFAULT_CENTRAL_BIND_ADDR,
       bindPort: centralBindPort,
       ...(cfg.central?.public_url ? { publicUrl: cfg.central.public_url } : {}),
-      ...(legacyShareHost ? { legacyShareHost } : {}),
       hosts,
     }
   }

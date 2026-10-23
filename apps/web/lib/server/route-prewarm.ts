@@ -8,21 +8,26 @@
 // Fire-and-forget by contract: errors are logged, never thrown. The boot
 // path (server.ts) calls this WITHOUT await.
 
+import { projectBasePath } from '../project-routes'
+
 interface PrewarmOpts {
   host: string
   port: number
-  projects: ReadonlyArray<{ name: string }>
+  projects: ReadonlyArray<{ name: string; host?: string }>
   auth: { username: string; password: string }
 }
 
 const SUB_PAGES = ['', '/journal', '/reports'] as const
 
-function buildPaths(projects: ReadonlyArray<{ name: string }>): string[] {
+function buildPaths(projects: PrewarmOpts['projects']): string[] {
   const paths: string[] = ['/api/projects']
   for (const p of projects) {
-    const enc = encodeURIComponent(p.name)
+    // Pages exist only under `/<host>/<project>`; the Web entry refuses
+    // hostless Projects, so none is skipped in practice.
+    if (p.host === undefined) continue
+    const base = projectBasePath({ host: p.host, project: p.name })
     for (const sub of SUB_PAGES) {
-      paths.push(`/p/${enc}${sub}`)
+      paths.push(`${base}${sub}`)
     }
   }
   return paths

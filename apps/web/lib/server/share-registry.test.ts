@@ -4,9 +4,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
+  canonicalLandingPath,
   matchShare,
   publicDocuments,
   ShareRegistryInputError,
+  type ShareRegistryRecord,
   shareLandingPath,
   shareRegistryFor,
 } from './share-registry'
@@ -33,12 +35,12 @@ describe('share registry', () => {
       host: 'host-a',
       project: 'project-x',
       scope: { kind: 'project' },
-      currentPath: '/h/host-a/p/project-x/reports',
+      currentPath: '/host-a/project-x/reports?x=1',
       expires: '7d',
     })
 
-    expect(page.path).toBe('/h/host-a/p/project-x/wiki/W0004')
-    expect(whole.path).toBe('/h/host-a/p/project-x/reports')
+    expect(page.path).toBe('/host-a/project-x/w/4')
+    expect(whole.path).toBe('/host-a/project-x/reports?x=1')
     expect(whole.expires_at).not.toBeNull()
     const file = join(directory, 'shares.json')
     expect((await stat(file)).mode & 0o777).toBe(0o600)
@@ -56,17 +58,17 @@ describe('share registry', () => {
 
   it('revokes by id and ignores expired tokens', async () => {
     const record = await registry().create({
-      host: null,
+      host: 'host-a',
       project: 'project-x',
       scope: { kind: 'report', id: 'R0005' },
     })
-    expect(record.path).toBe('/p/project-x/reports/R0005')
+    expect(record.path).toBe('/host-a/project-x/r/5')
     expect(await registry().remove('shr_missing0')).toBe(false)
     expect(await registry().remove(record.id)).toBe(true)
-    expect(await registry().validate(null, 'project-x', record.token)).toBeNull()
+    expect(await registry().validate('host-a', 'project-x', record.token)).toBeNull()
 
     const short = await registry().create(
-      { host: null, project: 'project-x', scope: { kind: 'project' }, expires: '1h' },
+      { host: 'host-a', project: 'project-x', scope: { kind: 'project' }, expires: '1h' },
       new Date(Date.now() - 2 * 60 * 60 * 1000),
     )
     expect(await registry().find(short.token)).toBeNull()
@@ -131,7 +133,7 @@ describe('service links', () => {
       service: true,
     }
     const record = await registry().create(input)
-    expect(record).toMatchObject({ service: true, path: '/h/host-a/p/project-x/reports/R0010' })
+    expect(record).toMatchObject({ service: true, path: '/host-a/project-x/r/10' })
     expect(matchShare(await registry().read(), 'host-a', 'project-x', record.token)).toEqual({
       scope: { kind: 'report', id: 'R0010' },
       service: true,
@@ -148,20 +150,48 @@ describe('service links', () => {
 describe('landing paths', () => {
   const scope = { kind: 'project' } as const
   it('keeps a Project share inside the Project route', () => {
-    expect(shareLandingPath('host-a', 'project-x', scope, '/h/host-a/p/project-x/e/E0001-x')).toBe(
-      '/h/host-a/p/project-x/e/E0001-x',
-    )
+    expect(
+      shareLandingPath('host-a', 'project-x', scope, '/host-a/project-x/e/1?run=r-1#top'),
+    ).toBe('/host-a/project-x/e/1?run=r-1')
     for (const outside of [
-      '/h/host-a/p/project-y/wiki',
-      '/h/host-a/p/project-xy',
-      'https://evil.example/h/host-a/p/project-x',
-      '/h/host-a/p/project-x/../project-y',
-      '/h/host-a/p/project-x/%2e%2e/project-y',
-      '/h/host-a/p/project-x//evil.example',
-    ])
-      expect(shareLandingPath('host-a', 'project-x', scope, outside)).toBe('/h/host-a/p/project-x')
-    expect(shareLandingPath('host-a', 'project-x', { kind: 'experiment', id: 'E0001-x' })).toBe(
+      '/host-a/project-y/wiki',
+      '/host-a/project-xy',
+      '/host-b/project-x',
+      'https://evil.example/host-a/project-x',
+      '/host-a/project-x/../project-y',
+      '/host-a/project-x/%2e%2e/project-y',
+      '/host-a/project-x//evil.example',
       '/h/host-a/p/project-x/e/E0001-x',
+    ])
+      expect(shareLandingPath('host-a', 'project-x', scope, outside)).toBe('/host-a/project-x')
+    expect(shareLandingPath('host-a', 'project-x', { kind: 'experiment', id: 'E0001-x' })).toBe(
+      '/host-a/project-x/e/1',
     )
+  })
+
+  it('maps stored older landing paths to canonical pages without rewriting them', () => {
+    const record = (path: string, scopeValue: ShareRegistryRecord['scope'] = scope) =>
+      ({
+        id: 'shr_abcdefgh',
+        token: 'A'.repeat(24),
+        host: 'host-a',
+        project: 'project-x',
+        scope: scopeValue,
+        path,
+        created_at: '2026-10-01T00:00:00+08:00',
+        expires_at: null,
+      }) satisfies ShareRegistryRecord
+    expect(canonicalLandingPath(record('/h/host-a/p/project-x/reports/R0005?expanded=1'))).toBe(
+      '/host-a/project-x/r/5?expanded=1',
+    )
+    expect(canonicalLandingPath(record('/h/host-a/p/project-x'))).toBe('/host-a/project-x')
+    expect(canonicalLandingPath(record('/h/host-a/p/project-x/unknown'))).toBe('/host-a/project-x')
+    expect(canonicalLandingPath(record('/h/host-b/p/project-x/wiki'))).toBe('/host-a/project-x')
+    expect(
+      canonicalLandingPath(
+        record('/h/host-a/p/project-x/e/E0001-x', { kind: 'experiment', id: 'E0001-x' }),
+      ),
+    ).toBe('/host-a/project-x/e/1')
+    expect(canonicalLandingPath({ ...record('/p/project-x'), host: null })).toBeNull()
   })
 })

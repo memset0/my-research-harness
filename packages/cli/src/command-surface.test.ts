@@ -22,7 +22,7 @@ function leaves(program: Command, prefix = ''): string[] {
     .sort()
 }
 
-it('keeps all 20 commands in one memon tree without duplicate groups', async () => {
+it('keeps all 17 commands in one memon tree without duplicate groups', async () => {
   const program = createResearchProgram()
   const registered = leaves(program)
   const expected = [
@@ -36,9 +36,6 @@ it('keeps all 20 commands in one memon tree without duplicate groups', async () 
     'journal read',
     'mock seed',
     'serve',
-    'share create',
-    'share list',
-    'share revoke',
     'update',
     'wiki create',
     'wiki move',
