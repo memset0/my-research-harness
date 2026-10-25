@@ -35,6 +35,9 @@ import {
 
 type EmbedPhase = 'checking' | 'loading' | 'ready' | 'error'
 const EMBED_TIMEOUT_MS = 15_000
+// The document itself may be large and come from a slow source link; only its
+// response headers are bounded by EMBED_TIMEOUT_MS.
+const EMBED_LOAD_TIMEOUT_MS = 120_000
 const DEFAULT_ZOOM_PERCENT = 100
 const MIN_ZOOM_PERCENT = 50
 const MAX_ZOOM_PERCENT = 200
@@ -243,9 +246,9 @@ export function ReportHtmlEmbed({
     iframe?.addEventListener('load', onLoad)
     iframe?.addEventListener('error', onError)
     const timeout = window.setTimeout(() => {
-      setError('The embedded report document did not finish loading within 15 seconds.')
+      setError('The embedded report document did not finish loading within 2 minutes.')
       setPhase('error')
-    }, EMBED_TIMEOUT_MS)
+    }, EMBED_LOAD_TIMEOUT_MS)
     return () => {
       window.clearTimeout(timeout)
       iframe?.removeEventListener('load', onLoad)

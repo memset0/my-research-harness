@@ -5,6 +5,8 @@ import { ProjectStats, type StatsFields } from '../project-io.js'
 import { agentAdapter, missingAgentPath } from './agent-adapters.js'
 import { storeAccess } from './store-access.js'
 
+const AGENT_STREAM_RANGE_BYTES = 1024 * 1024
+
 /** A bounded read lease retaining one opened regular file. */
 export class AgentReadHandle {
   private position = 0
@@ -89,20 +91,36 @@ export class AgentReadHandle {
     } = {},
   ): Readable {
     const handle = this
-    const size = Math.min(options.highWaterMark ?? 64 * 1024, 1024 * 1024)
-    if (!Number.isSafeInteger(size) || size < 1) throw new RangeError('invalid stream buffer')
+    const highWaterMark = options.highWaterMark ?? 64 * 1024
+    if (!Number.isSafeInteger(highWaterMark) || highWaterMark < 1)
+      throw new RangeError('invalid stream buffer')
+    // Each range is one round trip to the source, so ranges use the largest
+    // bounded size rather than the consumer's buffer size, and the next range
+    // is requested while the consumer takes the current one.
+    const size = AGENT_STREAM_RANGE_BYTES
+    const end = options.end ?? Infinity
+    const readFrom = (at: number): Promise<Buffer> | null => {
+      if (at > end) return null
+      const buffer = Buffer.alloc(Math.min(size, end - at + 1))
+      const pending = handle
+        .read(buffer, 0, buffer.length, at)
+        .then(({ bytesRead }) => buffer.subarray(0, bytesRead))
+      pending.catch(() => undefined)
+      return pending
+    }
     const stream = Readable.from(
       (async function* () {
         let position = options.start ?? handle.position
         try {
-          while (position <= (options.end ?? Infinity)) {
+          let pending = readFrom(position)
+          while (pending) {
             if (options.signal?.aborted) throw options.signal.reason
-            const buffer = Buffer.alloc(Math.min(size, (options.end ?? Infinity) - position + 1))
-            const { bytesRead } = await handle.read(buffer, 0, buffer.length, position)
-            if (!bytesRead) break
-            position += bytesRead
+            const bytes = await pending
+            if (!bytes.length) break
+            position += bytes.length
             if (options.start === undefined) handle.position = position
-            yield buffer.subarray(0, bytesRead)
+            pending = readFrom(position)
+            yield bytes
           }
         } finally {
           if (options.autoClose !== false) await handle.close()

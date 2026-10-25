@@ -465,7 +465,9 @@ describe('<ReportHtmlEmbed>', () => {
       )
     })
     act(() => vi.advanceTimersByTime(15_000))
-    expect(screen.getByRole('alert')).toHaveTextContent('did not finish loading within 15 seconds')
+    expect(screen.queryByRole('alert')).toBeNull()
+    act(() => vi.advanceTimersByTime(105_000))
+    expect(screen.getByRole('alert')).toHaveTextContent('did not finish loading within 2 minutes')
     expect(proximityObserver?.disconnect).toHaveBeenCalled()
   })
 
@@ -547,9 +549,9 @@ describe('<ReportHtmlEmbed>', () => {
     expect(screen.getByTitle('Slow chart')).toBeInTheDocument()
 
     act(() => {
-      vi.advanceTimersByTime(15_000)
+      vi.advanceTimersByTime(120_000)
     })
-    expect(screen.getByRole('alert')).toHaveTextContent('did not finish loading within 15 seconds')
+    expect(screen.getByRole('alert')).toHaveTextContent('did not finish loading within 2 minutes')
 
     fireEvent.click(screen.getByRole('button', { name: /retry/i }))
     await act(async () => {

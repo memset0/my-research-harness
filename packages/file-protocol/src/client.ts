@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto'
 import { request } from 'node:https'
+import type { Readable } from 'node:stream'
+import { createGunzip } from 'node:zlib'
 import { z } from 'zod'
 import {
   ConditionalOptionsSchema,
@@ -103,11 +105,13 @@ export class FileAgentClient implements FileAdapter {
           headers:
             body === undefined
               ? {
+                  'accept-encoding': 'gzip',
                   'x-memon-concurrency': String(concurrency),
                   'x-memon-expected-source-identity': this.sourceIdentity,
                   ...(query.knownVersion ? { 'if-none-match': `"${query.knownVersion}"` } : {}),
                 }
               : {
+                  'accept-encoding': 'gzip',
                   'x-memon-concurrency': String(concurrency),
                   'x-memon-expected-source-identity': this.sourceIdentity,
                   'content-type': 'application/json',
@@ -128,7 +132,15 @@ export class FileAgentClient implements FileAdapter {
             }
           }
           response.once('close', record)
-          response.on('data', (chunk: Buffer) => {
+          // Agents that predate compression ignore Accept-Encoding and send identity bodies.
+          let body: Readable = response
+          if (response.headers['content-encoding'] === 'gzip') {
+            body = response.pipe(createGunzip())
+            body.on('error', (cause) =>
+              reject(new FileAccessError('PROTOCOL_INCOMPATIBLE', { cause })),
+            )
+          }
+          body.on('data', (chunk: Buffer) => {
             received += chunk.length
             if (received > limit) {
               req.destroy(new FileAccessError('LIMIT_EXCEEDED'))
@@ -139,7 +151,7 @@ export class FileAgentClient implements FileAdapter {
           response.on('error', (cause) =>
             reject(new FileAccessError('SOURCE_UNAVAILABLE', { cause })),
           )
-          response.on('end', () => {
+          body.on('end', () => {
             record()
             if (
               response.statusCode !== undefined &&
@@ -350,22 +362,20 @@ export class FileAgentClient implements FileAdapter {
     const capabilities = await this.handshake(value.project)
     if (!capabilities.capabilities.includes('read-handles-v1'))
       throw new FileAccessError('CAPABILITY_UNAVAILABLE')
-    if (value.length > capabilities.limits.maxRangeBytes)
-      throw new FileAccessError('LIMIT_EXCEEDED')
+    // A handle read may return fewer bytes than asked, so a request above the
+    // agent's range limit becomes a short read instead of an error.
+    const length = Math.min(value.length, capabilities.limits.maxRangeBytes)
     const result = FileRangeResultSchema.parse(
       this.json(
         await this.call('read-at', {
           project: value.project,
           readToken: value.readToken,
           offset: String(value.offset),
-          length: String(value.length),
+          length: String(length),
         }),
       ),
     )
-    if (
-      result.offset !== value.offset ||
-      Buffer.from(result.content, 'base64').length > value.length
-    )
+    if (result.offset !== value.offset || Buffer.from(result.content, 'base64').length > length)
       throw new FileAccessError('PROTOCOL_INCOMPATIBLE')
     return result
   }

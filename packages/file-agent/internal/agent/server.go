@@ -330,6 +330,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.serveService(w, r)
 		return
 	}
+	if acceptsGzip(r) {
+		compressed := &gzipResponse{ResponseWriter: w}
+		defer compressed.Close()
+		w = compressed
+	}
 	select {
 	case s.capacity <- struct{}{}:
 		defer func() { <-s.capacity }()
