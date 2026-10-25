@@ -33,7 +33,7 @@ func (g *gzipResponse) WriteHeader(status int) {
 		g.Header().Set("Content-Encoding", "gzip")
 		g.Header().Add("Vary", "Accept-Encoding")
 		g.Header().Del("Content-Length")
-		g.gz, _ = gzip.NewWriterLevel(g.ResponseWriter, gzip.BestSpeed)
+		g.gz, _ = gzip.NewWriterLevel(g.ResponseWriter, gzip.DefaultCompression)
 	}
 	g.ResponseWriter.WriteHeader(status)
 }
