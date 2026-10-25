@@ -7,4 +7,4 @@
 
 ## 2. Verification
 
-- [ ] 2.1 After deployment, time a large HTML Report from a high-latency agent source before and after the agent upgrade
+- [x] 2.1 After deployment, time a large HTML Report from a high-latency agent source before and after the agent upgrade (3 MB: 38 s before, ~10 s with large ranges, ~2 s on a faster link; the embed renders with no timeout)
