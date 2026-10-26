@@ -40,6 +40,9 @@ interface Response {
   bytes: Buffer
 }
 
+const READ_RETRY_DELAYS_MS = [500, 1_500]
+const READ_RETRY_BUDGET_MS = 20_000
+
 export class FileAgentClient implements FileAdapter {
   readonly sourceIdentity: string
   readonly authorityIdentity: string
@@ -77,7 +80,43 @@ export class FileAgentClient implements FileAdapter {
     }
   }
 
-  private call(
+  /**
+   * Reads (GET) are idempotent, so a transient failure (connection reset,
+   * timeout, or the agent answering 429/503 while busy) is retried with a short
+   * backoff while the whole call stays within READ_RETRY_BUDGET_MS. Mutations
+   * are sent once.
+   */
+  private async call(
+    operation: string,
+    query: Record<string, string>,
+    payload?: unknown,
+  ): Promise<Response> {
+    if (payload !== undefined) return this.callOnce(operation, query, payload)
+    const started = Date.now()
+    for (let attempt = 0; ; attempt++) {
+      const delay = READ_RETRY_DELAYS_MS[attempt]
+      try {
+        const response = await this.callOnce(operation, query)
+        if (
+          (response.status !== 429 && response.status !== 503) ||
+          delay === undefined ||
+          Date.now() - started + delay > READ_RETRY_BUDGET_MS
+        )
+          return response
+      } catch (error) {
+        if (
+          !(error instanceof FileAccessError) ||
+          error.code !== 'SOURCE_UNAVAILABLE' ||
+          delay === undefined ||
+          Date.now() - started + delay > READ_RETRY_BUDGET_MS
+        )
+          throw error
+      }
+      await new Promise((resolve) => setTimeout(resolve, delay))
+    }
+  }
+
+  private callOnce(
     operation: string,
     query: Record<string, string>,
     payload?: unknown,
@@ -172,7 +211,7 @@ export class FileAgentClient implements FileAdapter {
       )
       const deadline = setTimeout(
         () => req.destroy(new FileAccessError('SOURCE_UNAVAILABLE')),
-        this.connection.timeoutMs ?? 10_000,
+        this.connection.timeoutMs ?? 15_000,
       )
       req.once('close', () => clearTimeout(deadline))
       req.on('error', (cause) =>

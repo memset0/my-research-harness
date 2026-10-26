@@ -9,6 +9,18 @@
 
 import { isServer, QueryClient } from '@tanstack/react-query'
 
+// A busy or briefly unreachable file source answers 429/502/503/504. Such a
+// failure gets more retries than the default three (about 35 s in all), and
+// a query left in that error state keeps retrying in the background, so a page
+// recovers by itself instead of staying on the error.
+const TRANSIENT_STATUSES = new Set([429, 502, 503, 504])
+export function isTransientError(error: unknown): boolean {
+  const status = (error as { status?: unknown } | null)?.status
+  return typeof status === 'number' && TRANSIENT_STATUSES.has(status)
+}
+const TRANSIENT_RETRIES = 6
+const TRANSIENT_REFETCH_MS = 15_000
+
 function makeQueryClient(): QueryClient {
   return new QueryClient({
     defaultOptions: {
@@ -16,6 +28,13 @@ function makeQueryClient(): QueryClient {
         // Match the client's defaults so dehydrated data isn't immediately
         // considered stale on the client side.
         staleTime: 30 * 1000,
+        retry: (failureCount, error) =>
+          failureCount < (isTransientError(error) ? TRANSIENT_RETRIES : 3),
+        retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 10_000),
+        refetchInterval: (query) =>
+          query.state.status === 'error' && isTransientError(query.state.error)
+            ? TRANSIENT_REFETCH_MS
+            : false,
       },
       dehydrate: {
         // Dehydrate even pending queries so server-streamed Suspense queries

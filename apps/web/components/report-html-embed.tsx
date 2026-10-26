@@ -38,6 +38,7 @@ const EMBED_TIMEOUT_MS = 15_000
 // The document itself may be large and come from a slow source link; only its
 // response headers are bounded by EMBED_TIMEOUT_MS.
 const EMBED_LOAD_TIMEOUT_MS = 120_000
+const EMBED_RETRY_MS = 10_000
 const DEFAULT_ZOOM_PERCENT = 100
 const MIN_ZOOM_PERCENT = 50
 const MAX_ZOOM_PERCENT = 200
@@ -164,6 +165,7 @@ export function ReportHtmlEmbed({
     const controller = new AbortController()
     let cancelled = false
     let timedOut = false
+    let retryTimer: number | undefined
     const timeout = window.setTimeout(() => {
       timedOut = true
       controller.abort()
@@ -189,19 +191,23 @@ export function ReportHtmlEmbed({
       })
       .catch((cause: unknown) => {
         if (cancelled) return
+        const detail = cause instanceof Error ? cause.message : String(cause)
         if (timedOut) {
           setError('The embedded report did not respond within 15 seconds.')
         } else {
-          const detail = cause instanceof Error ? cause.message : String(cause)
           setError(`Unable to load the embedded report: ${detail}`)
         }
         setPhase('error')
+        // A busy or briefly unreachable source recovers by itself: try again.
+        if (timedOut || /^HTTP (429|502|503|504)\b/.test(detail))
+          retryTimer = window.setTimeout(() => setAttempt((value) => value + 1), EMBED_RETRY_MS)
       })
       .finally(() => window.clearTimeout(timeout))
 
     return () => {
       cancelled = true
       window.clearTimeout(timeout)
+      window.clearTimeout(retryTimer)
       controller.abort()
     }
   }, [src, srcDoc, inline, live, documentId, attempt])
