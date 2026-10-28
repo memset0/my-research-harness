@@ -1,11 +1,12 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as ApiModule from '../lib/api'
 import { renderWithQuery } from '../test/utils'
 
-// Only the reports list call is stubbed; everything else in lib/api (project
-// helpers, query-key builders) keeps its real behaviour.
+// Only the report reads/writes are stubbed; everything else in lib/api
+// (project helpers, query-key builders) keeps its real behaviour.
 vi.mock('../lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof ApiModule>()
   return { ...actual, fetchReports: vi.fn(), fetchReport: vi.fn(), putReport: vi.fn() }
@@ -18,10 +19,13 @@ vi.mock('./readme-monaco', () => ({
   ),
 }))
 
-// Rendered-markdown surface is irrelevant to the rail contract and drags in
-// react-markdown + katex; keep it inert.
+// The rendered-markdown surface drags in react-markdown + katex; render the
+// source text so copy stays assertable.
 vi.mock('./markdown', () => ({
-  Markdown: ({ content }: { content: string }) => <div>{content}</div>,
+  Markdown: ({ children }: { children?: string }) => <div data-testid="markdown">{children}</div>,
+}))
+vi.mock('./document-artifact-link-provider', () => ({
+  DocumentArtifactLinkProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
 }))
 
 import { ProjectRefSchema } from '@memon/core'
@@ -29,60 +33,175 @@ import { ApiError, fetchReport, fetchReports, putReport } from '../lib/api'
 import { queryKeys } from '../lib/query-keys'
 import { InboxShell } from './inbox-shell'
 
-const PROJECT = 'project-a'
+// Report links are page routes, which exist only for Host-qualified Projects.
+const PROJECT = ProjectRefSchema.parse({ host: 'host-a', project: 'project-a' })
+
+const FIRST = {
+  id: 'R0001',
+  slug: 'first-report',
+  title: 'First report',
+  description: 'What the first sweep found.',
+  category: 'alpha',
+  mtime: 1000,
+  path: 'docs/reports/R0001-first-report/README.md',
+}
+const SECOND = {
+  id: 'R0002',
+  slug: 'second-report',
+  title: 'Second report',
+  category: 'beta',
+  mtime: 2000,
+  path: 'docs/reports/R0002-second-report/README.md',
+}
+
+function cards(container: HTMLElement): HTMLAnchorElement[] {
+  return Array.from(container.querySelectorAll<HTMLAnchorElement>('[data-report-card]'))
+}
 
 beforeEach(() => {
   vi.clearAllMocks()
   localStorage.clear()
 })
 
-describe('InboxShell reports rail — failed list is distinguishable from empty', () => {
+describe('InboxShell report index — failed list is distinguishable from empty', () => {
   it('shows a retry affordance instead of the empty copy, and recovers on retry', async () => {
     vi.mocked(fetchReports).mockRejectedValueOnce(new Error('upstream 502'))
 
-    renderWithQuery(<InboxShell kind="reports" project={PROJECT} selectedId={null} />)
+    const { container } = renderWithQuery(
+      <InboxShell kind="reports" project={PROJECT} selectedId={null} />,
+    )
 
     // Failure is surfaced, not disguised as an empty project.
     expect(await screen.findByText('failed to load reports')).toBeInTheDocument()
     expect(screen.getByText('upstream 502')).toBeInTheDocument()
-    expect(screen.queryByText('no reports yet')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-inbox-empty-state]')).toBeNull()
 
     const retry = screen.getByRole('button', { name: 'Retry' })
-
-    vi.mocked(fetchReports).mockResolvedValueOnce({
-      reports: [
-        {
-          id: 'R0001',
-          slug: 'first-report',
-          title: 'First report',
-          mtime: 1000,
-          path: '/tmp/project-a/docs/reports/R0001-first-report.md',
-        },
-      ] as never,
-    })
-
+    vi.mocked(fetchReports).mockResolvedValueOnce({ reports: [FIRST] as never })
     await userEvent.click(retry)
 
-    // Retry re-invokes the fetch and the recovered rows render.
+    // Retry re-invokes the fetch and the recovered cards render.
     await waitFor(() => expect(vi.mocked(fetchReports)).toHaveBeenCalledTimes(2))
     expect(await screen.findByText('First report')).toBeInTheDocument()
+    expect(cards(container)).toHaveLength(1)
     expect(screen.queryByText('failed to load reports')).not.toBeInTheDocument()
   })
 
-  it('shows the empty copy (no retry) when the list loads and is genuinely empty', async () => {
+  it('shows the authoring empty copy (no retry, no index) when the list is genuinely empty', async () => {
     vi.mocked(fetchReports).mockResolvedValue({ reports: [] })
 
-    renderWithQuery(<InboxShell kind="reports" project={PROJECT} selectedId={null} />)
+    const { container } = renderWithQuery(
+      <InboxShell kind="reports" project={PROJECT} selectedId={null} />,
+    )
 
-    expect(await screen.findByText('no reports yet')).toBeInTheDocument()
+    await waitFor(() => expect(container.querySelector('[data-inbox-empty-state]')).not.toBeNull())
+    expect(container.querySelector('[data-inbox-empty-state]')).toHaveTextContent(
+      'memon-write-report',
+    )
+    expect(container.querySelector('[data-report-index]')).toBeNull()
     expect(screen.queryByText('failed to load reports')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
   })
 })
 
+describe('InboxShell report index — card grid', () => {
+  it('lists every Report as a card linking to its page, with the count and filters', async () => {
+    vi.mocked(fetchReports).mockResolvedValue({ reports: [FIRST, SECOND] as never })
+
+    const { container } = renderWithQuery(
+      <InboxShell kind="reports" project={PROJECT} selectedId={null} />,
+    )
+
+    const index = await waitFor(() => {
+      const node = container.querySelector<HTMLElement>('[data-report-index]')
+      expect(node).not.toBeNull()
+      expect(cards(container)).toHaveLength(2)
+      return node!
+    })
+    expect(within(index).getByRole('heading', { level: 1 })).toHaveTextContent(/^Reports\s*2$/)
+    const filters = index.querySelector('[data-content-filters]')
+    expect(filters).not.toBeNull()
+    expect(
+      within(filters as HTMLElement)
+        .getAllByRole('combobox')
+        .map((select) => select.getAttribute('aria-label')),
+    ).toEqual(['Categories', 'Freshness', 'Presentations'])
+
+    const grid = index.querySelector('[data-report-index-grid]')
+    expect(grid).not.toBeNull()
+    const [first, second] = cards(container)
+    expect(grid).toContainElement(first!)
+    expect(first).toHaveAttribute('href', '/host-a/project-a/r/1')
+    expect(second).toHaveAttribute('href', '/host-a/project-a/r/2')
+    expect(first).toHaveTextContent('R0001')
+    expect(first).toHaveTextContent('first-report')
+    expect(first).toHaveTextContent('First report')
+    expect(first).toHaveTextContent('What the first sweep found.')
+    expect(first).not.toHaveAttribute('aria-current')
+
+    // Navigation lives in the sidebar: no rail, picker toggle or drawer.
+    expect(screen.queryByRole('complementary')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Open list|Show reports|Hide reports/ })).toBeNull()
+    expect(container.querySelector('[data-inbox-empty-state]')).toBeNull()
+    expect(fetchReport).not.toHaveBeenCalled()
+  })
+
+  it('narrows the cards with a content filter and shows the filtered count', async () => {
+    vi.mocked(fetchReports).mockResolvedValue({ reports: [FIRST, SECOND] as never })
+
+    const { container } = renderWithQuery(
+      <InboxShell kind="reports" project={PROJECT} selectedId={null} />,
+    )
+    await waitFor(() => expect(cards(container)).toHaveLength(2))
+
+    await userEvent.click(screen.getByRole('combobox', { name: 'Categories' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'beta' }))
+
+    await waitFor(() => expect(cards(container)).toHaveLength(1))
+    expect(cards(container)[0]).toHaveAttribute('href', '/host-a/project-a/r/2')
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/^Reports\s*1 \/ 2$/)
+  })
+})
+
+describe('InboxShell selected Report', () => {
+  it('fills the main area with the Report and offers the quick switch in its header', async () => {
+    vi.mocked(fetchReports).mockResolvedValue({ reports: [FIRST, SECOND] as never })
+    vi.mocked(fetchReport).mockResolvedValue({
+      ...FIRST,
+      hash: 'h1',
+      content: '# First\nBody text.',
+      format: 'markdown',
+    })
+
+    const { container } = renderWithQuery(
+      <InboxShell kind="reports" project={PROJECT} selectedId="R0001" />,
+    )
+
+    expect(await screen.findByText(/Body text\./)).toBeInTheDocument()
+    const main = screen.getByRole('main')
+    expect(main).toContainElement(container.querySelector('[data-inbox-reading-surface]'))
+    expect(container.querySelector('[data-report-index]')).toBeNull()
+    expect(screen.queryByRole('complementary')).toBeNull()
+
+    const quickSwitch = screen.getByRole('button', {
+      name: 'Switch report, current R0001 first-report',
+    })
+    await userEvent.click(quickSwitch)
+    const list = await waitFor(() => {
+      const node = document.body.querySelector<HTMLElement>('[data-report-quick-switch-list]')
+      expect(node).not.toBeNull()
+      expect(node!.querySelectorAll('[data-report-card]')).toHaveLength(2)
+      return node!
+    })
+    const [current, other] = Array.from(list.querySelectorAll('[data-report-card]'))
+    expect(current).toHaveAttribute('aria-current', 'page')
+    expect(other).not.toHaveAttribute('aria-current')
+    expect(other).toHaveAttribute('href', '/host-a/project-a/r/2')
+  })
+})
+
 describe('InboxShell report editor — list invalidation', () => {
   it('refetches the Report list of a Host-qualified Project after a save', async () => {
-    const hosted = ProjectRefSchema.parse({ host: 'host-a', project: PROJECT })
     vi.mocked(fetchReports).mockResolvedValue({
       reports: [{ id: 'R0001', slug: 'first-report', title: 'First report', mtime: 1000 }] as never,
     })
@@ -97,11 +216,11 @@ describe('InboxShell report editor — list invalidation', () => {
     vi.mocked(putReport).mockResolvedValue({ mtime: 2000, hash: 'h2' } as never)
 
     const { queryClient } = renderWithQuery(
-      <InboxShell kind="reports" project={hosted} selectedId="R0001" />,
+      <InboxShell kind="reports" project={PROJECT} selectedId="R0001" />,
     )
     await waitFor(() => expect(vi.mocked(fetchReports)).toHaveBeenCalledTimes(1))
     // The list read is keyed by the factory constructor the editor invalidates.
-    expect(queryClient.getQueryState(queryKeys.reports(hosted))).toBeDefined()
+    expect(queryClient.getQueryState(queryKeys.reports(PROJECT))).toBeDefined()
 
     await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
     const [source] = screen.getAllByLabelText('Report source')
@@ -113,20 +232,6 @@ describe('InboxShell report editor — list invalidation', () => {
 
     await waitFor(() => expect(vi.mocked(putReport)).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(vi.mocked(fetchReports)).toHaveBeenCalledTimes(2))
-  })
-})
-
-describe('InboxShell reports rail — placement', () => {
-  it('renders the desktop Report picker to the right of the reading pane', async () => {
-    vi.mocked(fetchReports).mockResolvedValue({ reports: [] })
-
-    renderWithQuery(<InboxShell kind="reports" project={PROJECT} selectedId={null} />)
-
-    const rail = await screen.findByRole('complementary', { name: 'Report picker' })
-    const reading = screen.getByRole('main')
-    expect(reading.compareDocumentPosition(rail) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(rail).toHaveClass('border-l')
-    expect(rail).not.toHaveClass('border-r')
   })
 })
 
@@ -142,43 +247,9 @@ describe('InboxShell report detail — unrefreshed catalog', () => {
   })
 })
 
-describe('InboxShell reports landing — populated versus empty', () => {
-  it('asks to select a report, not "no reports", when Reports exist and the picker is hidden', async () => {
-    localStorage.setItem('memon:reports:picker-open', 'false')
-    vi.mocked(fetchReports).mockResolvedValue({
-      reports: [
-        {
-          id: 'R0001',
-          slug: 'first-report',
-          title: 'First report',
-          mtime: 1000,
-          path: '/tmp/project-a/docs/reports/R0001-first-report.md',
-        },
-      ] as never,
-    })
-
-    renderWithQuery(<InboxShell kind="reports" project={PROJECT} selectedId={null} />)
-
-    expect(
-      await screen.findByText('Select a report from the report list to begin reading.'),
-    ).toBeInTheDocument()
-    expect(screen.queryByText(/No reports yet/)).not.toBeInTheDocument()
-  })
-
-  it('keeps the authoring empty copy for a genuinely empty list', async () => {
-    vi.mocked(fetchReports).mockResolvedValue({ reports: [] })
-    const { container } = renderWithQuery(
-      <InboxShell kind="reports" project={PROJECT} selectedId={null} />,
-    )
-    await waitFor(() => expect(container.querySelector('[data-inbox-empty-state]')).not.toBeNull())
-    expect(screen.queryByText(/Select a report/)).not.toBeInTheDocument()
-  })
-})
-
 describe('InboxShell — document-only share viewer', () => {
-  it('shows the shared Report without the picker or the list request', async () => {
+  it('shows the shared Report without the index or the list request', async () => {
     const { SessionProvider } = await import('./session-provider')
-    vi.mocked(fetchReports).mockClear()
     vi.mocked(fetchReport).mockReturnValue(new Promise(() => {}))
     const { container } = renderWithQuery(
       <SessionProvider value={{ role: 'viewer', scopeProjects: [], documentOnly: true }}>
@@ -186,8 +257,8 @@ describe('InboxShell — document-only share viewer', () => {
       </SessionProvider>,
     )
     await waitFor(() => expect(fetchReport).toHaveBeenCalled())
-    expect(container.querySelector('[data-inbox-rail]')).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Open list' })).not.toBeInTheDocument()
+    expect(container.querySelector('[data-report-index]')).toBeNull()
+    expect(container.querySelector('[data-report-card]')).toBeNull()
     expect(fetchReports).not.toHaveBeenCalled()
   })
 })

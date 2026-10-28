@@ -136,7 +136,7 @@ export function WikiPageCard({
       data-wiki-card=""
       data-wiki-id={page.id}
       className={cn(
-        'block rounded-md border border-border bg-card p-2.5 text-xs transition-colors',
+        'block flex-1 rounded-md border border-border bg-card p-2.5 text-xs transition-colors',
         'hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
         active && 'border-primary bg-primary/5',
       )}

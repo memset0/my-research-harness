@@ -9,38 +9,65 @@ const project = ProjectRefSchema.parse({ host: 'host-a', project: 'project-a' })
 vi.mock('next/navigation', () => ({
   usePathname: () => navigation.pathname,
 }))
-vi.mock('./tab-badge', () => ({
-  TabBadge: ({ kind }: { kind: string }) => <span data-kind={kind}>1</span>,
+vi.mock('./manage-shares-dialog', () => ({
+  ManageSharesDialog: () => <button type="button">Share</button>,
 }))
-vi.mock('./manage-shares-dialog', () => ({ ManageSharesDialog: () => null }))
 vi.mock('./ui/sidebar', () => ({ SidebarTrigger: () => <button type="button">Sidebar</button> }))
 
-describe('AppBar Wiki tab', () => {
+function location() {
+  return screen.getByRole('navigation', { name: 'Location' })
+}
+
+/** The breadcrumb's visible segments, separators dropped. */
+function crumbs() {
+  return Array.from(location().children, (node) => node.textContent ?? '').filter(
+    (text) => text !== '/',
+  )
+}
+
+describe('AppBar location', () => {
   beforeEach(() => {
     navigation.pathname = '/host-a/project-a/wiki'
   })
 
-  it('renders Wiki immediately after Code Review as the final project tab', () => {
+  it('shows host / project / Wiki on the Wiki list and no section tabs', () => {
     render(<AppBar project={project} />)
-    const tablist = screen.getByRole('tablist')
-    expect(
-      within(tablist)
-        .getAllByRole('tab')
-        .map((tab) => tab.textContent),
-    ).toEqual(['Experiments1', 'Journal1', 'Reports1', 'Code Review1', 'Wiki1'])
-    expect(screen.queryByRole('tab', { name: /Hypotheses/i })).toBeNull()
-    const wiki = within(tablist).getByRole('tab', { name: /^Wiki 1$/ })
-    expect(wiki).toHaveAttribute('href', '/host-a/project-a/wiki')
-    expect(wiki).toHaveAttribute('aria-selected', 'true')
-    expect(wiki.querySelector('[data-kind="wiki"]')).toBeInTheDocument()
+    expect(location()).toHaveAttribute('data-app-bar-location')
+    expect(crumbs()).toEqual(['host-a', 'project-a', 'Wiki'])
+    expect(screen.queryByRole('tablist')).toBeNull()
+    expect(screen.queryByRole('tab')).toBeNull()
+    expect(within(location()).queryByRole('link')).toBeNull()
   })
 
-  it('keeps the canonical Wiki list link active on a Wiki page', () => {
+  it('keeps Wiki as the section on a Wiki page', () => {
     navigation.pathname = '/host-a/project-a/w/7'
     render(<AppBar project={project} />)
+    expect(crumbs()).toEqual(['host-a', 'project-a', 'Wiki'])
+  })
 
-    const wiki = screen.getByRole('tab', { name: /^Wiki 1$/ })
-    expect(wiki).toHaveAttribute('href', '/host-a/project-a/wiki')
-    expect(wiki).toHaveAttribute('aria-selected', 'true')
+  it.each([
+    ['/host-a/project-a', 'Experiments'],
+    ['/host-a/project-a/experiments', 'Experiments'],
+    ['/host-a/project-a/e/3', 'Experiments'],
+    ['/host-a/project-a/journal', 'Journal'],
+    ['/host-a/project-a/reports', 'Reports'],
+    ['/host-a/project-a/r/2', 'Reports'],
+    ['/host-a/project-a/code-review', 'Code Review'],
+  ])('names the current section of %s as %s', (pathname, name) => {
+    navigation.pathname = pathname
+    render(<AppBar project={project} />)
+    expect(crumbs()).toEqual(['host-a', 'project-a', name])
+  })
+
+  it('omits the section on a path outside this project', () => {
+    navigation.pathname = '/host-b/project-a/wiki'
+    render(<AppBar project={project} />)
+    expect(crumbs()).toEqual(['host-a', 'project-a'])
+  })
+
+  it('keeps the Share control', () => {
+    render(<AppBar project={project} />)
+    expect(screen.getByRole('button', { name: 'Share' })).toBeInTheDocument()
+    expect(location()).not.toContainElement(screen.getByRole('button', { name: 'Share' }))
   })
 })

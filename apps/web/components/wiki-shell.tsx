@@ -11,7 +11,7 @@ import { BodyTranslation } from './body-translation'
 
 import type { WikiDiagnostic } from '@memon/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, List, PanelRightClose, PanelRightOpen, Pencil, X } from 'lucide-react'
+import { ChevronDown, Pencil, X } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -48,7 +48,6 @@ import {
   resetDriftedAncestors,
   scrollFragmentIntoSurface,
 } from '../lib/scroll-to-fragment'
-import { useUserPreferenceState } from '../lib/use-user-preference-state'
 import { cn } from '../lib/utils'
 import { wikiKinds } from '../lib/wiki-kinds'
 import {
@@ -72,7 +71,7 @@ import { Input } from './ui/input'
 import { Label } from './ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from './ui/sheet'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from './ui/sheet'
 import { WikiKindHelp } from './wiki-kind-help'
 import {
   filterWikiPages,
@@ -85,7 +84,6 @@ import {
   WikiStatusBadge,
 } from './wiki-page-card'
 
-const WIKI_RAIL_PREFERENCE_KEY = 'memon:wiki:rail-open'
 const WIKI_TIMESTAMP_KEYS = ['created_at', 'updated_at', 'date'] as const
 
 const EMPTY_BODY =
@@ -133,12 +131,6 @@ export function WikiShell({
   // A document-only share viewer sees the shared page without the page list.
   const documentOnly = useIsDocumentOnlyViewer()
   const { pages, isLoading, error, refetch } = useWikiPages(project, !documentOnly)
-  const [storedRailOpen, setRailOpen] = useUserPreferenceState<boolean>(
-    WIKI_RAIL_PREFERENCE_KEY,
-    true,
-  )
-  const railOpen = !documentOnly && (typeof storedRailOpen === 'boolean' ? storedRailOpen : true)
-  const showRail = documentOnly ? undefined : () => setRailOpen(true)
   const [contentFilter, setContentFilter] = useState(emptyContentFilter)
   const [kindFilter, setKindFilter] = useState('all')
   const [textFilter, setTextFilter] = useState('')
@@ -156,28 +148,34 @@ export function WikiShell({
     enabled: selectedId !== null,
   })
 
-  const filters = (
-    <div className="space-y-2">
-      <ContentFilters items={pages} value={contentFilter} onChange={setContentFilter} />
-      <WikiRailFilters
-        kind={kindFilter}
-        text={textFilter}
-        kinds={pages}
-        onKindChange={setKindFilter}
-        onTextChange={setTextFilter}
-      />
-    </div>
-  )
-
+  // Navigation lives in the sidebar; the Wiki list page is a filterable card
+  // index and a Wiki page uses the whole width.
   return (
     <div className="flex h-[calc(100svh-3rem)] overflow-hidden">
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {selectedId === null ? (
-          <WikiLandingState
-            pageCount={pages.length}
+          <WikiIndex
+            project={project}
+            pages={pages}
+            visible={visible}
             isLoading={isLoading}
             error={error}
-            onShowRail={railOpen ? undefined : showRail}
+            onRetry={refetch}
+            filtered={
+              textFilter.trim() !== '' || kindFilter !== 'all' || visible.length !== pages.length
+            }
+            filters={
+              <div className="flex flex-col gap-2">
+                <ContentFilters items={pages} value={contentFilter} onChange={setContentFilter} />
+                <WikiRailFilters
+                  kind={kindFilter}
+                  text={textFilter}
+                  kinds={pages}
+                  onKindChange={setKindFilter}
+                  onTextChange={setTextFilter}
+                />
+              </div>
+            }
           />
         ) : (
           <WikiSelectedPane
@@ -188,76 +186,10 @@ export function WikiShell({
             error={(detail.error as Error | null) ?? null}
             pages={pages}
             pagesLoading={isLoading}
-            onShowRail={railOpen ? undefined : showRail}
           />
         )}
       </main>
-
-      {railOpen && (
-        <aside
-          aria-label="Wiki page picker"
-          className="hidden w-80 shrink-0 flex-col border-l md:flex"
-          data-wiki-rail=""
-        >
-          <div className="flex items-center justify-between border-b px-3 py-2 text-xs uppercase tracking-wide text-muted-foreground">
-            <span>Wiki</span>
-            <div className="flex items-center gap-1.5">
-              <span className="tabular-nums">{visible.length}</span>
-              <WikiRailToggleButton action="hide" onClick={() => setRailOpen(false)} />
-            </div>
-          </div>
-          <div className="border-b p-2">{filters}</div>
-          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-            <WikiCardList
-              project={project}
-              pages={visible}
-              selectedId={selectedId}
-              loading={isLoading}
-              error={error}
-              onRetry={refetch}
-              filtered={textFilter.trim() !== '' || kindFilter !== 'all'}
-            />
-          </div>
-        </aside>
-      )}
-
-      {!documentOnly && (
-        <WikiMobileRail
-          project={project}
-          pages={visible}
-          selectedId={selectedId}
-          loading={isLoading}
-          error={error}
-          onRetry={refetch}
-          filters={filters}
-          filtered={textFilter.trim() !== '' || kindFilter !== 'all'}
-        />
-      )}
     </div>
-  )
-}
-
-function WikiRailToggleButton({
-  action,
-  onClick,
-}: {
-  action: 'show' | 'hide'
-  onClick: () => void
-}) {
-  const label = action === 'show' ? 'Show wiki pages' : 'Hide wiki pages'
-  const Icon = action === 'show' ? PanelRightOpen : PanelRightClose
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon-sm"
-      className="normal-case"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-    >
-      <Icon />
-    </Button>
   )
 }
 
@@ -282,7 +214,7 @@ function WikiRailFilters({
     ...[...present].filter((value) => !WIKI_KIND_ORDER.includes(value)).sort(),
   ]
   return (
-    <div className="flex flex-col gap-2">
+    <div className="grid gap-2 sm:grid-cols-2">
       <div className="flex flex-col gap-1">
         <Label htmlFor="wiki-kind-filter" className="text-[10px] uppercase text-muted-foreground">
           Kind
@@ -346,6 +278,7 @@ function WikiCardList({
   onRetry,
   filtered,
   onSelect,
+  layout = 'list',
 }: {
   project: ProjectTarget
   pages: readonly WikiListItem[]
@@ -355,6 +288,8 @@ function WikiCardList({
   onRetry?: () => void
   filtered: boolean
   onSelect?: () => void
+  /** `grid` on the list page; `list` (one column) in the quick switcher. */
+  layout?: 'grid' | 'list'
 }) {
   if (loading && pages.length === 0) {
     return (
@@ -388,9 +323,15 @@ function WikiCardList({
     )
   }
   return (
-    <ul className="flex flex-col gap-1.5 p-2">
+    <ul
+      className={cn(
+        'grid',
+        layout === 'grid' ? 'gap-3 sm:grid-cols-2 xl:grid-cols-3' : 'gap-1.5 p-2',
+      )}
+      data-wiki-index-grid={layout === 'grid' ? '' : undefined}
+    >
       {pages.map((page) => (
-        <li key={page.id}>
+        <li key={page.id} className="flex flex-col gap-1">
           <WikiPageCard
             page={page}
             href={wikiItemHref(project, page.id)}
@@ -406,49 +347,63 @@ function WikiCardList({
   )
 }
 
-function ClosedRailToolbar({ onShowRail }: { onShowRail: () => void }) {
-  return (
-    <div className="hidden shrink-0 items-center justify-end border-b px-3 py-2 md:flex">
-      <WikiRailToggleButton action="show" onClick={onShowRail} />
-    </div>
-  )
-}
-
-function WikiLandingState({
-  pageCount,
+/**
+ * The Wiki list page: filters over a card per page. The authoring empty copy
+ * shows only when the list loaded and is empty.
+ */
+function WikiIndex({
+  project,
+  pages,
+  visible,
   isLoading,
   error,
-  onShowRail,
+  onRetry,
+  filtered,
+  filters,
 }: {
-  pageCount: number
+  project: ProjectTarget
+  pages: readonly WikiListItem[]
+  visible: readonly WikiListItem[]
   isLoading: boolean
   error: Error | null
-  onShowRail?: () => void
+  onRetry: () => void
+  filtered: boolean
+  filters: React.ReactNode
 }) {
-  return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center justify-end gap-2 border-b px-4 py-2">
-        <WikiKindHelp />
-        {onShowRail && <WikiRailToggleButton action="show" onClick={onShowRail} />}
+  if (!isLoading && !error && pages.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center p-8">
+        <div className="max-w-md text-sm text-muted-foreground" data-wiki-empty-state="">
+          <Markdown>{EMPTY_BODY}</Markdown>
+        </div>
       </div>
-      <div className="flex flex-1 items-center justify-center p-8">
-        {isLoading ? (
-          <div className="w-full max-w-md">
-            <ListSkeleton count={3} />
-          </div>
-        ) : error ? (
-          <p className="max-w-md text-sm text-destructive">
-            Failed to load wiki pages: {error.message}
-          </p>
-        ) : pageCount > 0 ? (
-          <p className="max-w-md text-sm text-muted-foreground" data-wiki-no-selection="">
-            Select a wiki page from the page list to begin reading.
-          </p>
-        ) : (
-          <div className="max-w-md text-sm text-muted-foreground" data-wiki-empty-state="">
-            <Markdown>{EMPTY_BODY}</Markdown>
-          </div>
-        )}
+    )
+  }
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="mx-auto flex max-w-6xl flex-col gap-4 p-4 md:p-6" data-wiki-index="">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <h1 className="flex items-center gap-2 text-lg font-semibold">
+            Wiki
+            <span className="text-sm font-normal tabular-nums text-muted-foreground">
+              {visible.length === pages.length
+                ? pages.length
+                : `${visible.length} / ${pages.length}`}
+            </span>
+            <WikiKindHelp />
+          </h1>
+          <div className="w-full sm:w-[28rem]">{filters}</div>
+        </div>
+        <WikiCardList
+          layout="grid"
+          project={project}
+          pages={visible}
+          selectedId={null}
+          loading={isLoading}
+          error={error}
+          onRetry={onRetry}
+          filtered={filtered}
+        />
       </div>
     </div>
   )
@@ -462,7 +417,6 @@ function WikiSelectedPane({
   error,
   pages,
   pagesLoading,
-  onShowRail,
 }: {
   project: ProjectTarget
   selectedId: string
@@ -471,8 +425,8 @@ function WikiSelectedPane({
   error: Error | null
   pages: readonly WikiListItem[]
   pagesLoading: boolean
-  onShowRail?: () => void
 }) {
+  const documentOnly = useIsDocumentOnlyViewer()
   const [editing, setEditing] = useState(false)
   const [widthLimited, setWidthLimited] = useState(true)
   const notFound = (error as (Error & { status?: number }) | null)?.status === 404
@@ -480,7 +434,6 @@ function WikiSelectedPane({
   if (isLoading && !page) {
     return (
       <div className="flex h-full flex-col">
-        {onShowRail && <ClosedRailToolbar onShowRail={onShowRail} />}
         <div className="p-4 md:p-6">
           <ListSkeleton count={3} />
         </div>
@@ -492,7 +445,6 @@ function WikiSelectedPane({
   if (!page) {
     return (
       <div className="flex h-full flex-col">
-        {onShowRail && <ClosedRailToolbar onShowRail={onShowRail} />}
         <div className="p-4 text-sm" data-wiki-not-found="">
           {isNotRefreshed(error) ? (
             <span className="text-muted-foreground" data-not-refreshed="">
@@ -518,12 +470,11 @@ function WikiSelectedPane({
         <div className="flex min-w-0 items-center gap-2">
           <div className="flex min-w-0 items-baseline gap-2 text-xs">
             <WikiIdentity
-              key={onShowRail ? 'collapsed' : 'expanded'}
               project={project}
               page={page}
               pages={pages}
               pagesLoading={pagesLoading}
-              quickSwitchEnabled={onShowRail !== undefined}
+              quickSwitchEnabled={!documentOnly}
             />
             <span className="text-muted-foreground/60">·</span>
             <TimestampLocal value={page.updatedAt} />
@@ -549,7 +500,6 @@ function WikiSelectedPane({
             {editing ? <X className="size-3.5" /> : <Pencil className="size-3.5" />}
             {editing ? 'Cancel' : 'Edit'}
           </Button>
-          {onShowRail && <WikiRailToggleButton action="show" onClick={onShowRail} />}
         </div>
       </div>
 
@@ -994,60 +944,6 @@ function WikiEditor({
         <ReadmeMonaco value={buffer} onChange={setBuffer} />
       </div>
     </div>
-  )
-}
-
-function WikiMobileRail({
-  project,
-  pages,
-  selectedId,
-  loading,
-  error,
-  onRetry,
-  filters,
-  filtered,
-}: {
-  project: ProjectTarget
-  pages: readonly WikiListItem[]
-  selectedId: string | null
-  loading: boolean
-  error?: Error | null
-  onRetry?: () => void
-  filters: React.ReactNode
-  filtered: boolean
-}) {
-  const [open, setOpen] = useState(false)
-  return (
-    <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger asChild>
-        <Button
-          size="icon"
-          className="fixed right-6 bottom-6 z-30 size-12 rounded-full shadow-lg md:hidden"
-          aria-label="Open wiki page list"
-        >
-          <List className="size-5" />
-        </Button>
-      </SheetTrigger>
-      <SheetContent side="right" className="w-80 overflow-y-auto p-0">
-        <SheetHeader className="border-b px-3 py-3">
-          <SheetTitle className="text-sm">
-            Wiki · {projectHost(project) ? `${projectHost(project)}/` : ''}
-            {projectName(project)}
-          </SheetTitle>
-        </SheetHeader>
-        <div className="border-b p-2">{filters}</div>
-        <WikiCardList
-          project={project}
-          pages={pages}
-          selectedId={selectedId}
-          loading={loading}
-          error={error}
-          onRetry={onRetry}
-          filtered={filtered}
-          onSelect={() => setOpen(false)}
-        />
-      </SheetContent>
-    </Sheet>
   )
 }
 

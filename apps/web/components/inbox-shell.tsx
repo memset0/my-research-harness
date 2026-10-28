@@ -10,7 +10,7 @@ import { BodyTranslation } from './body-translation'
 
 import type { ContentFields } from '@memon/core'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, List, PanelRightClose, PanelRightOpen, Pencil, X } from 'lucide-react'
+import { ChevronDown, Pencil, X } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -30,7 +30,6 @@ import { canonicalReportHref } from '../lib/artifact-navigation'
 import { splitFrontmatter } from '../lib/frontmatter'
 import { projectPagePath } from '../lib/project-routes'
 import { queryKeys } from '../lib/query-keys'
-import { useUserPreferenceState } from '../lib/use-user-preference-state'
 import { cn } from '../lib/utils'
 import {
   ContentBadges,
@@ -51,7 +50,7 @@ import { ListSkeleton } from './skeletons'
 import { TimestampLocal } from './timestamp'
 import { Button } from './ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from './ui/sheet'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from './ui/sheet'
 
 export type InboxKind = 'reports'
 
@@ -88,7 +87,6 @@ const ERROR_COPY = {
 } as const
 
 const REPORT_TIMESTAMP_KEYS = ['created_at', 'updated_at'] as const
-const REPORT_PICKER_PREFERENCE_KEY = 'memon:reports:picker-open'
 
 export function InboxShell({
   kind,
@@ -113,32 +111,23 @@ export function InboxShell({
     <ContentFilters items={allItems} value={contentFilter} onChange={setContentFilter} />
   )
   const selected = useSelectedItem(kind, project, selectedId)
-  const [storedReportRailOpen, setReportRailOpen] = useUserPreferenceState<boolean>(
-    REPORT_PICKER_PREFERENCE_KEY,
-    true,
-  )
-  const reportRailOpen = typeof storedReportRailOpen === 'boolean' ? storedReportRailOpen : true
 
-  const empty = EMPTY_COPY[kind]
-  const showDesktopRail = reportRailOpen && !documentOnly
-  const showReportRail = kind === 'reports' && !reportRailOpen && !documentOnly
-
+  // Navigation lives in the sidebar; the Report list page is a filterable
+  // card index and a Report page uses the whole width.
   return (
     <div className="flex h-[calc(100svh-3rem)] overflow-hidden">
-      {/* Reading pane — rendered markdown + edit toggle.
-          overflow-x-hidden alongside overflow-y-auto is needed to defeat
-          the CSS Overflow Module 3 "auto-x trap" (overflow-y: auto with
-          overflow-x: visible computes overflow-x to auto, producing a
-          stray horizontal scrollbar when content has any unbreakable
-          wide element). */}
       <main className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
         {selectedId === null ? (
-          <EmptyState
-            bodyMarkdown={empty.body}
-            itemCount={allItems.length}
+          <ReportIndex
+            kind={kind}
+            project={project}
+            filters={contentFilters}
+            items={items}
+            totalCount={allItems.length}
             loading={itemsLoading}
             error={itemsError}
-            onShowReports={showReportRail ? () => setReportRailOpen(true) : undefined}
+            onRetry={refetchItems}
+            emptyBody={EMPTY_COPY[kind].body}
           />
         ) : (
           <SelectedItemPane
@@ -148,53 +137,11 @@ export function InboxShell({
             data={selected.data}
             isLoading={selected.isLoading}
             error={selected.error}
-            onShowReports={showReportRail ? () => setReportRailOpen(true) : undefined}
             items={items}
             itemsLoading={itemsLoading}
           />
         )}
       </main>
-
-      {/* Right rail — desktop only */}
-      {showDesktopRail && (
-        <aside
-          aria-label={'Report picker'}
-          className="hidden w-72 shrink-0 border-l md:flex md:flex-col"
-          data-inbox-rail={kind}
-        >
-          <RailHeader
-            kind={kind}
-            count={items.length}
-            onHideReports={kind === 'reports' ? () => setReportRailOpen(false) : undefined}
-          />
-          <div className="border-b p-2">{contentFilters}</div>
-          <div className="flex-1 overflow-y-auto">
-            <RailList
-              kind={kind}
-              project={project}
-              items={items}
-              selectedId={selectedId}
-              loading={itemsLoading}
-              error={itemsError}
-              onRetry={refetchItems}
-            />
-          </div>
-        </aside>
-      )}
-
-      {/* Mobile FAB → drawer with the rail */}
-      {!documentOnly && (
-        <MobileRailDrawer
-          filters={contentFilters}
-          kind={kind}
-          project={project}
-          items={items}
-          itemsLoading={itemsLoading}
-          itemsError={itemsError}
-          onRetry={refetchItems}
-          selectedId={selectedId}
-        />
-      )}
     </div>
   )
 }
@@ -255,50 +202,6 @@ function useSelectedItem(
   return { data: undefined, isLoading: false, error: null }
 }
 
-function RailHeader({
-  kind,
-  count,
-  onHideReports,
-}: {
-  kind: InboxKind
-  count: number
-  onHideReports?: () => void
-}) {
-  return (
-    <div className="flex items-center justify-between border-b px-3 py-2 text-xs uppercase tracking-wide text-muted-foreground">
-      <span>{'Reports'}</span>
-      <div className="flex items-center gap-1.5">
-        <span className="tabular-nums">{count}</span>
-        {onHideReports && <ReportRailToggleButton action="hide" onClick={onHideReports} />}
-      </div>
-    </div>
-  )
-}
-
-function ReportRailToggleButton({
-  action,
-  onClick,
-}: {
-  action: 'show' | 'hide'
-  onClick: () => void
-}) {
-  const label = action === 'show' ? 'Show reports' : 'Hide reports'
-  const Icon = action === 'show' ? PanelRightOpen : PanelRightClose
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon-sm"
-      className="normal-case"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-    >
-      <Icon />
-    </Button>
-  )
-}
-
 /** A Report's page; an id outside the `R<NNNN>` scheme opens the Report list. */
 function reportItemHref(project: ProjectTarget, id: string): string {
   return /^R\d{4}$/.test(id)
@@ -315,6 +218,7 @@ function RailList({
   error,
   onRetry,
   onSelect,
+  layout = 'list',
 }: {
   kind: InboxKind
   project: ProjectTarget
@@ -324,6 +228,8 @@ function RailList({
   error?: Error | null
   onRetry?: () => void
   onSelect?: () => void
+  /** `grid` on the list page; `list` (one column) in the quick switcher. */
+  layout?: 'grid' | 'list'
 }) {
   if (loading && items.length === 0) {
     return (
@@ -359,7 +265,13 @@ function RailList({
     )
   }
   return (
-    <ul className={cn('flex flex-col', kind === 'reports' && 'gap-1.5 p-2')}>
+    <ul
+      className={cn(
+        'grid',
+        layout === 'grid' ? 'gap-3 sm:grid-cols-2 xl:grid-cols-3' : 'gap-1.5 p-2',
+      )}
+      data-report-index-grid={layout === 'grid' ? '' : undefined}
+    >
       {items.map((it) => {
         const active = it.id === selectedId
         return (
@@ -371,7 +283,7 @@ function RailList({
               data-report-card={kind === 'reports' ? '' : undefined}
               className={cn(
                 kind === 'reports'
-                  ? 'block rounded-md border border-border bg-card p-2.5 text-xs transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1'
+                  ? 'flex h-full flex-col rounded-lg border border-border bg-card p-3 text-xs transition-colors hover:border-primary/60 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1'
                   : 'block border-b px-3 py-2 text-xs transition hover:bg-accent/40',
                 active &&
                   (kind === 'reports' ? 'border-primary' : 'bg-accent text-accent-foreground'),
@@ -381,16 +293,14 @@ function RailList({
                 <span className="font-mono text-[10px] tabular-nums">{it.id}</span>
                 <span className="truncate text-[10px] text-muted-foreground">{it.subLabel}</span>
               </div>
-              <div className="mt-1">
-                <ContentBadges content={it} />
+              <div className="mt-1.5 text-sm font-medium leading-snug">
+                {it.title ?? <span className="italic text-muted-foreground/60">(no title)</span>}
               </div>
               {it.description && (
-                <p className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">
-                  {it.description}
-                </p>
+                <p className="mt-1 line-clamp-3 text-xs text-muted-foreground">{it.description}</p>
               )}
-              <div className="mt-0.5 truncate text-[11px]">
-                {it.title ?? <span className="italic text-muted-foreground/60">(no title)</span>}
+              <div className="mt-auto pt-2">
+                <ContentBadges content={it} />
               </div>
             </Link>
             {it.presentation === 'service' && (
@@ -404,52 +314,60 @@ function RailList({
 }
 
 /**
- * Landing pane with nothing selected: the authoring empty copy only when the
- * list loaded and is empty; otherwise a selection prompt, loading or failure.
+ * The Report list page: the content filters over a card per Report. The
+ * authoring empty copy shows only when the list loaded and is empty.
  */
-function EmptyState({
-  bodyMarkdown,
-  itemCount,
+function ReportIndex({
+  kind,
+  project,
+  filters,
+  items,
+  totalCount,
   loading,
   error,
-  onShowReports,
+  onRetry,
+  emptyBody,
 }: {
-  bodyMarkdown: string
-  itemCount: number
+  kind: InboxKind
+  project: ProjectTarget
+  filters: React.ReactNode
+  items: CommonItem[]
+  totalCount: number
   loading: boolean
   error: Error | null
-  onShowReports?: () => void
+  onRetry: () => void
+  emptyBody: string
 }) {
-  return (
-    <div className="flex h-full flex-col">
-      {onShowReports && <ClosedReportRailToolbar onShowReports={onShowReports} />}
-      <div className="flex flex-1 items-center justify-center p-8">
-        {loading ? (
-          <div className="w-full max-w-md">
-            <ListSkeleton count={3} />
-          </div>
-        ) : error && itemCount === 0 ? (
-          <p className="max-w-md text-sm text-destructive">
-            Failed to load reports: {error.message}
-          </p>
-        ) : itemCount > 0 ? (
-          <p className="max-w-md text-sm text-muted-foreground" data-inbox-no-selection="">
-            Select a report from the report list to begin reading.
-          </p>
-        ) : (
-          <div className="max-w-md text-sm text-muted-foreground" data-inbox-empty-state="">
-            <Markdown>{bodyMarkdown}</Markdown>
-          </div>
-        )}
+  if (!loading && !error && totalCount === 0) {
+    return (
+      <div className="flex h-full items-center justify-center p-8">
+        <div className="max-w-md text-sm text-muted-foreground" data-inbox-empty-state="">
+          <Markdown>{emptyBody}</Markdown>
+        </div>
       </div>
-    </div>
-  )
-}
-
-function ClosedReportRailToolbar({ onShowReports }: { onShowReports: () => void }) {
+    )
+  }
   return (
-    <div className="hidden shrink-0 items-center justify-end border-b px-3 py-2 md:flex">
-      <ReportRailToggleButton action="show" onClick={onShowReports} />
+    <div className="mx-auto flex max-w-6xl flex-col gap-4 p-4 md:p-6" data-report-index="">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <h1 className="text-lg font-semibold">
+          Reports{' '}
+          <span className="text-sm font-normal tabular-nums text-muted-foreground">
+            {items.length === totalCount ? totalCount : `${items.length} / ${totalCount}`}
+          </span>
+        </h1>
+        <div className="w-full sm:w-[28rem]">{filters}</div>
+      </div>
+      <RailList
+        layout="grid"
+        kind={kind}
+        project={project}
+        items={items}
+        selectedId={null}
+        loading={loading}
+        error={error}
+        onRetry={onRetry}
+      />
     </div>
   )
 }
@@ -461,7 +379,6 @@ function SelectedItemPane({
   data,
   isLoading,
   error,
-  onShowReports,
   items,
   itemsLoading,
 }: {
@@ -471,17 +388,16 @@ function SelectedItemPane({
   data: FullItem | undefined
   isLoading: boolean
   error: Error | null
-  onShowReports?: () => void
   items: CommonItem[]
   itemsLoading: boolean
 }) {
+  const documentOnly = useIsDocumentOnlyViewer()
   const editable = kind === 'reports'
   const [editing, setEditing] = useState(false)
 
   if (isLoading && !data) {
     return (
       <div className="flex h-full flex-col">
-        {onShowReports && <ClosedReportRailToolbar onShowReports={onShowReports} />}
         <div className="p-4 md:p-6">
           <ListSkeleton count={3} />
         </div>
@@ -491,7 +407,6 @@ function SelectedItemPane({
   if (error && !data) {
     return (
       <div className="flex h-full flex-col">
-        {onShowReports && <ClosedReportRailToolbar onShowReports={onShowReports} />}
         {isNotRefreshed(error) ? (
           <div className="p-4 text-sm text-muted-foreground" data-not-refreshed="">
             Not refreshed: {selectedId}
@@ -505,7 +420,6 @@ function SelectedItemPane({
   if (!data) {
     return (
       <div className="flex h-full flex-col">
-        {onShowReports && <ClosedReportRailToolbar onShowReports={onShowReports} />}
         <div className="p-4 text-sm text-muted-foreground">not found: {selectedId}</div>
       </div>
     )
@@ -517,13 +431,12 @@ function SelectedItemPane({
         <div className="flex min-w-0 items-center gap-2">
           <div className="flex min-w-0 items-baseline gap-2 text-xs">
             <SelectedArtifactIdentity
-              key={onShowReports ? 'collapsed' : 'expanded'}
               kind={kind}
               project={project}
               data={data}
               items={items}
               itemsLoading={itemsLoading}
-              quickSwitchEnabled={onShowReports !== undefined}
+              quickSwitchEnabled={!documentOnly}
             />
             <span className="text-muted-foreground/60">·</span>
             <TimestampLocal value={new Date(data.mtime).toISOString()} />
@@ -540,7 +453,6 @@ function SelectedItemPane({
               {editing ? 'Cancel' : 'Edit'}
             </Button>
           ) : null}
-          {onShowReports && <ReportRailToggleButton action="show" onClick={onShowReports} />}
         </div>
       </div>
       <div className={cn('flex flex-1 overflow-hidden', editing ? 'md:divide-x' : '')}>
@@ -845,59 +757,5 @@ function InboxEditor({
         <ReadmeMonaco value={buffer} onChange={setBuffer} />
       </div>
     </div>
-  )
-}
-
-function MobileRailDrawer({
-  filters,
-  kind,
-  project,
-  items,
-  itemsLoading,
-  itemsError,
-  onRetry,
-  selectedId,
-}: {
-  filters?: React.ReactNode
-  kind: InboxKind
-  project: ProjectTarget
-  items: CommonItem[]
-  itemsLoading: boolean
-  itemsError?: Error | null
-  onRetry?: () => void
-  selectedId: string | null
-}) {
-  const [open, setOpen] = useState(false)
-  return (
-    <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger asChild>
-        <Button
-          size="icon"
-          className="fixed right-6 bottom-6 z-30 size-12 rounded-full shadow-lg md:hidden"
-          aria-label="Open list"
-        >
-          <List className="size-5" />
-        </Button>
-      </SheetTrigger>
-      <SheetContent side="right" className="w-80 p-0">
-        <SheetHeader className="border-b px-3 py-3">
-          <SheetTitle className="text-sm">
-            {'Reports'} · {projectHost(project) ? `${projectHost(project)}/` : ''}
-            {projectName(project)}
-          </SheetTitle>
-        </SheetHeader>
-        <div className="border-b p-2">{filters}</div>
-        <RailList
-          kind={kind}
-          project={project}
-          items={items}
-          selectedId={selectedId}
-          loading={itemsLoading}
-          error={itemsError}
-          onRetry={onRetry}
-          onSelect={() => setOpen(false)}
-        />
-      </SheetContent>
-    </Sheet>
   )
 }

@@ -1,10 +1,21 @@
 'use client'
 
+import type { HostAvailability } from '@memon/core'
 import { useQuery } from '@tanstack/react-query'
-import { Gauge, Loader2 } from 'lucide-react'
+import {
+  BookOpen,
+  ChevronRight,
+  FileText,
+  FlaskConical,
+  Gauge,
+  GitPullRequest,
+  GripVertical,
+  Loader2,
+  NotebookPen,
+} from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import {
   type ExperimentListRow,
   fetchExperimentDocs,
@@ -12,10 +23,13 @@ import {
   fetchGitStatus,
   fetchHosts,
   fetchProjects,
+  fetchReports,
+  fetchWiki,
   type ProjectSummary,
   type ProjectTarget,
   projectHost,
   projectName,
+  projectRouteTarget,
 } from '../lib/api'
 import {
   compareExperimentNavigation,
@@ -25,36 +39,40 @@ import {
 } from '../lib/experiment-navigation'
 import {
   artifactNumber,
+  type ProjectPage,
   parseProjectPath,
   projectBasePath,
   projectOfPath,
+  projectPagePath,
 } from '../lib/project-routes'
 import { queryKeys } from '../lib/query-keys'
+import { useUserPreferenceState } from '../lib/use-user-preference-state'
 import { cn } from '../lib/utils'
 import { ExperimentNavigationGroup } from './experiment-navigation-group'
 import { GitDiffDialog } from './git-diff-dialog'
 import { GitStatusPill } from './git-status-pill'
-import { HostStatusBadge } from './host-status-badge'
-import { useSession } from './session-provider'
+import { HOST_STATUS_PRESENTATION } from './host-status-badge'
+import { useIsDocumentOnlyViewer, useSession } from './session-provider'
 import { SidebarResizeHandle } from './sidebar-resize-handle'
 import { SlurmStatusWidget } from './slurm-status-widget'
 import { ExperimentStatusPill } from './status-pill'
+import { TabBadge, type TabKind } from './tab-badge'
 import { ThemeToggle } from './theme-toggle'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
 } from './ui/sidebar'
 
+/** Open projects and sections (`<project identity>` / `<identity>#<section>`), per browser. */
 const STORAGE_KEY = 'memon:sidebar:expanded'
+/** The owner's project order (project identities), synced like other preferences. */
+const PROJECT_ORDER_KEY = 'memon:sidebar:project-order'
 
 export function projectSummaryTarget(project: ProjectSummary): ProjectTarget {
   return project.mode === 'central'
@@ -78,31 +96,125 @@ export function sidebarProjectBasePath(target: ProjectTarget): string {
   return typeof target === 'string' ? '' : projectBasePath(target)
 }
 
-function activeProjectTarget(pathname: string): ProjectTarget | null {
-  return (projectOfPath(pathname) as ProjectTarget | null) ?? null
+type SectionKey = 'experiments' | 'journal' | 'reports' | 'code-review' | 'wiki'
+
+interface SectionSpec {
+  key: SectionKey
+  name: string
+  icon: typeof FlaskConical
+  badge: TabKind
+  page: ProjectPage
+  /** Page kinds that make this section current. */
+  pages: readonly ProjectPage['kind'][]
+  /** Sections that list their items when expanded. */
+  expandable: boolean
 }
 
-function isActiveRow(id: string, activeNumber: number | null): boolean {
-  return activeNumber !== null && artifactNumber(id) === activeNumber
+const SECTIONS: SectionSpec[] = [
+  {
+    key: 'experiments',
+    name: 'Experiments',
+    icon: FlaskConical,
+    badge: 'experiments',
+    page: { kind: 'overview' },
+    pages: ['overview', 'experiments', 'experiment'],
+    expandable: true,
+  },
+  {
+    key: 'journal',
+    name: 'Journal',
+    icon: NotebookPen,
+    badge: 'journal',
+    page: { kind: 'journal' },
+    pages: ['journal'],
+    expandable: false,
+  },
+  {
+    key: 'reports',
+    name: 'Reports',
+    icon: FileText,
+    badge: 'reports',
+    page: { kind: 'reports' },
+    pages: ['reports', 'report'],
+    expandable: true,
+  },
+  {
+    key: 'code-review',
+    name: 'Code Review',
+    icon: GitPullRequest,
+    badge: 'code-review',
+    page: { kind: 'code-reviews' },
+    pages: ['code-reviews', 'code-review'],
+    expandable: false,
+  },
+  {
+    key: 'wiki',
+    name: 'Wiki',
+    icon: BookOpen,
+    badge: 'wiki',
+    page: { kind: 'wiki-list' },
+    pages: ['wiki-list', 'wiki'],
+    expandable: true,
+  },
+]
+
+interface ActiveLocation {
+  identity: string
+  section: SectionKey | null
+  /** The open Experiment / Report / Wiki number, if any. */
+  number: number | null
 }
 
-/** The Experiment number of an Experiment detail page `/<host>/<project>/e/<n>`. */
-function activeExperimentNumber(pathname: string): number | null {
+function activeLocation(pathname: string): ActiveLocation | null {
+  const target = projectOfPath(pathname) as ProjectTarget | null
+  if (!target) return null
   const page = parseProjectPath(pathname)?.page
-  return page?.kind === 'experiment' ? page.number : null
+  const section = page
+    ? (SECTIONS.find((spec) => spec.pages.includes(page.kind))?.key ?? null)
+    : null
+  const number =
+    page && (page.kind === 'experiment' || page.kind === 'report' || page.kind === 'wiki')
+      ? page.number
+      : null
+  return { identity: sidebarProjectIdentity(target), section, number }
+}
+
+/** Projects in the saved order; projects the order does not know yet follow in API order. */
+export function orderProjects<T>(
+  projects: T[],
+  identity: (project: T) => string,
+  order: readonly string[],
+): T[] {
+  const rank = new Map(order.map((key, index) => [key, index]))
+  return projects
+    .map((project, index) => ({ project, index, rank: rank.get(identity(project)) }))
+    .sort(
+      (a, b) =>
+        (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER) ||
+        a.index - b.index,
+    )
+    .map((entry) => entry.project)
+}
+
+/** Move `dragged` to `target`'s position (before it when moving up, after it when moving down). */
+export function moveProject(order: readonly string[], dragged: string, target: string): string[] {
+  const from = order.indexOf(dragged)
+  const to = order.indexOf(target)
+  if (from < 0 || to < 0 || from === to) return [...order]
+  const next = [...order]
+  next.splice(from, 1)
+  next.splice(to, 0, dragged)
+  return next
 }
 
 export function AppSidebar() {
   const { role, scopeProjects, scopeProjectRefs } = useSession()
-  // Which project's git-status dialog (if any) is open, opened from one
-  // of the sidebar's compact git pills. `null` = closed.
+  const documentOnly = useIsDocumentOnlyViewer()
   const [diffDialogProject, setDiffDialogProject] = useState<ProjectTarget | null>(null)
   const pathname = usePathname() ?? ''
-  const activeTarget = activeProjectTarget(pathname)
-  const activeProjectKey = activeTarget ? sidebarProjectIdentity(activeTarget) : ''
-  const activeNumber = activeExperimentNumber(pathname)
+  const active = activeLocation(pathname)
 
-  const { data: projectsData } = useQuery({
+  const { data: projectsData, isError: projectsFailed } = useQuery({
     queryKey: queryKeys.projects(),
     queryFn: fetchProjects,
     staleTime: 60_000,
@@ -113,83 +225,73 @@ export function AppSidebar() {
     staleTime: 10_000,
     retry: false,
   })
+  const hosts = useMemo(
+    () => new Map((hostsData?.hosts ?? []).map((host) => [host.host, host])),
+    [hostsData],
+  )
   const allProjects = projectsData?.projects ?? []
-  const centralMode =
-    hostsData !== undefined || allProjects.some((project) => project.mode === 'central')
-  const standaloneProjects = allProjects.filter(
-    (project) =>
-      project.mode === 'standalone' &&
-      (role !== 'viewer' || scopeProjects.includes(project.project)),
+  const visible = allProjects.filter((project) =>
+    project.mode === 'central'
+      ? role === 'owner' ||
+        (role === 'viewer' &&
+          (scopeProjectRefs ?? []).some(
+            (scope) => scope.host === project.host && scope.project === project.project,
+          ))
+      : role !== 'viewer' || scopeProjects.includes(project.project),
   )
-  const centralProjects =
-    role === 'owner'
-      ? allProjects.filter((project) => project.mode === 'central')
-      : role === 'viewer'
-        ? allProjects.filter(
-            (project) =>
-              project.mode === 'central' &&
-              (scopeProjectRefs ?? []).some(
-                (scope) => scope.host === project.host && scope.project === project.project,
-              ),
-          )
-        : []
-  const displayProjectKeys = (centralMode ? centralProjects : standaloneProjects).map((project) =>
-    sidebarProjectIdentity(projectSummaryTarget(project)),
-  )
+  const identityOf = (project: ProjectSummary) =>
+    sidebarProjectIdentity(projectSummaryTarget(project))
 
-  // Default: the active project is open. This means the very first SSR HTML
-  // already contains its experiment rows (no skeleton flash on initial nav).
-  // Hydration matches because both server and client compute the same default.
-  const [expanded, setExpanded] = useState<Set<string>>(
-    () => new Set(activeProjectKey ? [activeProjectKey] : []),
-  )
+  const [storedOrder, setStoredOrder] = useUserPreferenceState<string[]>(PROJECT_ORDER_KEY, [])
+  const order = Array.isArray(storedOrder) ? storedOrder : []
+  const projects = orderProjects(visible, identityOf, order)
+  const [dragging, setDragging] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<string | null>(null)
+  const drop = (target: string) => {
+    if (dragging && dragging !== target)
+      setStoredOrder(moveProject(projects.map(identityOf), dragging, target))
+    setDragging(null)
+    setDropTarget(null)
+  }
+
+  // The active project and section are always open, so the current page is
+  // visible in the tree without any click.
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   const [hydrated, setHydrated] = useState(false)
-
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY)
-      const stored = raw ? new Set(JSON.parse(raw) as string[]) : new Set<string>()
-      // Always show the active Host-qualified project even if storage closed it.
-      if (activeProjectKey) stored.add(activeProjectKey)
-      setExpanded(stored)
+      setExpanded(new Set(raw ? (JSON.parse(raw) as string[]) : []))
     } catch {
       /* ignore */
     }
     setHydrated(true)
-  }, [activeProjectKey])
-
+  }, [])
   useEffect(() => {
     if (!hydrated) return
     try {
-      const validNames = new Set(displayProjectKeys)
-      const pruned = Array.from(expanded).filter((n) => validNames.has(n))
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(pruned))
+      localStorage.setItem(STORAGE_KEY, JSON.stringify([...expanded]))
     } catch {
       /* ignore */
     }
-  }, [expanded, displayProjectKeys, hydrated])
-
-  // Restored-from-storage expansion renders the section chrome, but it must
-  // NOT fetch that project's experiment docs: on a non-project route
-  // (`/manage/*`) every persisted section would otherwise fire a project
-  // data read on mount — a cross-project fetch storm for pages that show no
-  // project data. Only the active route's project and sections the user
-  // opened in THIS session express intent to read project data.
-  const [requested, setRequested] = useState<Set<string>>(new Set())
-
-  const onToggle = (name: string, open: boolean) => {
-    setExpanded((cur) => {
-      const next = new Set(cur)
-      if (open) next.add(name)
-      else next.delete(name)
+  }, [expanded, hydrated])
+  const isOpen = (key: string): boolean =>
+    expanded.has(key) ||
+    (active !== null &&
+      (key === active.identity ||
+        (active.section !== null && key === `${active.identity}#${active.section}`)))
+  // Restored expansion renders the tree without reading project data: only
+  // the active project and projects opened in this session list their items,
+  // so a non-project page never fans out reads to every project.
+  const [requested, setRequested] = useState<Set<string>>(() => new Set())
+  const toggle = (key: string, open: boolean) => {
+    setExpanded((current) => {
+      const next = new Set(current)
+      if (open) next.add(key)
+      else next.delete(key)
       return next
     })
-    setRequested((cur) => {
-      const next = new Set(cur)
-      if (open) next.add(name)
-      else next.delete(name)
-      return next
-    })
+    if (open) setRequested((current) => new Set(current).add(key.split('#')[0]!))
   }
 
   return (
@@ -203,137 +305,52 @@ export function AppSidebar() {
         </Link>
         <ThemeToggle />
       </SidebarHeader>
-      {/*
-        VSCode-Explorer-style section layout via CSS Grid.
-
-        We replace shadcn SidebarContent's default flex layout with a
-        grid for two reasons:
-
-        1. **Banner safety**: in a flex column where each section is a
-           flex child with default `flex-shrink: 1`, multi-expand
-           overflow shrinks EVERY child including closed sections —
-           collapsing their banners below intrinsic height, causing
-           visible banner overlap. Grid rows with `minmax(BANNER, ...)`
-           enforce a hard minimum per row, so banners never compress.
-
-        2. **Smooth multi-section animation**: animating each row from
-           `minmax(BANNER, 0fr)` to `minmax(BANNER, 1fr)` interpolates
-           the `fr` component natively (Chrome 121+ supports fr-unit
-           interpolation in minmax). All rows reflow simultaneously
-           — the opened section grows, expanded siblings shrink to
-           share — over a single 200ms `grid-template-rows`
-           transition. Earlier attempts with flex-grow / per-row
-           Radix keyframes either fought the flex overflow or
-           snap-jumped because of mismatched basis values.
-
-        `gridTemplateRows` is computed from the `expanded` set;
-        `!grid` overrides shadcn's `flex` (Tailwind's `!` = important).
-        `overflow-hidden` clips section content during transition so
-        intermediate intrinsic-vs-row-size mismatches don't bleed
-        into siblings.
-      */}
-      {centralMode ? (
-        <SidebarContent className="overflow-y-auto">
-          {(hostsData?.hosts ?? []).map((host) => {
-            const hostProjects = centralProjects.filter((project) => project.host === host.host)
-            return (
-              <SidebarGroup key={host.host} data-slot="sidebar-host-group" data-host={host.host}>
-                <div
-                  data-slot="sidebar-host-header"
-                  className="flex min-h-9 items-center gap-2 border-y border-sidebar-border bg-sidebar-accent/60 px-2 py-1.5 text-sidebar-foreground"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-xs font-semibold">{host.label ?? host.host}</div>
-                    {host.label && (
-                      <div className="truncate font-mono text-[10px] text-muted-foreground">
-                        {host.host}
-                      </div>
-                    )}
-                  </div>
-                  <HostStatusBadge availability={host} className="shrink-0" />
-                </div>
-                <SidebarGroupContent>
-                  {hostProjects.map((project) => {
-                    const target = projectSummaryTarget(project)
-                    const identity = sidebarProjectIdentity(target)
-                    return (
-                      <ProjectGroup
-                        key={identity}
-                        target={target}
-                        name={project.name}
-                        basePath={sidebarProjectBasePath(target)}
-                        central
-                        isActive={identity === activeProjectKey}
-                        isOpen={expanded.has(identity)}
-                        readDocs={identity === activeProjectKey || requested.has(identity)}
-                        activeNumber={activeNumber}
-                        onOpenChange={(open) => onToggle(identity, open)}
-                        onPillClick={() => setDiffDialogProject(target)}
-                      />
-                    )
-                  })}
-                  {hostProjects.length === 0 && (
-                    <div className="px-2 py-2 text-xs text-muted-foreground">
-                      No projects available
-                    </div>
-                  )}
-                </SidebarGroupContent>
-              </SidebarGroup>
-            )
-          })}
-          {(hostsData?.hosts ?? []).length === 0 && (
-            <SidebarGroup>
-              <SidebarGroupContent className="px-3 py-2 text-xs text-sidebar-foreground/60">
-                No Hosts configured
-              </SidebarGroupContent>
-            </SidebarGroup>
-          )}
-        </SidebarContent>
-      ) : (
-        <SidebarContent
-          style={{
-            gridTemplateRows: standaloneProjects
-              .map((project) => {
-                const identity = sidebarProjectIdentity(projectSummaryTarget(project))
-                return expanded.has(identity)
-                  ? `minmax(var(--sidebar-section-banner-h, 1.75rem), 1fr)`
-                  : `minmax(var(--sidebar-section-banner-h, 1.75rem), 0fr)`
-              })
-              .join(' '),
-          }}
-          className="!grid !overflow-hidden transition-[grid-template-rows] duration-200 ease-out"
-        >
-          {standaloneProjects.map((project) => {
-            const target = projectSummaryTarget(project)
-            const identity = sidebarProjectIdentity(target)
-            return (
-              <ProjectGroup
-                key={identity}
-                target={target}
-                name={project.name}
-                basePath={sidebarProjectBasePath(target)}
-                central={false}
-                isActive={identity === activeProjectKey}
-                isOpen={expanded.has(identity)}
-                readDocs={identity === activeProjectKey || requested.has(identity)}
-                activeNumber={activeNumber}
-                onOpenChange={(open) => onToggle(identity, open)}
-                onPillClick={() => setDiffDialogProject(target)}
-              />
-            )
-          })}
-          {standaloneProjects.length === 0 && (
-            <SidebarGroup>
-              <SidebarGroupContent className="px-3 py-2 text-xs text-sidebar-foreground/60">
-                No projects configured
-              </SidebarGroupContent>
-            </SidebarGroup>
-          )}
-        </SidebarContent>
-      )}
+      <SidebarContent className="gap-0 overflow-y-auto px-2 py-1" data-slot="sidebar-projects">
+        {projects.map((project) => {
+          const target = projectSummaryTarget(project)
+          const identity = identityOf(project)
+          return (
+            <ProjectNode
+              key={identity}
+              target={target}
+              identity={identity}
+              name={project.name}
+              host={project.mode === 'central' ? hosts.get(project.host) : undefined}
+              hostName={project.mode === 'central' ? project.host : null}
+              active={active?.identity === identity ? active : null}
+              open={isOpen(identity)}
+              isSectionOpen={(section) => isOpen(`${identity}#${section}`)}
+              readItems={active?.identity === identity || requested.has(identity)}
+              onToggle={(open) => toggle(identity, open)}
+              onToggleSection={(section, open) => toggle(`${identity}#${section}`, open)}
+              onPillClick={() => setDiffDialogProject(target)}
+              showSections={!documentOnly}
+              draggable={projects.length > 1}
+              dragging={dragging === identity}
+              dropTarget={dropTarget === identity && dragging !== identity}
+              onDragStart={() => setDragging(identity)}
+              onDragEnter={() => setDropTarget(identity)}
+              onDrop={() => drop(identity)}
+              onDragEnd={() => {
+                setDragging(null)
+                setDropTarget(null)
+              }}
+            />
+          )
+        })}
+        {projects.length === 0 && (
+          <div className="px-2 py-3 text-xs text-sidebar-foreground/60">
+            {projectsData
+              ? 'No projects available'
+              : projectsFailed
+                ? 'Projects are unavailable'
+                : 'Loading projects…'}
+          </div>
+        )}
+      </SidebarContent>
       <SidebarFooter className="border-t border-sidebar-border">
         <SidebarMenu>
-          {role !== 'viewer' && !centralMode && <SlurmStatusWidget />}
+          {role !== 'viewer' && hostsData === undefined && <SlurmStatusWidget />}
           {role === 'owner' && (
             <SidebarMenuItem>
               <SidebarMenuButton asChild size="sm" isActive={pathname === '/manage/file-access'}>
@@ -346,14 +363,6 @@ export function AppSidebar() {
           )}
         </SidebarMenu>
       </SidebarFooter>
-      {/*
-        Desktop drag-to-resize handle. Absolute-positioned overlay aligned
-        to the sidebar column's right edge. Hidden on `<md` and when the
-        sidebar is collapsed; commits new widths to localStorage so the
-        choice survives reloads. See `components/sidebar-resize-handle.tsx`
-        for the full interaction contract (pointer drag + keyboard arrow
-        steps).
-      */}
       <SidebarResizeHandle />
       {diffDialogProject && (
         <GitDiffDialog
@@ -368,56 +377,74 @@ export function AppSidebar() {
   )
 }
 
-/** One collapsible project group, rendered as a VSCode-Explorer-style
- *  section: a banner header (smaller uppercase name + top/bottom divider
- *  + tinted background) that visually separates each project from the
- *  next, and a scrollable body of experiment rows below. Clicking the
- *  header toggles expand/collapse — no chevron indicator; the banner
- *  contrast IS the affordance.
- *
- *  Header row layout (left-to-right): uppercase project-name span (yields
- *  width first via `min-w-0 flex-1 truncate`), then the right-aligned
- *  compact GitStatusPill (`shrink-0`, never truncated — long branch
- *  names push the project title to ellipsis instead).
- *
- *  When expanded, the group fills its share of `SidebarContent`'s height
- *  via `flex-1 min-h-0`; the inner experiment list scrolls inside the
- *  section bounds. When collapsed, only the header row consumes height
- *  (`flex-none`).
- *
- *  Renders exactly one sub-section per expanded project — the Experiment
- *  inventory sorted by slug. Runs remain reachable through their parent
- *  Experiment, not via the sidebar. */
-function ProjectGroup({
+/** A compact host chip: the Host id with its availability as a colored dot. */
+function HostChip({ host, availability }: { host: string; availability?: HostAvailability }) {
+  const presentation = availability ? HOST_STATUS_PRESENTATION[availability.state] : null
+  return (
+    <span
+      data-slot="sidebar-project-host"
+      title={presentation ? `${host}: ${presentation.label}` : host}
+      className="flex shrink-0 items-center gap-1 rounded border border-sidebar-border px-1 font-mono text-[10px] font-normal normal-case tracking-normal text-muted-foreground"
+    >
+      <span
+        aria-hidden
+        className={cn(
+          'size-1.5 rounded-full',
+          !presentation && 'bg-muted-foreground/40',
+          presentation?.tone === 'success' && 'bg-emerald-500',
+          presentation?.tone === 'warning' && 'bg-amber-500',
+          presentation?.tone === 'danger' && 'bg-red-500',
+          presentation?.tone === 'neutral' && 'bg-muted-foreground/60',
+        )}
+      />
+      {host}
+    </span>
+  )
+}
+
+function ProjectNode({
   target,
+  identity,
   name,
-  basePath,
-  central,
-  isActive,
-  isOpen,
-  readDocs,
-  activeNumber,
-  onOpenChange,
+  host,
+  hostName,
+  active,
+  open,
+  isSectionOpen,
+  readItems,
+  onToggle,
+  onToggleSection,
   onPillClick,
+  showSections,
+  draggable,
+  dragging,
+  dropTarget,
+  onDragStart,
+  onDragEnter,
+  onDrop,
+  onDragEnd,
 }: {
   target: ProjectTarget
+  identity: string
   name: string
-  basePath: string
-  central: boolean
-  isActive: boolean
-  isOpen: boolean
-  /** True when this project's docs may be read: it owns the current route,
-   *  or the user expanded its section in this session. Persisted expansion
-   *  alone renders chrome without issuing a project data read. */
-  readDocs: boolean
-  activeNumber: number | null
-  onOpenChange: (open: boolean) => void
+  host?: HostAvailability
+  hostName: string | null
+  active: ActiveLocation | null
+  open: boolean
+  isSectionOpen: (section: SectionKey) => boolean
+  readItems: boolean
+  onToggle: (open: boolean) => void
+  onToggleSection: (section: SectionKey, open: boolean) => void
   onPillClick: () => void
+  showSections: boolean
+  draggable: boolean
+  dragging: boolean
+  dropTarget: boolean
+  onDragStart: () => void
+  onDragEnter: () => void
+  onDrop: () => void
+  onDragEnd: () => void
 }) {
-  // Same query key as the pill — TanStack dedupes. We use the result to
-  // know whether to render the clickable wrapper at all. For non-git
-  // projects (`enabled: false` or query pending) the pill returns null
-  // and we skip the click target so nothing reactable sits in the row.
   const { data: gitStatus } = useQuery({
     queryKey: queryKeys.gitStatus(target),
     queryFn: () => fetchGitStatus(target),
@@ -426,175 +453,323 @@ function ProjectGroup({
   })
   const gitEnabled = gitStatus?.enabled === true
   return (
-    // IMPORTANT: the flex-1/flex-none toggle lives on the <Collapsible>
-    // wrapper, NOT on the inner <SidebarGroup>. Radix Collapsible
-    // renders an extra `<div>` between SidebarContent and SidebarGroup,
-    // so SidebarContent's flex algorithm sees THIS element as its
-    // direct child. If flex-1 were on SidebarGroup instead, the
-    // Collapsible div between them would still take its content height
-    // (since it has no flex class), every section would render at
-    // intrinsic content height, and SidebarContent's default
-    // `overflow-auto` would kick in — the user observes "outer scrollbar
-    // instead of per-section internal scroll". Putting flex-1 here
-    // makes the section row actually a flex child of SidebarContent and
-    // restores the multi-expand even-height contract.
-    // Each Collapsible is now a single GRID ROW of SidebarContent's
-    // grid (see the SidebarContent block above for the row-template).
-    // We deliberately do NOT carry flex-grow / flex-1 / flex-none on
-    // this wrapper anymore — the outer grid's `minmax(28px, 0fr|1fr)`
-    // template controls the row's height transition. The wrapper just
-    // needs to be a flex column internally (banner + content stack)
-    // and clip overflow so content shrinking past banner-only height
-    // disappears cleanly during the grid transition.
-    //
-    // `min-h-0` is essential so the inner `<CollapsibleContent>` with
-    // `flex-1 min-h-0 overflow-y-auto` can shrink past min-content and
-    // scroll internally instead of pushing the row taller than its
-    // grid-template-rows says.
     <Collapsible
-      open={isOpen}
-      onOpenChange={onOpenChange}
+      open={open}
+      onOpenChange={onToggle}
+      data-slot="sidebar-project"
+      data-project={identity}
       className={cn(
-        'group/collapsible flex min-h-0 flex-col overflow-hidden',
-        central && 'flex-none',
+        'rounded-md border border-transparent',
+        dragging && 'opacity-50',
+        dropTarget && 'border-sidebar-primary',
       )}
+      onDragOver={(event) => {
+        if (!draggable) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'move'
+      }}
+      onDragEnter={onDragEnter}
+      onDrop={(event) => {
+        event.preventDefault()
+        onDrop()
+      }}
     >
-      <SidebarGroup
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: pointer drag to reorder; the row's controls stay keyboard reachable */}
+      <div
         className={cn(
-          'gap-0 py-0',
-          // SidebarGroup now ALWAYS uses the flex chain so its inner
-          // CollapsibleContent (`flex-1 min-h-0`) can resolve against
-          // a known parent height. The flex-1/flex-none decision is
-          // entirely up at the <Collapsible> level above.
-          central ? 'flex flex-col' : 'flex min-h-0 flex-1 flex-col',
+          'group/project flex h-8 items-center gap-1 rounded-md pr-1 text-sidebar-foreground hover:bg-sidebar-accent',
+          active && 'text-sidebar-primary',
         )}
+        draggable={draggable}
+        onDragStart={(event) => {
+          event.dataTransfer.effectAllowed = 'move'
+          event.dataTransfer.setData('text/plain', identity)
+          onDragStart()
+        }}
+        onDragEnd={onDragEnd}
       >
-        <SidebarGroupLabel
-          asChild
-          className={cn(
-            // Banner styling: edge-to-edge tinted background bracketed
-            // by top/bottom dividers. This is what carries the
-            // "different project" signal — no chevron needed.
-            //
-            // `-mx-2` offsets the parent SidebarGroup's `px-2` so the
-            // banner extends to the sidebar's left/right edges; the
-            // label keeps its own `px-2` so text isn't flush against
-            // those edges. `rounded-none` overrides shadcn's default
-            // `rounded-md` since rounded corners on an edge-to-edge
-            // banner look out of place.
-            //
-            // `bg-sidebar-accent/60` is the deeper base (was /40 in the
-            // first cut — owner asked for more contrast); hover steps
-            // up to full `bg-sidebar-accent` so the affordance still
-            // reads as reactive even with a darker resting state.
-            //
-            // `text-left` overrides the native <button> default of
-            // `text-align: center` that CollapsibleTrigger renders
-            // with — without it the project name floats to the middle
-            // of the flex-1 span instead of sitting flush-left.
-            // Banner height is fixed to `h-7` (1.75rem = 28px) so the
-            // grid-row `minmax(1.75rem, …)` min matches the banner
-            // exactly — closed rows are 28px = banner with no slack
-            // and no overflow.
-            'h-7 cursor-pointer rounded-none border-y border-sidebar-border bg-sidebar-accent/60 px-2 -mx-2 text-left hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-            isActive && 'text-sidebar-primary',
-          )}
-        >
-          <CollapsibleTrigger>
-            <span className="min-w-0 flex-1 truncate text-[10px] font-semibold uppercase tracking-wider">
-              {name}
-            </span>
-            {gitEnabled ? (
-              // The pill is INSIDE the CollapsibleTrigger button, so a
-              // bare click bubbles up and toggles the section. Wrap the
-              // pill in a span that captures pointer + click + keyboard
-              // events with stopPropagation so clicks on the pill open
-              // the git-diff dialog INSTEAD of toggling the section.
-              // `role="button" + tabIndex` keeps it keyboard-reachable
-              // without nesting an actual <button> in another <button>
-              // (invalid HTML).
-              <>
-                {/* biome-ignore lint/a11y/useSemanticElements: an actual button would be invalid inside CollapsibleTrigger's button */}
-                <span
-                  data-slot="git-status-pill-trigger"
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`View git diff for ${name}`}
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    onPillClick()
-                  }}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      onPillClick()
-                    }
-                  }}
-                  className="shrink-0 cursor-pointer rounded px-1 hover:bg-accent hover:text-accent-foreground"
-                >
-                  <GitStatusPill project={target} variant="compact" className="shrink-0" />
-                </span>
-              </>
-            ) : (
-              <GitStatusPill project={target} variant="compact" className="shrink-0" />
-            )}
-          </CollapsibleTrigger>
-        </SidebarGroupLabel>
-        {/*
-          With the grid-template-rows transition on the OUTER
-          SidebarContent driving the section's height animation, we
-          drop Radix's `animate-collapsible-*` keyframes here — they
-          would compete with the row's height (keyframe sets
-          `height: 0 → var(--radix-collapsible-content-height)`
-          which doesn't match the row-share size) and produce a
-          snap when the keyframe ends.
-
-          `forceMount` keeps the content in the DOM regardless of
-          state. Combined with Radix's internal `hidden: !isOpen`,
-          this means the element exists but `display: none`s when
-          closed — so closed rows' grid-row intrinsic stays at
-          banner-only height. When opening, Radix removes hidden
-          and the row's `1fr` grid max kicks in, letting the
-          grid-template-rows transition smoothly grow the row.
-
-          `flex-1 min-h-0 overflow-hidden` makes CollapsibleContent
-          fill the row's remaining space after the banner; the
-          inner scroll div with `overflow-y-auto` handles content
-          taller than the available space.
-        */}
-        <CollapsibleContent forceMount className="flex-1 min-h-0 overflow-hidden">
-          <div className="h-full overflow-y-auto">
-            <SidebarGroupContent>
-              <ProjectExperimentDocs
+        {draggable ? (
+          <GripVertical
+            aria-hidden
+            className="size-3.5 shrink-0 cursor-grab text-muted-foreground/0 group-hover/project:text-muted-foreground/70"
+          />
+        ) : (
+          <span className="w-3.5 shrink-0" />
+        )}
+        <CollapsibleTrigger className="flex h-full min-w-0 flex-1 items-center gap-1.5 text-left">
+          <ChevronRight
+            aria-hidden
+            className={cn('size-3.5 shrink-0 transition-transform', open && 'rotate-90')}
+          />
+          <span className="min-w-0 flex-1 truncate text-xs font-semibold">{name}</span>
+        </CollapsibleTrigger>
+        {hostName && <HostChip host={hostName} availability={host} />}
+        {gitEnabled ? (
+          <button
+            type="button"
+            data-slot="git-status-pill-trigger"
+            aria-label={`View git diff for ${name}`}
+            onClick={onPillClick}
+            className="shrink-0 cursor-pointer rounded px-1 hover:bg-accent hover:text-accent-foreground"
+          >
+            <GitStatusPill project={target} variant="compact" className="shrink-0" />
+          </button>
+        ) : (
+          <GitStatusPill project={target} variant="compact" className="shrink-0" />
+        )}
+      </div>
+      <CollapsibleContent>
+        {showSections && (
+          <SidebarMenu className="gap-0 pb-1 pl-4">
+            {SECTIONS.map((section) => (
+              <SectionNode
+                key={section.key}
                 project={target}
-                basePath={basePath}
-                activeNumber={isActive ? activeNumber : null}
-                enabled={isOpen && readDocs}
+                section={section}
+                active={active?.section === section.key ? active : null}
+                open={section.expandable && isSectionOpen(section.key)}
+                onToggle={(next) => onToggleSection(section.key, next)}
+                readItems={open && readItems}
+                showCount={readItems}
               />
-            </SidebarGroupContent>
-          </div>
-        </CollapsibleContent>
-      </SidebarGroup>
+            ))}
+          </SidebarMenu>
+        )}
+      </CollapsibleContent>
     </Collapsible>
   )
 }
 
-/** Status-aware navigation shares list summaries and retains identity-only fallback. */
-function ProjectExperimentDocs({
+function SectionNode({
   project,
-  basePath,
+  section,
+  active,
+  open,
+  onToggle,
+  readItems,
+  showCount,
+}: {
+  project: ProjectTarget
+  section: SectionSpec
+  active: ActiveLocation | null
+  open: boolean
+  onToggle: (open: boolean) => void
+  readItems: boolean
+  /** Counts read project data, so restored-only projects show none. */
+  showCount: boolean
+}) {
+  const href = projectPagePath(projectRouteTarget(project), section.page)
+  const current = active !== null && active.number === null
+  const Icon = section.icon
+  return (
+    <SidebarMenuItem data-slot="sidebar-section" data-section={section.key}>
+      <div className="flex items-center">
+        {section.expandable ? (
+          <button
+            type="button"
+            aria-label={`${open ? 'Collapse' : 'Expand'} ${section.name}`}
+            aria-expanded={open}
+            onClick={() => onToggle(!open)}
+            className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          >
+            <ChevronRight
+              aria-hidden
+              className={cn('size-3.5 transition-transform', open && 'rotate-90')}
+            />
+          </button>
+        ) : (
+          <span className="size-6 shrink-0" />
+        )}
+        <SidebarMenuButton
+          asChild
+          size="sm"
+          isActive={current}
+          className={cn('min-w-0 flex-1', active && !current && 'text-sidebar-primary')}
+        >
+          <Link href={href} prefetch={false} aria-current={current ? 'page' : undefined}>
+            <Icon className="size-3.5" />
+            <span className="min-w-0 flex-1 truncate">{section.name}</span>
+            {showCount && <TabBadge kind={section.badge} project={project} active={current} />}
+          </Link>
+        </SidebarMenuButton>
+      </div>
+      {open && (
+        <div className="ml-6 border-l border-sidebar-border pl-1">
+          {section.key === 'experiments' && (
+            <ExperimentItems
+              project={project}
+              activeNumber={active?.number ?? null}
+              enabled={readItems}
+            />
+          )}
+          {section.key === 'reports' && (
+            <ReportItems
+              project={project}
+              activeNumber={active?.number ?? null}
+              enabled={readItems}
+            />
+          )}
+          {section.key === 'wiki' && (
+            <WikiItems
+              project={project}
+              activeNumber={active?.number ?? null}
+              enabled={readItems}
+            />
+          )}
+        </div>
+      )}
+    </SidebarMenuItem>
+  )
+}
+
+/** Scrolls the open item into view once it renders, so the tree shows where the page is. */
+function useRevealWhenActive(active: boolean) {
+  const ref = useRef<HTMLAnchorElement | null>(null)
+  useEffect(() => {
+    if (active) ref.current?.scrollIntoView({ block: 'nearest' })
+  }, [active])
+  return ref
+}
+
+function ItemLink({
+  href,
+  active,
+  title,
+  children,
+}: {
+  href: string
+  active: boolean
+  title: string
+  children: ReactNode
+}) {
+  const ref = useRevealWhenActive(active)
+  return (
+    <Link
+      ref={ref}
+      href={href}
+      prefetch={false}
+      title={title}
+      aria-current={active ? 'page' : undefined}
+      data-sidebar-item=""
+      className={cn(
+        'block rounded-md px-2 py-1 text-xs leading-snug transition-colors',
+        active
+          ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+          : 'text-sidebar-foreground hover:bg-sidebar-accent/50',
+      )}
+    >
+      {children}
+    </Link>
+  )
+}
+
+function ItemsLoading({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-sidebar-foreground/50">
+      <Loader2 className="size-3.5 animate-spin" aria-label={label} />
+    </div>
+  )
+}
+
+function ItemsEmpty({ text }: { text: string }) {
+  return <div className="px-2 py-1.5 text-xs text-sidebar-foreground/50">{text}</div>
+}
+
+function ReportItems({
+  project,
   activeNumber,
   enabled,
 }: {
   project: ProjectTarget
-  basePath: string
   activeNumber: number | null
   enabled: boolean
 }) {
-  // Persisted expansion alone does not authorize either query.
+  const { data, isLoading } = useQuery({
+    queryKey: queryKeys.reports(project),
+    queryFn: () => fetchReports(project),
+    enabled,
+    staleTime: 5_000,
+  })
+  const target = projectRouteTarget(project)
+  const reports = data?.reports ?? []
+  if (!enabled) return null
+  if (isLoading && reports.length === 0) return <ItemsLoading label="Loading reports" />
+  if (reports.length === 0) return <ItemsEmpty text="No reports" />
+  return (
+    <div className="flex flex-col py-0.5">
+      {reports.map((report) => {
+        const number = artifactNumber(report.id)
+        if (number === null) return null
+        return (
+          <ItemLink
+            key={report.id}
+            href={projectPagePath(target, { kind: 'report', number })}
+            active={number === activeNumber}
+            title={`${report.id} · ${report.title ?? ''}`}
+          >
+            <span className="mr-1.5 font-mono text-[10px] text-muted-foreground">{report.id}</span>
+            <span className="break-words">{report.title ?? report.slug}</span>
+          </ItemLink>
+        )
+      })}
+    </div>
+  )
+}
+
+function WikiItems({
+  project,
+  activeNumber,
+  enabled,
+}: {
+  project: ProjectTarget
+  activeNumber: number | null
+  enabled: boolean
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: queryKeys.wiki(project),
+    queryFn: () => fetchWiki(project),
+    enabled,
+    staleTime: 5_000,
+  })
+  const target = projectRouteTarget(project)
+  const pages = useMemo(
+    () => [...(data?.pages ?? [])].sort((a, b) => a.id.localeCompare(b.id)),
+    [data],
+  )
+  if (!enabled) return null
+  if (isLoading && pages.length === 0) return <ItemsLoading label="Loading wiki pages" />
+  if (pages.length === 0) return <ItemsEmpty text="No wiki pages" />
+  return (
+    <div className="flex flex-col py-0.5">
+      {pages.map((page) => {
+        const number = artifactNumber(page.id)
+        if (number === null) return null
+        return (
+          <ItemLink
+            key={page.id}
+            href={projectPagePath(target, { kind: 'wiki', number })}
+            active={number === activeNumber}
+            title={`${page.id} · ${page.title}`}
+          >
+            <span className="mr-1.5 font-mono text-[10px] text-muted-foreground">{page.id}</span>
+            <span className="break-words">{page.title}</span>
+          </ItemLink>
+        )
+      })}
+    </div>
+  )
+}
+
+/** Status-grouped Experiments; list summaries fill in over the identity-only inventory. */
+function ExperimentItems({
+  project,
+  activeNumber,
+  enabled,
+}: {
+  project: ProjectTarget
+  activeNumber: number | null
+  enabled: boolean
+}) {
   const { data: inventory, isLoading } = useQuery({
     queryKey: queryKeys.experimentsInventory(project),
     queryFn: () => fetchExperimentsInventory(project),
@@ -614,16 +789,11 @@ function ProjectExperimentDocs({
       rows.set(summary.id, { id: summary.id, summary })
     return [...rows.values()]
   }, [inventory?.items, summaries?.experiments])
+  const target = projectRouteTarget(project)
   if (!enabled) return null
   if ((isLoading || summariesLoading) && docs.length === 0)
-    return (
-      <div
-        data-slot="exp-list-loading"
-        className="flex items-center justify-center py-3 text-sidebar-foreground/50"
-      >
-        <Loader2 className="size-4 animate-spin" aria-label="Loading experiments" />
-      </div>
-    )
+    return <ItemsLoading label="Loading experiments" />
+  if (docs.length === 0) return <ItemsEmpty text="No experiments" />
   return (
     <div>
       {EXPERIMENT_GROUPS.map((group) => {
@@ -641,61 +811,43 @@ function ProjectExperimentDocs({
             group={group}
             count={members.length}
             compact
-            forceOpen={members.some((row) => isActiveRow(row.id, activeNumber))}
+            forceOpen={members.some((row) => artifactNumber(row.id) === activeNumber)}
           >
-            <SidebarMenu>
+            <div className="flex flex-col">
               {members.map(({ id, summary }) => {
-                const isActive = isActiveRow(id, activeNumber)
+                const number = artifactNumber(id)
                 const title = summary?.frontMatter.title || id
                 const known = experimentGroup(summary) !== 'UNKNOWN'
                 return (
-                  <SidebarMenuItem key={id} className="flex w-full items-center">
-                    <div
-                      className={cn(
-                        'flex min-w-0 flex-1 items-center rounded-md transition-colors',
-                        isActive
-                          ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                          : 'hover:bg-sidebar-accent/40',
+                  <ItemLink
+                    key={id}
+                    href={
+                      number === null
+                        ? projectPagePath(target, { kind: 'overview' })
+                        : projectPagePath(target, { kind: 'experiment', number })
+                    }
+                    active={number !== null && number === activeNumber}
+                    title={`${id} · ${title}`}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="font-mono text-[10px] text-muted-foreground">
+                        {shortExperimentId(id)}
+                      </span>
+                      {known && summary ? (
+                        <ExperimentStatusPill
+                          status={summary.displayStatus ?? summary.frontMatter.status}
+                          archived={summary.frontMatter.archived}
+                          className="px-1 py-0 text-[9px]"
+                        />
+                      ) : (
+                        <span className="text-[9px] text-muted-foreground">Unknown</span>
                       )}
-                    >
-                      <SidebarMenuButton
-                        asChild
-                        isActive={isActive}
-                        size="sm"
-                        className="h-auto min-h-12 min-w-0 flex-1 py-1.5 hover:bg-transparent data-[active=true]:bg-transparent"
-                      >
-                        <Link
-                          href={`${basePath}/e/${artifactNumber(id) ?? encodeURIComponent(id)}`}
-                          prefetch={false}
-                          title={`${id} · ${title}`}
-                          aria-current={isActive ? 'page' : undefined}
-                        >
-                          <div className="min-w-0 flex-1 space-y-0.5">
-                            <div className="flex items-center justify-between gap-1">
-                              <span className="font-mono text-[10px] text-muted-foreground">
-                                {shortExperimentId(id)}
-                              </span>
-                              {known && summary ? (
-                                <ExperimentStatusPill
-                                  status={summary.displayStatus ?? summary.frontMatter.status}
-                                  archived={summary.frontMatter.archived}
-                                  className="px-1 py-0 text-[9px]"
-                                />
-                              ) : (
-                                <span className="text-[9px] text-muted-foreground">Unknown</span>
-                              )}
-                            </div>
-                            <div className="line-clamp-2 break-words text-xs leading-snug">
-                              {title}
-                            </div>
-                          </div>
-                        </Link>
-                      </SidebarMenuButton>
                     </div>
-                  </SidebarMenuItem>
+                    <div className="line-clamp-2 break-words">{title}</div>
+                  </ItemLink>
                 )
               })}
-            </SidebarMenu>
+            </div>
           </ExperimentNavigationGroup>
         )
       })}
