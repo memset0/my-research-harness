@@ -10,9 +10,9 @@ import {
 } from './version.js'
 
 describe('memon release metadata', () => {
-  it('publishes the filesystem-aligned 11.22.2 release from one source', () => {
+  it('publishes the filesystem-aligned 11.22.3 release from one source', () => {
     expect(FS_CONVENTION_VERSION).toBe(11)
-    expect(MEMON_RELEASE).toBe('11.22.2')
+    expect(MEMON_RELEASE).toBe('11.22.3')
     expect(parseMemonReleaseMajor(MEMON_RELEASE)).toBe(FS_CONVENTION_VERSION)
     expect(VERSION).toBe(MEMON_RELEASE)
     expect(MEMON_RELEASE_METADATA).toEqual({
