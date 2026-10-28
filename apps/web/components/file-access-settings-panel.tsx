@@ -32,6 +32,7 @@ import {
 } from '../lib/file-access-api'
 import { queryKeys } from '../lib/query-keys'
 import { cn } from '../lib/utils'
+import { FileAccessLatencyChart, FileAccessRequestChart } from './file-access-charts'
 import { useIsOwner } from './session-provider'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
@@ -395,6 +396,31 @@ export function FileAccessSettingsPanel() {
 
       <Card>
         <CardHeader className="flex-row flex-wrap items-center justify-between gap-2">
+          <CardTitle>Operations</CardTitle>
+          <Select value={String(windowMs)} onValueChange={(value) => setWindowMs(Number(value))}>
+            <SelectTrigger size="sm" className="w-[9.5rem]" aria-label="Metrics window">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {FILE_ACCESS_METRIC_WINDOWS_MS.map((option) => (
+                <SelectItem key={option} value={String(option)}>
+                  last {Math.round(option / 60_000)} min
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </CardHeader>
+        <CardContent>
+          {metrics ? (
+            <MetricsView metrics={metrics} projects={settings.storageGroupProjects} />
+          ) : (
+            <EmptyMetrics />
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex-row flex-wrap items-center justify-between gap-2">
           <CardTitle>Scheduling</CardTitle>
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -528,25 +554,6 @@ export function FileAccessSettingsPanel() {
             : 'No restart adapter is configured on this machine, so saved values can only be activated by restarting the service there. Saving never restarts on its own.'}
         </CardContent>
       </Card>
-
-      <Card>
-        <CardHeader className="flex-row flex-wrap items-center justify-between gap-2">
-          <CardTitle>Operations</CardTitle>
-          <Select value={String(windowMs)} onValueChange={(value) => setWindowMs(Number(value))}>
-            <SelectTrigger size="sm" className="w-[9.5rem]" aria-label="Metrics window">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {FILE_ACCESS_METRIC_WINDOWS_MS.map((option) => (
-                <SelectItem key={option} value={String(option)}>
-                  last {Math.round(option / 60_000)} min
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </CardHeader>
-        <CardContent>{metrics ? <MetricsView metrics={metrics} /> : <EmptyMetrics />}</CardContent>
-      </Card>
     </div>
   )
 }
@@ -560,7 +567,13 @@ function EmptyMetrics() {
   )
 }
 
-function MetricsView({ metrics }: { metrics: FileOperationMetrics }) {
+function MetricsView({
+  metrics,
+  projects,
+}: {
+  metrics: FileOperationMetrics
+  projects?: Record<string, string[]>
+}) {
   const rows: Array<{ label: string; counters: FileOperationCounters }> = [
     { label: 'All', counters: metrics.overall },
     { label: 'Human', counters: metrics.byOrigin.human },
@@ -590,6 +603,11 @@ function MetricsView({ metrics }: { metrics: FileOperationMetrics }) {
         <Stat label="Cache entries" value={String(metrics.cacheEntries)} />
         <Stat label="Cached content" value={formatBytes(metrics.cachedContentBytes)} />
       </dl>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <FileAccessRequestChart metrics={metrics} projects={projects} />
+        <FileAccessLatencyChart metrics={metrics} projects={projects} />
+      </div>
 
       <div className="overflow-x-auto">
         <Table className="text-xs">

@@ -128,6 +128,23 @@ export interface FileOperationSeries extends FileOperationCounters {
   origin: FileOperationOrigin
 }
 
+/** Physical operations of one storage group per METRIC_BUCKET_MS bucket, oldest first. */
+export interface FileOperationTimeline {
+  storageGroup: string
+  points: Array<{ atMs: number; samples: number; errors: number; cacheHits: number }>
+}
+
+/** One completed physical operation, newest last. */
+export interface FileOperationRecentSample {
+  atMs: number
+  storageGroup: string
+  operation: FileOperationName
+  origin: FileOperationOrigin
+  executionMs: number
+  queueWaitMs: number
+  error: boolean
+}
+
 export interface FileOperationGroupState {
   storageGroup: string
   concurrency: number
@@ -147,6 +164,11 @@ export interface FileOperationMetrics {
   byOrigin: Record<FileOperationOrigin, FileOperationCounters>
   byOperation: Record<FileOperationName, FileOperationCounters>
   series: FileOperationSeries[]
+  /** Bucket width of `timeline` points. */
+  bucketMs: number
+  timeline: FileOperationTimeline[]
+  /** The most recent physical operations across all groups (bounded). */
+  recent: FileOperationRecentSample[]
   groups: FileOperationGroupState[]
   inFlight: number
   queued: number

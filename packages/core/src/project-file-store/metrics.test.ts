@@ -77,3 +77,31 @@ describe('rolling source budget telemetry', () => {
     expect(metrics.snapshot(300_000).overall.operationBudgetDeferrals).toBe(1)
   })
 })
+
+describe('per-group timeline and recent operations', () => {
+  it('buckets operations per storage group and keeps a bounded recent log', () => {
+    const metrics = new MetricsRegistry()
+    const sample = { waitMs: 1, execMs: 40, bytes: 0, error: false }
+    metrics.recordOperation('source-a', 'stat', 'human', sample)
+    metrics.recordOperation('source-a', 'stat', 'human', sample)
+    metrics.recordOperation('source-b', 'readFile', 'automatic', { ...sample, error: true })
+    metrics.recordCacheHit('source-b', 'readFile', 'human')
+    const snapshot = metrics.snapshot(60_000)
+    expect(snapshot.timeline.map((timeline) => timeline.storageGroup)).toEqual([
+      'source-a',
+      'source-b',
+    ])
+    const [a, b] = snapshot.timeline
+    expect(a!.points).toHaveLength(12)
+    expect(a!.points.reduce((sum, point) => sum + point.samples, 0)).toBe(2)
+    expect(b!.points.at(-1)).toMatchObject({ samples: 1, errors: 1, cacheHits: 1 })
+    expect(snapshot.recent.map((entry) => [entry.storageGroup, entry.executionMs])).toEqual([
+      ['source-a', 40],
+      ['source-a', 40],
+      ['source-b', 40],
+    ])
+    for (let index = 0; index < 400; index += 1)
+      metrics.recordOperation('source-a', 'stat', 'human', sample)
+    expect(metrics.snapshot(60_000).recent).toHaveLength(300)
+  })
+})

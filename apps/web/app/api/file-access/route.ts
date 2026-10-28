@@ -15,7 +15,7 @@
 // read directly inside the request and never reaches the Store, so it
 // contributes no storage group and no samples to that snapshot.
 
-import { getFileOperationMetrics } from '@memon/core'
+import { getFileOperationMetrics, projectSourceGroup } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { readIdentityFromRequest } from '@/lib/server/auth/request-context'
@@ -35,6 +35,17 @@ import { getRuntime } from '@/lib/server/runtime'
 export const dynamic = 'force-dynamic'
 
 const RESPONSE_HEADERS = { 'Cache-Control': 'no-store' }
+
+/** Storage group → the projects (`host/project`) that read through it, for chart labels. */
+function storageGroupProjects(config: Awaited<ReturnType<typeof getRuntime>>['config']) {
+  const labels: Record<string, string[]> = {}
+  for (const project of config.projects) {
+    const group = projectSourceGroup(project)
+    const label = project.host ? `${project.host}/${project.name}` : project.name
+    labels[group] = [...(labels[group] ?? []), label]
+  }
+  return labels
+}
 
 const STATUS_BY_ERROR_CODE: Record<FileAccessSettingsErrorCode, number> = {
   CONFIG_UNAVAILABLE: 503,
@@ -99,6 +110,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         restartAvailable: resolveRestartAdapter(runtime.config).status === 'available',
         cacheConfigured: false,
         metrics: getFileOperationMetrics(window.windowMs),
+        storageGroupProjects: storageGroupProjects(runtime.config),
       },
       { headers: RESPONSE_HEADERS },
     )
@@ -162,6 +174,7 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
         restartAvailable: resolveRestartAdapter(runtime.config).status === 'available',
         cacheConfigured: false,
         metrics: getFileOperationMetrics(window.windowMs),
+        storageGroupProjects: storageGroupProjects(runtime.config),
       },
       { headers: RESPONSE_HEADERS },
     )

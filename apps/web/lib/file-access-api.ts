@@ -94,6 +94,21 @@ export interface FileOperationGroupState {
   oldestWaitingAgeMs: number | null
 }
 
+export interface FileOperationTimeline {
+  storageGroup: string
+  points: Array<{ atMs: number; samples: number; errors: number; cacheHits: number }>
+}
+
+export interface FileOperationRecentSample {
+  atMs: number
+  storageGroup: string
+  operation: FileOperationName
+  origin: FileOperationOrigin
+  executionMs: number
+  queueWaitMs: number
+  error: boolean
+}
+
 export interface FileOperationMetrics {
   epoch: string
   generatedAt: string
@@ -104,6 +119,9 @@ export interface FileOperationMetrics {
   byOrigin: Record<FileOperationOrigin, FileOperationCounters>
   byOperation: Record<FileOperationName, FileOperationCounters>
   series: FileOperationSeries[]
+  bucketMs?: number
+  timeline?: FileOperationTimeline[]
+  recent?: FileOperationRecentSample[]
   groups: FileOperationGroupState[]
   inFlight: number
   queued: number
@@ -120,6 +138,8 @@ export interface FileAccessSettings {
   restartAvailable: boolean
   cacheConfigured: boolean
   metrics: FileOperationMetrics | null
+  /** Storage group → projects (`host/project`) reading through it. */
+  storageGroupProjects?: Record<string, string[]>
 }
 
 export interface FileAccessFailure {

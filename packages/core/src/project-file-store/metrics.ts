@@ -5,12 +5,15 @@ import type {
   FileOperationCounters,
   FileOperationName,
   FileOperationOrigin,
+  FileOperationRecentSample,
   FileOperationSeries,
+  FileOperationTimeline,
 } from './contract.js'
 
 export const METRIC_BUCKET_MS = 5_000
 export const METRIC_BUCKET_COUNT = 180
 export const METRIC_WINDOWS_MS = [60_000, 300_000, 900_000]
+export const RECENT_OPERATION_COUNT = 300
 const HISTOGRAM_BOUNDS = [
   1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1_024, 2_048, 4_096, 8_192, 16_384, 32_768, 65_536,
   131_072,
@@ -137,6 +140,7 @@ function toCounters(acc: Accumulator): FileOperationCounters {
 
 export class MetricsRegistry {
   private readonly series = new Map<string, MetricSeriesState>()
+  private readonly recent: FileOperationRecentSample[] = []
 
   private seriesFor(
     storageGroup: string,
@@ -237,6 +241,16 @@ export class MetricsRegistry {
     bucket.wait[waitSlot] = bucket.wait[waitSlot]! + 1
     bucket.readBytes += sample.bytes
     if (sample.error) bucket.errors += 1
+    this.recent.push({
+      atMs: Date.now(),
+      storageGroup,
+      operation,
+      origin,
+      executionMs: round3(sample.execMs),
+      queueWaitMs: round3(sample.waitMs),
+      error: sample.error,
+    })
+    if (this.recent.length > RECENT_OPERATION_COUNT) this.recent.shift()
   }
 
   recordCacheHit(
@@ -260,6 +274,8 @@ export class MetricsRegistry {
     byOrigin: Record<FileOperationOrigin, FileOperationCounters>
     byOperation: Record<FileOperationName, FileOperationCounters>
     series: FileOperationSeries[]
+    timeline: FileOperationTimeline[]
+    recent: FileOperationRecentSample[]
   } {
     const currentSlot = Math.floor(monotonic() / METRIC_BUCKET_MS)
     const oldestSlot = currentSlot - Math.max(1, Math.ceil(windowMs / METRIC_BUCKET_MS)) + 1
@@ -272,6 +288,24 @@ export class MetricsRegistry {
     const byOperation = {} as Record<FileOperationName, Accumulator>
     for (const operation of ALL_OPERATIONS) byOperation[operation] = createAccumulator()
     const series: FileOperationSeries[] = []
+    // Wall-clock start of a monotonic bucket slot.
+    const wallOffsetMs = Date.now() - monotonic()
+    const timelines = new Map<string, FileOperationTimeline>()
+    const timelineFor = (storageGroup: string): FileOperationTimeline => {
+      let timeline = timelines.get(storageGroup)
+      if (timeline === undefined) {
+        timeline = { storageGroup, points: [] }
+        for (let slot = oldestSlot; slot <= currentSlot; slot += 1)
+          timeline.points.push({
+            atMs: Math.round(slot * METRIC_BUCKET_MS + wallOffsetMs),
+            samples: 0,
+            errors: 0,
+            cacheHits: 0,
+          })
+        timelines.set(storageGroup, timeline)
+      }
+      return timeline
+    }
 
     for (const state of this.series.values()) {
       const acc = createAccumulator()
@@ -279,6 +313,11 @@ export class MetricsRegistry {
         if (bucket === undefined) continue
         if (bucket.slot < oldestSlot || bucket.slot > currentSlot) continue
         mergeBucket(acc, bucket)
+        if (bucket.samples === 0 && bucket.cacheHits === 0) continue
+        const point = timelineFor(state.storageGroup).points[bucket.slot - oldestSlot]!
+        point.samples += bucket.samples
+        point.errors += bucket.errors
+        point.cacheHits += bucket.cacheHits
       }
       if (
         acc.samples === 0 &&
@@ -321,6 +360,10 @@ export class MetricsRegistry {
       },
       byOperation: operations,
       series,
+      timeline: [...timelines.values()].sort((a, b) =>
+        a.storageGroup.localeCompare(b.storageGroup),
+      ),
+      recent: [...this.recent],
     }
   }
 }
