@@ -114,6 +114,12 @@ export const shell: RouteOperationPolicy = { routeClass: 'shell', readOnly: 'ref
 /** Owner control writes over `.memon/` state: allowed on a read-only Backend. */
 export const controlMutating: RouteOperationPolicy = { routeClass: 'mutating', readOnly: 'allow' }
 export const controlShell: RouteOperationPolicy = { routeClass: 'shell', readOnly: 'allow' }
+/**
+ * A bounded document edit (`allowed_edits`). The caller decides whether a
+ * read-only Project admits it and sets the file context; a refused write still
+ * fails with EROFS inside the service.
+ */
+export const editMutating: RouteOperationPolicy = { routeClass: 'mutating', readOnly: 'allow' }
 
 /** Attach handler, gate and error policy to an operation's route class / read-only policy. */
 export const op = (

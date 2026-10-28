@@ -135,6 +135,16 @@ export interface BackendDocumentService {
   listWiki(project: string, options?: { inventoryOnly?: boolean }): Promise<unknown>
   getWiki(project: string, id: string): Promise<unknown>
   putWiki(project: string, id: string, input: DocumentWriteInput): Promise<BackendWikiWriteResult>
+  setReportTitle(
+    project: string,
+    id: string,
+    input: { title: unknown },
+  ): Promise<{ title: string | null }>
+  setWikiTitle(
+    project: string,
+    id: string,
+    input: { title: unknown },
+  ): Promise<{ title: string | null }>
   wikiBacklinks(project: string, artifact: string): Promise<unknown>
 }
 

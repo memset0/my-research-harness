@@ -27,11 +27,13 @@ import {
   BACKEND_EXPERIMENT_README_ROUTE,
   BACKEND_README_ROUTE,
   BACKEND_REPORT_ROUTE,
+  BACKEND_REPORT_TITLE_ROUTE,
   BACKEND_REPORTS_ROUTE,
   BACKEND_RUN_README_ROUTE,
   BACKEND_WIKI_BACKLINKS_ROUTE,
   BACKEND_WIKI_PAGE_ROUTE,
   BACKEND_WIKI_ROUTE,
+  BACKEND_WIKI_TITLE_ROUTE,
   MAX_BACKEND_DOCUMENT_BODY_BYTES,
 } from '../http/paths.js'
 import {
@@ -48,6 +50,7 @@ import {
 } from '../http/respond.js'
 import {
   codeReviewIdParam,
+  editMutating,
   inventoryField,
   mutating,
   op,
@@ -65,6 +68,28 @@ import {
   writeCodeReviewResult,
   writeDocumentResult,
 } from './shared.js'
+
+/** POST `{ title }`: the bounded title rename of a Report or Wiki page. */
+const titleOperation = (kind: 'report' | 'wiki'): RouteOperation =>
+  op(editMutating, {
+    project: 'query',
+    available: requireProject(({ options }) => options.documentService !== undefined),
+    failure: httpError(500, 'INTERNAL', 'Backend document operation failed'),
+    handle: async ({ request, response, options, project, params }) => {
+      const body = (await readBoundedJsonRequest(request, 4096)) as { title?: unknown } | null
+      const input = { title: body?.title }
+      const document =
+        kind === 'report'
+          ? await options.documentService!.setReportTitle(project!, params.id!, input)
+          : await options.documentService!.setWikiTitle(project!, params.id!, input)
+      writeJson(response, 200, { ok: true, title: document.title })
+      options.eventStream.publish({
+        project: project!,
+        topic: kind === 'report' ? 'reports-change' : 'wiki-change',
+        data: { type: 'set', id: params.id! },
+      })
+    },
+  })
 
 const documentOperation = (
   method: 'GET' | 'PUT' | 'PATCH',
@@ -183,6 +208,12 @@ export const DOCUMENT_WIKI_ROUTES: readonly BackendRoute[] = [
         }
       }),
     },
+  },
+  {
+    key: BACKEND_REPORT_TITLE_ROUTE,
+    params: { id: reportIdParam },
+    query: projectQuery(),
+    operations: { POST: titleOperation('report') },
   },
   {
     key: BACKEND_CODE_REVIEWS_ROUTE,
@@ -339,6 +370,12 @@ export const DOCUMENT_WIKI_ROUTES: readonly BackendRoute[] = [
         })
       }),
     },
+  },
+  {
+    key: BACKEND_WIKI_TITLE_ROUTE,
+    params: { id: wikiIdParam },
+    query: projectQuery(),
+    operations: { POST: titleOperation('wiki') },
   },
   {
     key: BACKEND_WIKI_BACKLINKS_ROUTE,

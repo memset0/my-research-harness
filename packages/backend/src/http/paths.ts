@@ -19,6 +19,7 @@ export const BACKEND_JOURNAL_HISTORY_ROUTE = `${BACKEND_API_PREFIX}/journal/hist
 export const BACKEND_ANOMALIES_ROUTE = `${BACKEND_API_PREFIX}/anomalies`
 export const BACKEND_REPORTS_ROUTE = `${BACKEND_API_PREFIX}/reports`
 export const BACKEND_REPORT_ROUTE = `${BACKEND_API_PREFIX}/reports/[id]`
+export const BACKEND_REPORT_TITLE_ROUTE = `${BACKEND_API_PREFIX}/reports/[id]/title`
 export const BACKEND_CODE_REVIEWS_ROUTE = `${BACKEND_API_PREFIX}/code-reviews`
 export const BACKEND_CODE_REVIEW_ROUTE = `${BACKEND_API_PREFIX}/code-reviews/[...id]`
 export const BACKEND_README_ROUTE = `${BACKEND_API_PREFIX}/readme`
@@ -54,6 +55,7 @@ export const BACKEND_LOG_STREAM_ROUTE = `${BACKEND_API_PREFIX}/log/stream`
 export const BACKEND_REPORT_ASSET_ROUTE = `${BACKEND_API_PREFIX}/report-assets/[project]/[id]/[...path]`
 export const BACKEND_WIKI_ROUTE = `${BACKEND_API_PREFIX}/wiki`
 export const BACKEND_WIKI_PAGE_ROUTE = `${BACKEND_API_PREFIX}/wiki/[id]`
+export const BACKEND_WIKI_TITLE_ROUTE = `${BACKEND_API_PREFIX}/wiki/[id]/title`
 export const BACKEND_WIKI_BACKLINKS_ROUTE = `${BACKEND_API_PREFIX}/wiki/backlinks/[artifact]`
 export const BACKEND_WIKI_ASSET_ROUTE = `${BACKEND_API_PREFIX}/wiki-assets/[project]/[id]/[...path]`
 

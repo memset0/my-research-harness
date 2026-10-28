@@ -396,3 +396,27 @@ describe('Backend document routes', () => {
     }
   })
 })
+
+describe('Backend Report title route', () => {
+  it('renames only the title and rejects an unusable one', async () => {
+    const owner = ActorContextSchema.parse({ role: 'owner' })
+    const path = join(root, 'docs', 'reports', 'R0001-report.md')
+    const before = await fs.readFile(path, 'utf8')
+    const invalid = await request('/api/backend/v1/reports/R0001/title?project=research', {
+      actor: owner,
+      method: 'POST',
+      body: { title: '  ' },
+    })
+    expect(invalid.status).toBe(400)
+    expect(await fs.readFile(path, 'utf8')).toBe(before)
+    const renamed = await request('/api/backend/v1/reports/R0001/title?project=research', {
+      actor: owner,
+      method: 'POST',
+      body: { title: 'Renamed report' },
+    })
+    expect(renamed.status).toBe(200)
+    expect(await renamed.json()).toEqual({ ok: true, title: 'Renamed report' })
+    expect(await fs.readFile(path, 'utf8')).toBe(before.replace(/^# .*$/m, '# Renamed report'))
+    await fs.writeFile(path, before)
+  })
+})

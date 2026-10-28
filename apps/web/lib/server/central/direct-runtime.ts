@@ -214,6 +214,12 @@ function isControlWrite(route: MappedBackendRoute): boolean {
   return route.ownership.capability === 'shares'
 }
 
+/** The route is a bounded edit this read-only Project admits (`allowed_edits`). */
+function allowsEdit(project: ProjectConfig | null, route: MappedBackendRoute): boolean {
+  const edit = route.ownership.edit
+  return edit !== undefined && project?.allowedEdits?.includes(edit) === true
+}
+
 function assertProjectPolicy(
   project: ProjectConfig | null,
   projects: readonly ProjectConfig[],
@@ -224,7 +230,8 @@ function assertProjectPolicy(
     project?.readOnly === true &&
     method !== 'GET' &&
     method !== 'HEAD' &&
-    !isControlWrite(route)
+    !isControlWrite(route) &&
+    !allowsEdit(project, route)
   ) {
     throw new DirectDispatchError(
       'READ_ONLY',
@@ -515,7 +522,7 @@ function createRuntime(config: Config): DirectCentralRuntime {
             ? { sourceIdentity: project.access.sourceIdentity }
             : {}),
           reason: requestReason(request, url.pathname),
-          readOnly: project.readOnly === true,
+          readOnly: project.readOnly === true && !allowsEdit(project, route),
           persistentCache: project.persistentCache === true,
           ...(attentionId ? { attentionId } : {}),
         },
