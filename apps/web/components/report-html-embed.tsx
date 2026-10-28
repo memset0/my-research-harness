@@ -22,6 +22,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { createPortal } from 'react-dom'
 import { cn } from '../lib/utils'
 import { Button } from './ui/button'
 import {
@@ -54,6 +55,17 @@ interface ReportHtmlZoomValue {
 }
 
 const ReportHtmlZoomContext = createContext<ReportHtmlZoomValue | null>(null)
+
+/**
+ * A page whose whole body is one embed (an HTML or service Report or Wiki
+ * page) hosts it: the embed fills the host's height without a frame, and its
+ * controls render into `toolbarSlot` in the page header. Expanded, the embed
+ * keeps its own toolbar inside the full-screen layer.
+ */
+export interface ReportHtmlHostValue {
+  toolbarSlot: HTMLElement | null
+}
+export const ReportHtmlHostContext = createContext<ReportHtmlHostValue | null>(null)
 
 export function ReportHtmlZoomProvider({ children }: { children: ReactNode }) {
   const [zoomPercent, setZoomPercent] = useState(DEFAULT_ZOOM_PERCENT)
@@ -110,6 +122,7 @@ export function ReportHtmlEmbed({
   const inline = typeof srcDoc === 'string'
   const documentId = inline ? 'srcdoc' : (src ?? '')
   const sharedZoom = useContext(ReportHtmlZoomContext)
+  const host = useContext(ReportHtmlHostContext)
   const [localZoomPercent, setLocalZoomPercent] = useState(DEFAULT_ZOOM_PERCENT)
   const zoomPercent = sharedZoom?.zoomPercent ?? localZoomPercent
   const setZoomPercent = sharedZoom?.setZoomPercent ?? setLocalZoomPercent
@@ -390,110 +403,128 @@ export function ReportHtmlEmbed({
           ? 'Report ready'
           : 'Report failed to load'
 
+  const hosted = host !== null && !isExpanded
+  const hostedToolbar = hosted ? host.toolbarSlot : null
+  const controls = (
+    <>
+      <span
+        className="hidden text-[0.6875rem] text-muted-foreground sm:inline-flex"
+        role="status"
+        aria-live="polite"
+      >
+        {statusLabel}
+      </span>
+      <MobileActionsMenu
+        src={src}
+        zoomPercent={zoomPercent}
+        updateAvailable={updateAvailable}
+        isExpanded={isExpanded}
+        onZoom={changeZoom}
+        onReload={retry}
+        onToggleExpanded={() => setIsExpanded((value) => !value)}
+      />
+      <div className="hidden shrink-0 items-center justify-end gap-1 sm:flex">
+        <fieldset
+          className="flex min-w-0 items-center rounded-md border bg-background/70"
+          aria-label="Embedded report zoom controls"
+        >
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            disabled={zoomPercent <= MIN_ZOOM_PERCENT}
+            aria-label="Zoom out embedded reports"
+            onClick={() => changeZoom(-ZOOM_STEP_PERCENT)}
+          >
+            <ZoomOut aria-hidden />
+          </Button>
+          <output
+            className="min-w-12 px-1 text-center font-mono text-[0.6875rem] tabular-nums text-muted-foreground"
+            aria-label="Embedded report zoom"
+          >
+            {zoomPercent}%
+          </output>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            disabled={zoomPercent >= MAX_ZOOM_PERCENT}
+            aria-label="Zoom in embedded reports"
+            onClick={() => changeZoom(ZOOM_STEP_PERCENT)}
+          >
+            <ZoomIn aria-hidden />
+          </Button>
+        </fieldset>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="relative"
+          aria-label={
+            updateAvailable
+              ? 'Reload embedded report, updated content available'
+              : 'Reload embedded report'
+          }
+          onClick={retry}
+        >
+          <RotateCw aria-hidden />
+          Reload
+          {updateAvailable && <UpdateAvailableDot />}
+        </Button>
+        {src && (
+          <Button asChild size="sm" variant="ghost">
+            <a href={src} target="_blank" rel="noreferrer noopener">
+              <ExternalLink aria-hidden />
+              Open in new tab
+            </a>
+          </Button>
+        )}
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={() => setIsExpanded((value) => !value)}
+        >
+          {isExpanded ? <Minimize2 aria-hidden /> : <Maximize2 aria-hidden />}
+          {isExpanded ? 'Exit expanded view' : 'Expand'}
+        </Button>
+      </div>
+    </>
+  )
+
   return (
     <section
       ref={containerRef}
       data-report-html-wrapper
       data-expanded={isExpanded ? 'true' : 'false'}
-      aria-labelledby={titleId}
+      data-hosted={hosted ? 'true' : undefined}
+      aria-labelledby={hostedToolbar ? undefined : titleId}
+      aria-label={hostedToolbar ? title : undefined}
       className={cn(
         'not-prose my-4 min-w-0 overflow-hidden rounded-md border bg-background text-foreground',
+        hosted && 'my-0 flex h-full min-h-0 flex-col rounded-none border-0',
         isExpanded &&
           'fixed inset-0 z-[100] m-0 flex h-[100svh] w-screen flex-col rounded-none border-0 shadow-2xl supports-[height:100dvh]:h-[100dvh]',
       )}
     >
-      <div className="flex min-w-0 items-center gap-2 border-b bg-muted/30 px-2 py-1.5">
-        <div id={titleId} className="min-w-0 flex-1 truncate text-xs font-medium">
-          {title}
+      {hostedToolbar ? (
+        createPortal(
+          <div className="flex min-w-0 items-center gap-2">{controls}</div>,
+          hostedToolbar,
+        )
+      ) : (
+        <div className="flex min-w-0 items-center gap-2 border-b bg-muted/30 px-2 py-1.5">
+          <div id={titleId} className="min-w-0 flex-1 truncate text-xs font-medium">
+            {title}
+          </div>
+          {controls}
         </div>
-        <span
-          className="hidden text-[0.6875rem] text-muted-foreground sm:inline-flex"
-          role="status"
-          aria-live="polite"
-        >
-          {statusLabel}
-        </span>
-        <MobileActionsMenu
-          src={src}
-          zoomPercent={zoomPercent}
-          updateAvailable={updateAvailable}
-          isExpanded={isExpanded}
-          onZoom={changeZoom}
-          onReload={retry}
-          onToggleExpanded={() => setIsExpanded((value) => !value)}
-        />
-        <div className="hidden shrink-0 items-center justify-end gap-1 sm:flex">
-          <fieldset
-            className="flex min-w-0 items-center rounded-md border bg-background/70"
-            aria-label="Embedded report zoom controls"
-          >
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              disabled={zoomPercent <= MIN_ZOOM_PERCENT}
-              aria-label="Zoom out embedded reports"
-              onClick={() => changeZoom(-ZOOM_STEP_PERCENT)}
-            >
-              <ZoomOut aria-hidden />
-            </Button>
-            <output
-              className="min-w-12 px-1 text-center font-mono text-[0.6875rem] tabular-nums text-muted-foreground"
-              aria-label="Embedded report zoom"
-            >
-              {zoomPercent}%
-            </output>
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              disabled={zoomPercent >= MAX_ZOOM_PERCENT}
-              aria-label="Zoom in embedded reports"
-              onClick={() => changeZoom(ZOOM_STEP_PERCENT)}
-            >
-              <ZoomIn aria-hidden />
-            </Button>
-          </fieldset>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className="relative"
-            aria-label={
-              updateAvailable
-                ? 'Reload embedded report, updated content available'
-                : 'Reload embedded report'
-            }
-            onClick={retry}
-          >
-            <RotateCw aria-hidden />
-            Reload
-            {updateAvailable && <UpdateAvailableDot />}
-          </Button>
-          {src && (
-            <Button asChild size="sm" variant="ghost">
-              <a href={src} target="_blank" rel="noreferrer noopener">
-                <ExternalLink aria-hidden />
-                Open in new tab
-              </a>
-            </Button>
-          )}
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            onClick={() => setIsExpanded((value) => !value)}
-          >
-            {isExpanded ? <Minimize2 aria-hidden /> : <Maximize2 aria-hidden />}
-            {isExpanded ? 'Exit expanded view' : 'Expand'}
-          </Button>
-        </div>
-      </div>
+      )}
 
       <div
         className={cn(
           'relative w-full overflow-hidden bg-background',
-          isExpanded
+          isExpanded || hosted
             ? 'min-h-0 flex-1'
             : fixedHeightPx === null && [
                 'h-[65svh] max-h-[42rem]',
@@ -501,7 +532,11 @@ export function ReportHtmlEmbed({
                 'md:h-[70vh] md:max-h-[52rem]',
               ],
         )}
-        style={!isExpanded && fixedHeightPx !== null ? { height: `${fixedHeightPx}px` } : undefined}
+        style={
+          !isExpanded && !hosted && fixedHeightPx !== null
+            ? { height: `${fixedHeightPx}px` }
+            : undefined
+        }
         aria-busy={phase === 'checking' || phase === 'loading'}
       >
         {(phase === 'checking' || phase === 'loading') && (

@@ -52,40 +52,37 @@ import { AppSidebar, moveProject, orderProjects } from './app-sidebar'
 import { type SessionInfo, SessionProvider } from './session-provider'
 import { SidebarProvider } from './ui/sidebar'
 
-const STORAGE_KEY = 'memon:sidebar:expanded'
+/** The retired persistence key: expansion must never be written there again. */
+const LEGACY_EXPANDED_KEY = 'memon:sidebar:expanded'
 const ORDER_KEY = 'memon:sidebar:project-order'
 const ID_A = 'h:host-a/p:project-a'
 const ID_B = 'h:host-a/p:project-b'
 const PROJECT_A = { host: 'host-a', project: 'project-a' }
 const PROJECT_B = { host: 'host-a', project: 'project-b' }
 
-function makeInventoryItem(
-  id: string,
-): Awaited<ReturnType<typeof fetchExperimentsInventory>>['items'][number] {
-  return {
-    id,
-    slug: id.replace(/^E\d+-/, ''),
-    resource: `docs/experiments/${id}/README.md`,
-  } as Awaited<ReturnType<typeof fetchExperimentsInventory>>['items'][number]
-}
-
 function makeSummary(
   id: string,
   status: ApiModule.ExperimentListRow['frontMatter']['status'],
   title: string,
-  displayStatus?: ApiModule.ExperimentListRow['displayStatus'],
+  options: {
+    effectiveUpdatedAt?: string
+    readmeMtime?: number
+    displayStatus?: ApiModule.ExperimentListRow['displayStatus']
+    archived?: boolean
+    parseErrors?: { message: string }[]
+  } = {},
 ): ApiModule.ExperimentListRow {
   return {
     id,
     project: 'project-a',
-    readmeMtime: 1,
-    displayStatus,
+    readmeMtime: options.readmeMtime ?? 1,
+    displayStatus: options.displayStatus,
     frontMatter: {
       id,
       slug: id,
       title,
       status,
-      archived: false,
+      archived: options.archived ?? false,
       tags: [],
       createdAt: '',
       updatedAt: '',
@@ -93,10 +90,10 @@ function makeSummary(
     runCount: 1,
     hypothesisCount: 0,
     openWarningCount: 0,
-    parseErrors: [],
+    parseErrors: options.parseErrors ?? [],
     parseWarnings: [],
     effectiveCreatedAt: '',
-    effectiveUpdatedAt: '',
+    effectiveUpdatedAt: options.effectiveUpdatedAt ?? '',
   }
 }
 
@@ -153,8 +150,8 @@ const GIT_ENABLED = {
   dirty: false,
 }
 
-function storedExpansion(): string[] {
-  return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]') as string[]
+function expectNoPersistedExpansion() {
+  expect(localStorage.getItem(LEGACY_EXPANDED_KEY)).toBeNull()
 }
 
 function projectRow(container: HTMLElement, identity: string): HTMLElement {
@@ -178,6 +175,14 @@ function section(row: HTMLElement, key: string): HTMLElement {
   )
   expect(node).not.toBeNull()
   return node!
+}
+
+function itemLinks(node: HTMLElement): HTMLAnchorElement[] {
+  return Array.from(node.querySelectorAll<HTMLAnchorElement>('[data-sidebar-item]'))
+}
+
+function itemHrefs(node: HTMLElement): (string | null)[] {
+  return itemLinks(node).map((link) => link.getAttribute('href'))
 }
 
 /** jsdom has no DataTransfer; the sidebar only needs these members. */
@@ -249,13 +254,15 @@ describe('AppSidebar', () => {
     vi.mocked(fetchExperimentDocs).mockResolvedValue({ experiments: [] })
     vi.mocked(fetchReports).mockResolvedValue({ reports: [] })
     vi.mocked(fetchWiki).mockResolvedValue({ pages: [] } as never)
+    // Count endpoints: the sidebar no longer reads them; the mocks stay so a
+    // regression shows up as a call instead of a network error.
     vi.mocked(fetchReportsInventory).mockResolvedValue({ items: [] } as never)
     vi.mocked(fetchWikiInventory).mockResolvedValue({ pages: [] } as never)
     vi.mocked(fetchJournalCount).mockResolvedValue({ totalEvents: 0 } as never)
     vi.mocked(fetchCodeReviewsInventory).mockResolvedValue({ items: [] } as never)
     // SlurmStatusWidget + GitStatusPill render `null` when their query
     // returns `enabled: false`, so default both to that path to keep the
-    // sidebar tests focused on project / experiment rendering.
+    // sidebar tests focused on project / item rendering.
     vi.mocked(fetchSlurmStatus).mockResolvedValue({ enabled: false })
     vi.mocked(fetchGitStatus).mockResolvedValue({
       enabled: false,
@@ -318,22 +325,33 @@ describe('AppSidebar', () => {
     await waitFor(() => expect(projectOrder(container)).toEqual([ID_B, ID_A]))
   })
 
-  it('reorders projects by dragging a row onto another and saves the order', async () => {
+  it('drags the whole project row (no grip) onto another row and saves the order', async () => {
     const { container } = setup()
     await waitFor(() => expect(projectOrder(container)).toEqual([ID_A, ID_B]))
 
     const rowA = projectRow(container, ID_A)
     const rowB = projectRow(container, ID_B)
-    const handle = rowA.querySelector<HTMLElement>('[draggable="true"]')
-    expect(handle).not.toBeNull()
+    const draggables = rowA.querySelectorAll<HTMLElement>('[draggable="true"]')
+    // Exactly one draggable element: the row itself, carrying the name, the
+    // host chip and the toggle — not a separate grip handle.
+    expect(draggables).toHaveLength(1)
+    const dragRow = draggables[0]!
+    expect(within(dragRow).getByText('project-a')).toBeInTheDocument()
+    expect(dragRow.querySelector('[data-slot="sidebar-project-host"]')).not.toBeNull()
+    expect(within(dragRow).getByText('project-a').closest('button')).not.toBeNull()
+    expect(dragRow.querySelectorAll('svg')).toHaveLength(1) // only the expand chevron
 
     const transfer = dataTransfer()
-    fireEvent.dragStart(handle!, { dataTransfer: transfer })
+    fireEvent.dragStart(dragRow, { dataTransfer: transfer })
     expect(transfer.getData('text/plain')).toBe(ID_A)
-    fireEvent.dragEnter(rowB, { dataTransfer: transfer })
-    fireEvent.dragOver(rowB, { dataTransfer: transfer })
-    fireEvent.drop(rowB, { dataTransfer: transfer })
-    fireEvent.dragEnd(handle!, { dataTransfer: transfer })
+    expect(transfer.effectAllowed).toBe('move')
+    // Dropping anywhere on the other row (here: its name) counts as a drop on it.
+    const targetName = within(rowB).getByText('project-b')
+    fireEvent.dragEnter(targetName, { dataTransfer: transfer })
+    fireEvent.dragOver(targetName, { dataTransfer: transfer })
+    expect(transfer.dropEffect).toBe('move')
+    fireEvent.drop(targetName, { dataTransfer: transfer })
+    fireEvent.dragEnd(dragRow, { dataTransfer: transfer })
 
     await waitFor(() => expect(projectOrder(container)).toEqual([ID_B, ID_A]))
     expect(JSON.parse(localStorage.getItem(ORDER_KEY) ?? 'null')).toEqual([ID_B, ID_A])
@@ -348,232 +366,390 @@ describe('AppSidebar', () => {
     expect(projectRow(container, ID_A).querySelector('[draggable="true"]')).toBeNull()
   })
 
-  it('keeps the active project open with its sections linking to their list pages', async () => {
+  it('lists Wiki, Experiments, Reports, Code Review and Journal as links without counts', async () => {
     const { container } = setup()
     await waitFor(() => expect(projectOrder(container)).toHaveLength(2))
     const rowA = projectRow(container, ID_A)
     const sections = Array.from(rowA.querySelectorAll<HTMLElement>('[data-slot="sidebar-section"]'))
     expect(sections.map((node) => node.dataset.section)).toEqual([
+      'wiki',
       'experiments',
-      'journal',
       'reports',
       'code-review',
-      'wiki',
+      'journal',
     ])
-    const links = sections.map((node) => within(node).getByRole('link'))
+    const links = sections.map((node) => within(node).getAllByRole('link')[0]!)
     expect(links.map((link) => link.getAttribute('href'))).toEqual([
+      '/host-a/project-a/wiki',
       '/host-a/project-a',
-      '/host-a/project-a/journal',
       '/host-a/project-a/reports',
       '/host-a/project-a/code-review',
-      '/host-a/project-a/wiki',
+      '/host-a/project-a/journal',
     ])
     expect(links.map((link) => link.textContent)).toEqual([
+      'Wiki',
       'Experiments',
-      'Journal',
       'Reports',
       'Code Review',
-      'Wiki',
+      'Journal',
     ])
-    // Sections show no counts.
-    for (const node of sections) expect(node.querySelector('[data-slot="count"]')).toBeNull()
+    // No counts: no TabBadge anywhere, and no count endpoint is read.
+    expect(container.querySelector('[data-slot="count"]')).toBeNull()
+    expect(container.querySelector('[data-slot="warnings"]')).toBeNull()
+    expect(fetchJournalCount).not.toHaveBeenCalled()
+    expect(fetchCodeReviewsInventory).not.toHaveBeenCalled()
+    expect(fetchReportsInventory).not.toHaveBeenCalled()
+    expect(fetchWikiInventory).not.toHaveBeenCalled()
+    expect(fetchExperimentsInventory).not.toHaveBeenCalled()
     // The overview page is the Experiments section's own page.
-    expect(links[0]).toHaveAttribute('aria-current', 'page')
-    expect(links[2]).not.toHaveAttribute('aria-current')
-    // Only list-backed sections can be expanded.
+    expect(links[1]).toHaveAttribute('aria-current', 'page')
+    for (const index of [0, 2, 3, 4]) expect(links[index]).not.toHaveAttribute('aria-current')
+    // Only Wiki, Experiments and Reports carry an expand chevron.
+    expect(within(sections[0]!).getByRole('button', { name: 'Expand Wiki' })).toBeInTheDocument()
     expect(
-      within(sections[0]!).getByRole('button', { name: 'Collapse Experiments' }),
+      within(sections[1]!).getByRole('button', { name: 'Collapse Experiments' }),
     ).toHaveAttribute('aria-expanded', 'true')
-    expect(within(sections[1]!).queryByRole('button')).toBeNull()
     expect(within(sections[2]!).getByRole('button', { name: 'Expand Reports' })).toBeInTheDocument()
     expect(within(sections[3]!).queryByRole('button')).toBeNull()
-    expect(within(sections[4]!).getByRole('button', { name: 'Expand Wiki' })).toBeInTheDocument()
-    // The other project starts closed and renders no sections.
-    expect(projectRow(container, ID_B).querySelector('[data-slot="sidebar-section"]')).toBeNull()
-    // Being always open is not a stored expansion.
-    expect(storedExpansion()).not.toContain(ID_A)
+    expect(within(sections[4]!).queryByRole('button')).toBeNull()
   })
 
-  it('clicking another project toggles its expansion and persists it', async () => {
+  it('opens only the current project and its current section by default', async () => {
+    const { container } = setup()
+    await waitFor(() => expect(projectOrder(container)).toHaveLength(2))
+    const rowA = projectRow(container, ID_A)
+    // The current section (Experiments, for the overview) is open and read.
+    await waitFor(() => expect(fetchExperimentDocs).toHaveBeenCalledWith(PROJECT_A))
+    await screen.findByText('No active experiments')
+    // Non-current sections start closed and read nothing.
+    for (const name of ['Wiki', 'Reports']) {
+      expect(within(rowA).getByRole('button', { name: `Expand ${name}` })).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      )
+    }
+    expect(section(rowA, 'wiki').querySelector('[data-sidebar-item]')).toBeNull()
+    expect(section(rowA, 'reports').querySelector('[data-sidebar-item]')).toBeNull()
+    expect(fetchReports).not.toHaveBeenCalled()
+    expect(fetchWiki).not.toHaveBeenCalled()
+    // The other project starts closed and renders no sections.
+    expect(projectRow(container, ID_B).querySelector('[data-slot="sidebar-section"]')).toBeNull()
+    expectNoPersistedExpansion()
+  })
+
+  it('clicking another project toggles it for the session without persisting', async () => {
     const { container } = setup()
     const projectB = await screen.findByText('project-b')
     await userEvent.click(projectB)
-    await waitFor(() => expect(storedExpansion()).toContain(ID_B))
     expect(section(projectRow(container, ID_B), 'journal').querySelector('a')).toHaveAttribute(
       'href',
       '/host-a/project-b/journal',
     )
+    // Opening a project does not open any of its sections (none is current).
+    for (const name of ['Wiki', 'Experiments', 'Reports']) {
+      expect(
+        within(projectRow(container, ID_B)).getByRole('button', { name: `Expand ${name}` }),
+      ).toHaveAttribute('aria-expanded', 'false')
+    }
+    expectNoPersistedExpansion()
     await userEvent.click(projectB)
-    await waitFor(() => expect(storedExpansion()).not.toContain(ID_B))
-    expect(projectRow(container, ID_B).querySelector('[data-slot="sidebar-section"]')).toBeNull()
+    await waitFor(() =>
+      expect(projectRow(container, ID_B).querySelector('[data-slot="sidebar-section"]')).toBeNull(),
+    )
+    // The current project can be collapsed too.
+    await userEvent.click(within(projectRow(container, ID_A)).getByText('project-a'))
+    await waitFor(() =>
+      expect(projectRow(container, ID_A).querySelector('[data-slot="sidebar-section"]')).toBeNull(),
+    )
+    expectNoPersistedExpansion()
   })
 
-  it('expands Reports and Wiki to list their items as links and persists the section', async () => {
+  it('section chevrons toggle for the session only; a remount starts from the defaults', async () => {
+    vi.mocked(fetchReports).mockResolvedValue({
+      reports: [{ id: 'R0001', slug: 'first-report', title: 'First report', mtime: 1 }] as never,
+    })
+    const first = setup()
+    await waitFor(() => expect(projectOrder(first.container)).toHaveLength(2))
+    const rowA = projectRow(first.container, ID_A)
+
+    await userEvent.click(within(rowA).getByRole('button', { name: 'Expand Reports' }))
+    await waitFor(() => expect(itemLinks(section(rowA, 'reports'))).toHaveLength(1))
+    expect(within(rowA).getByRole('button', { name: 'Collapse Reports' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
+    // Collapsing the current section is also a session override.
+    await userEvent.click(within(rowA).getByRole('button', { name: 'Collapse Experiments' }))
+    expect(within(rowA).getByRole('button', { name: 'Expand Experiments' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+    expectNoPersistedExpansion()
+    first.unmount()
+
+    const second = setup()
+    await waitFor(() => expect(projectOrder(second.container)).toHaveLength(2))
+    const again = projectRow(second.container, ID_A)
+    expect(within(again).getByRole('button', { name: 'Expand Reports' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+    expect(within(again).getByRole('button', { name: 'Collapse Experiments' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
+    expect(section(again, 'reports').querySelector('[data-sidebar-item]')).toBeNull()
+    expectNoPersistedExpansion()
+  })
+
+  it('lists Reports flat, newest first by updatedAt with mtime as fallback', async () => {
     vi.mocked(fetchReports).mockResolvedValue({
       reports: [
-        { id: 'R0001', slug: 'first-report', title: 'First report', mtime: 1 },
-        { id: 'R0002', slug: 'second-report', title: null, mtime: 2 },
+        // Declared update time wins over a newer file time.
+        {
+          id: 'R0001',
+          slug: 'oldest',
+          title: 'Oldest report',
+          updatedAt: '2026-01-01T00:00:00+08:00',
+          mtime: Date.parse('2026-12-01T00:00:00+08:00'),
+        },
+        // No declared time: falls back to mtime.
+        {
+          id: 'R0002',
+          slug: 'untitled-report',
+          title: null,
+          updatedAt: null,
+          mtime: Date.parse('2026-03-01T00:00:00+08:00'),
+        },
+        {
+          id: 'R0003',
+          slug: 'middle',
+          title: 'Middle report',
+          updatedAt: '2026-02-01T00:00:00+08:00',
+          mtime: 1,
+        },
       ] as never,
     })
-    vi.mocked(fetchWiki).mockResolvedValue({
-      pages: [
-        { id: 'W0003', slug: 'later', title: 'Later page' },
-        { id: 'W0001', slug: 'first', title: 'First page' },
-      ],
-    } as never)
     const { container } = setup()
     await waitFor(() => expect(projectOrder(container)).toHaveLength(2))
     const rowA = projectRow(container, ID_A)
 
     await userEvent.click(within(rowA).getByRole('button', { name: 'Expand Reports' }))
     const reports = section(rowA, 'reports')
-    await waitFor(() => expect(reports.querySelectorAll('[data-sidebar-item]')).toHaveLength(2))
-    const reportLinks = Array.from(
-      reports.querySelectorAll<HTMLAnchorElement>('[data-sidebar-item]'),
-    )
-    expect(reportLinks.map((link) => link.getAttribute('href'))).toEqual([
-      '/host-a/project-a/r/1',
+    await waitFor(() => expect(itemLinks(reports)).toHaveLength(3))
+    expect(itemHrefs(reports)).toEqual([
       '/host-a/project-a/r/2',
+      '/host-a/project-a/r/3',
+      '/host-a/project-a/r/1',
     ])
-    expect(reportLinks[0]).toHaveTextContent('First report')
-    // An untitled Report falls back to its slug.
-    expect(reportLinks[1]).toHaveTextContent('second-report')
+    const [untitled, middle, oldest] = itemLinks(reports)
+    // Short id plus title; an untitled Report falls back to its slug.
+    expect(within(untitled!).getByText('R2')).toBeInTheDocument()
+    expect(untitled).toHaveTextContent('untitled-report')
+    expect(untitled).toHaveAttribute('title', 'R0002 · untitled-report')
+    expect(within(middle!).getByText('R3')).toBeInTheDocument()
+    expect(middle).toHaveTextContent('Middle report')
+    expect(oldest).toHaveTextContent('Oldest report')
+    // Flat list: no group toggles inside the section.
+    expect(within(reports).getAllByRole('button')).toHaveLength(1)
     expect(fetchReports).toHaveBeenCalledWith(PROJECT_A)
 
-    await userEvent.click(within(rowA).getByRole('button', { name: 'Expand Wiki' }))
-    const wiki = section(rowA, 'wiki')
-    await waitFor(() => expect(wiki.querySelectorAll('[data-sidebar-item]')).toHaveLength(2))
-    // Wiki pages are listed in ID order.
-    expect(
-      Array.from(wiki.querySelectorAll('[data-sidebar-item]'), (link) => link.getAttribute('href')),
-    ).toEqual(['/host-a/project-a/w/1', '/host-a/project-a/w/3'])
-
-    await waitFor(() =>
-      expect(storedExpansion()).toEqual(
-        expect.arrayContaining([`${ID_A}#reports`, `${ID_A}#wiki`]),
-      ),
-    )
     await userEvent.click(within(rowA).getByRole('button', { name: 'Collapse Reports' }))
     expect(reports.querySelector('[data-sidebar-item]')).toBeNull()
-    await waitFor(() => expect(storedExpansion()).not.toContain(`${ID_A}#reports`))
   })
 
-  it('retains identity navigation in ID order when metadata is unavailable', async () => {
-    vi.mocked(fetchExperimentsInventory).mockResolvedValue({
-      items: [
-        makeInventoryItem('E0003-charlie'),
-        makeInventoryItem('E0001-alpha'),
-        makeInventoryItem('E0002-bravo'),
-      ],
-    })
-
-    const { container } = setup()
-    // project-a is active on its overview, so its Experiments section is open.
-    await waitFor(() => {
-      expect(screen.getByText('E0002-bravo')).toBeInTheDocument()
-      expect(screen.getByText('E0001-alpha')).toBeInTheDocument()
-      expect(screen.getByText('E0003-charlie')).toBeInTheDocument()
-    })
-
-    const links = Array.from(
-      container.querySelectorAll<HTMLAnchorElement>('a[href*="/host-a/project-a/e/"]'),
-    )
-    const ids = links.map((a) => within(a).getByText(/^E\d+-/).textContent)
-    expect(ids).toEqual(['E0001-alpha', 'E0002-bravo', 'E0003-charlie'])
-  })
-
-  it('retains inventory links under unavailable status when summary requests fail', async () => {
-    vi.mocked(fetchExperimentsInventory).mockResolvedValue({
-      items: [makeInventoryItem('E0001-alpha')],
-    })
-    vi.mocked(fetchExperimentDocs).mockRejectedValue(new Error('Summary unavailable'))
-    setup()
-    expect(
-      await screen.findByRole('button', { name: 'Status unavailable experiments (1)' }),
-    ).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /E0001.*Unknown.*E0001-alpha/ })).toHaveAttribute(
-      'href',
-      '/host-a/project-a/e/1',
-    )
-    expect(screen.queryByRole('button', { name: 'Active experiments (1)' })).not.toBeInTheDocument()
-  })
-
-  it('opens the current retired group, reveals the active Experiment and keeps inventory-only entries', async () => {
-    currentPathname = '/host-a/project-a/e/3'
-    vi.mocked(fetchExperimentsInventory).mockResolvedValue({
-      items: [makeInventoryItem('E0003-old'), makeInventoryItem('E0004-unreadable')],
-    })
-    vi.mocked(fetchExperimentDocs).mockResolvedValue({
-      experiments: [
-        makeSummary('E0001-completed', 'ACTIVE', 'Completed comparison', 'COMPLETED'),
-        makeSummary('E0002-running', 'ACTIVE', 'Current comparison', 'RUNNING'),
-        makeSummary(
-          'E0003-old',
-          'RETIRED',
-          'Retired comparison with a readable long title',
-          'RETIRED',
-        ),
-        makeSummary('E0005-archive', 'ARCHIVED', 'Archived comparison', 'ARCHIVED'),
-      ],
-    })
-    const { container } = setup()
-    const retired = await screen.findByRole('link', {
-      name: /Retired comparison with a readable long title/,
-    })
-    expect(retired).toHaveAttribute('aria-current', 'page')
-    expect(retired).toHaveAttribute(
-      'title',
-      'E0003-old · Retired comparison with a readable long title',
-    )
-    await waitFor(() => expect(revealed).toContain(retired))
-    // On an Experiment page the section link itself is not the current page.
-    expect(
-      within(section(projectRow(container, ID_A), 'experiments')).getByRole('link', {
-        name: /^Experiments/,
-      }),
-    ).not.toHaveAttribute('aria-current')
-    expect(screen.getByRole('button', { name: 'Retired experiments (1)' })).toHaveAttribute(
-      'aria-expanded',
-      'true',
-    )
-    expect(screen.getByRole('button', { name: 'Archived experiments (1)' })).toHaveAttribute(
-      'aria-expanded',
-      'false',
-    )
-    expect(screen.getByText('E0004-unreadable')).toBeInTheDocument()
-    const active = container.querySelector('[data-experiment-group="ACTIVE"]')!
-    expect(
-      within(active as HTMLElement)
-        .getAllByRole('link')
-        .map((link) => link.getAttribute('href')),
-    ).toEqual(['/host-a/project-a/e/2', '/host-a/project-a/e/1'])
-    await userEvent.click(screen.getByRole('button', { name: 'Archived experiments (1)' }))
-    expect(screen.getByRole('link', { name: /Archived comparison/ })).toBeInTheDocument()
-  })
-
-  it('opens the active section on an item page and scrolls the active Wiki page into view', async () => {
-    currentPathname = '/host-a/project-a/w/2'
+  it('lists Wiki pages flat, newest first by updatedAt with mtime as fallback', async () => {
     vi.mocked(fetchWiki).mockResolvedValue({
       pages: [
-        { id: 'W0001', slug: 'first', title: 'First page' },
-        { id: 'W0002', slug: 'second', title: 'Second page' },
+        { id: 'W0001', slug: 'first', title: 'First page', updatedAt: null, mtime: 1 },
+        {
+          id: 'W0002',
+          slug: 'second',
+          title: 'Second page',
+          updatedAt: '2026-05-01T00:00:00+08:00',
+          mtime: 2,
+        },
+        {
+          id: 'W0010',
+          slug: 'tenth',
+          title: 'Tenth page',
+          mtime: Date.parse('2026-06-01T00:00:00+08:00'),
+        },
       ],
     } as never)
     const { container } = setup()
-    const current = await screen.findByRole('link', { name: /W0002.*Second page/ })
+    await waitFor(() => expect(projectOrder(container)).toHaveLength(2))
+    const rowA = projectRow(container, ID_A)
+
+    await userEvent.click(within(rowA).getByRole('button', { name: 'Expand Wiki' }))
+    const wiki = section(rowA, 'wiki')
+    await waitFor(() => expect(itemLinks(wiki)).toHaveLength(3))
+    expect(itemHrefs(wiki)).toEqual([
+      '/host-a/project-a/w/10',
+      '/host-a/project-a/w/2',
+      '/host-a/project-a/w/1',
+    ])
+    expect(within(itemLinks(wiki)[0]!).getByText('W10')).toBeInTheDocument()
+    expect(itemLinks(wiki)[0]).toHaveTextContent('Tenth page')
+    expect(fetchWiki).toHaveBeenCalledWith(PROJECT_A)
+  })
+
+  it('lists only ACTIVE Experiments, flat and newest first, from fetchExperimentDocs', async () => {
+    vi.mocked(fetchExperimentDocs).mockResolvedValue({
+      experiments: [
+        makeSummary('E0001-oldest', 'ACTIVE', 'Oldest active', {
+          effectiveUpdatedAt: '2026-01-01T00:00:00+08:00',
+          readmeMtime: Date.parse('2026-12-01T00:00:00+08:00'),
+          displayStatus: 'COMPLETED',
+        }),
+        // No effective update time: falls back to the README mtime.
+        makeSummary('E0002-running', 'ACTIVE', 'Newest active', {
+          readmeMtime: Date.parse('2026-03-01T00:00:00+08:00'),
+          displayStatus: 'RUNNING',
+        }),
+        makeSummary('E0003-paused', 'PAUSED', 'Paused work', {
+          effectiveUpdatedAt: '2026-09-01T00:00:00+08:00',
+        }),
+        makeSummary('E0004-archived', 'ARCHIVED', 'Archived work', {
+          effectiveUpdatedAt: '2026-09-01T00:00:00+08:00',
+        }),
+        makeSummary('E0005-retired', 'RETIRED', 'Retired work', {
+          effectiveUpdatedAt: '2026-09-01T00:00:00+08:00',
+        }),
+        // Unreadable metadata is not ACTIVE even when the status says so.
+        makeSummary('E0006-broken', 'ACTIVE', 'Broken work', {
+          effectiveUpdatedAt: '2026-09-01T00:00:00+08:00',
+          parseErrors: [{ message: 'bad front matter' }],
+        }),
+        makeSummary('E0007-legacy', 'OPEN' as never, 'Legacy work', {
+          effectiveUpdatedAt: '2026-09-01T00:00:00+08:00',
+        }),
+        // Untitled: falls back to its id.
+        makeSummary('E0008-untitled', 'ACTIVE', '', {
+          effectiveUpdatedAt: '2026-02-01T00:00:00+08:00',
+        }),
+      ],
+    })
+    const { container } = setup()
+    const experiments = section(await waitFor(() => projectRow(container, ID_A)), 'experiments')
+    await waitFor(() => expect(itemLinks(experiments)).toHaveLength(3))
+    expect(itemHrefs(experiments)).toEqual([
+      '/host-a/project-a/e/2',
+      '/host-a/project-a/e/8',
+      '/host-a/project-a/e/1',
+    ])
+    const [newest, untitled, oldest] = itemLinks(experiments)
+    expect(within(newest!).getByText('E2')).toBeInTheDocument()
+    expect(newest).toHaveTextContent('Newest active')
+    expect(newest).toHaveAttribute('title', 'E0002 · Newest active')
+    expect(untitled).toHaveTextContent('E0008-untitled')
+    expect(oldest).toHaveTextContent('Oldest active')
+    for (const hidden of ['Paused work', 'Archived work', 'Retired work', 'Broken work']) {
+      expect(screen.queryByText(hidden)).toBeNull()
+    }
+    expect(screen.queryByText('Legacy work')).toBeNull()
+    // Flat: no status groups and no group toggles.
+    expect(container.querySelector('[data-experiment-group]')).toBeNull()
+    expect(screen.queryByRole('button', { name: /experiments \(\d+\)/i })).toBeNull()
+    expect(within(experiments).getAllByRole('button')).toHaveLength(1)
+    // Only the docs endpoint is read; the inventory is not.
+    expect(fetchExperimentDocs).toHaveBeenCalledWith(PROJECT_A)
+    expect(fetchExperimentsInventory).not.toHaveBeenCalled()
+  })
+
+  it('shows "No active experiments" when no row is ACTIVE', async () => {
+    vi.mocked(fetchExperimentDocs).mockResolvedValue({
+      experiments: [
+        makeSummary('E0001-paused', 'PAUSED', 'Paused work'),
+        makeSummary('E0002-retired', 'RETIRED', 'Retired work'),
+      ],
+    })
+    const { container } = setup()
+    expect(await screen.findByText('No active experiments')).toBeInTheDocument()
+    expect(container.querySelector('[data-sidebar-item]')).toBeNull()
+  })
+
+  it('renders all 12 ACTIVE experiments (no "View more" cap)', async () => {
+    vi.mocked(fetchExperimentDocs).mockResolvedValue({
+      experiments: Array.from({ length: 12 }, (_, i) =>
+        makeSummary(`E${String(i + 1).padStart(4, '0')}-x${i}`, 'ACTIVE', `Experiment ${i + 1}`, {
+          readmeMtime: i + 1,
+        }),
+      ),
+    })
+    const { container } = setup()
+    await waitFor(() => {
+      const links = container.querySelectorAll('a[data-sidebar-item][href*="/host-a/project-a/e/"]')
+      expect(links.length).toBe(12)
+    })
+    // Confirm no "View more" / "Show fewer" affordance in the DOM.
+    expect(screen.queryByText(/View more/i)).toBeNull()
+    expect(screen.queryByText(/Show fewer/i)).toBeNull()
+  })
+
+  it('marks and reveals the current Experiment on its page', async () => {
+    currentPathname = '/host-a/project-a/e/3'
+    vi.mocked(fetchExperimentDocs).mockResolvedValue({
+      experiments: [
+        makeSummary('E0002-other', 'ACTIVE', 'Other comparison', { readmeMtime: 5 }),
+        makeSummary('E0003-current', 'ACTIVE', 'Current comparison with a readable long title', {
+          readmeMtime: 2,
+        }),
+      ],
+    })
+    const { container } = setup()
+    const current = await screen.findByRole('link', {
+      name: /Current comparison with a readable long title/,
+    })
     expect(current).toHaveAttribute('aria-current', 'page')
-    expect(current).toHaveAttribute('href', '/host-a/project-a/w/2')
-    expect(screen.getByRole('link', { name: /W0001.*First page/ })).not.toHaveAttribute(
+    expect(current).toHaveAttribute('href', '/host-a/project-a/e/3')
+    expect(current).toHaveAttribute(
+      'title',
+      'E0003 · Current comparison with a readable long title',
+    )
+    expect(screen.getByRole('link', { name: /Other comparison/ })).not.toHaveAttribute(
       'aria-current',
     )
     await waitFor(() => expect(revealed).toEqual([current]))
-    const wiki = section(projectRow(container, ID_A), 'wiki')
-    expect(within(wiki).getByRole('button', { name: 'Collapse Wiki' })).toHaveAttribute(
+    const rowA = projectRow(container, ID_A)
+    // On an Experiment page the section link itself is not the current page.
+    expect(
+      within(section(rowA, 'experiments')).getByRole('link', { name: /^Experiments$/ }),
+    ).not.toHaveAttribute('aria-current')
+    // Only the current section is open.
+    expect(within(rowA).getByRole('button', { name: 'Expand Wiki' })).toHaveAttribute(
       'aria-expanded',
-      'true',
+      'false',
     )
-    // The active section is open without being written to storage.
-    expect(storedExpansion()).not.toContain(`${ID_A}#wiki`)
+    expect(fetchWiki).not.toHaveBeenCalled()
+    expect(fetchReports).not.toHaveBeenCalled()
+  })
+
+  it('opens the current section on an item page and reveals the current Wiki page', async () => {
+    currentPathname = '/host-a/project-a/w/2'
+    vi.mocked(fetchWiki).mockResolvedValue({
+      pages: [
+        { id: 'W0001', slug: 'first', title: 'First page', mtime: 1 },
+        { id: 'W0002', slug: 'second', title: 'Second page', mtime: 2 },
+      ],
+    } as never)
+    const { container } = setup()
+    const current = await screen.findByRole('link', { name: /Second page/ })
+    expect(current).toHaveAttribute('aria-current', 'page')
+    expect(current).toHaveAttribute('href', '/host-a/project-a/w/2')
+    expect(screen.getByRole('link', { name: /First page/ })).not.toHaveAttribute('aria-current')
+    await waitFor(() => expect(revealed).toEqual([current]))
+    const rowA = projectRow(container, ID_A)
+    expect(
+      within(section(rowA, 'wiki')).getByRole('button', { name: 'Collapse Wiki' }),
+    ).toHaveAttribute('aria-expanded', 'true')
+    // Experiments is not the current section here, so it stays closed and unread.
+    expect(within(rowA).getByRole('button', { name: 'Expand Experiments' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+    expect(fetchExperimentDocs).not.toHaveBeenCalled()
+    expectNoPersistedExpansion()
   })
 
   it('renders a compact git pill per project row when git status is available', async () => {
@@ -627,7 +803,6 @@ describe('AppSidebar', () => {
     expect(vi.mocked(fetchGitStatusFiles).mock.calls[0]?.[0]).toEqual(PROJECT_B)
     // project-b stayed collapsed: the click did not reach its CollapsibleTrigger.
     expect(rowB.querySelector('[data-slot="sidebar-section"]')).toBeNull()
-    expect(storedExpansion()).not.toContain(ID_B)
   })
 
   it('non-git project: sidebar pill renders bare (no click trigger wrapper)', async () => {
@@ -638,63 +813,59 @@ describe('AppSidebar', () => {
     expect(container.querySelectorAll('[data-slot="git-status-pill-trigger"]').length).toBe(0)
   })
 
-  it('renders all 12 experiments (no "View more" cap)', async () => {
-    const items = Array.from({ length: 12 }, (_, i) =>
-      makeInventoryItem(`E${String(i + 1).padStart(4, '0')}-x${i}`),
-    )
-    vi.mocked(fetchExperimentsInventory).mockResolvedValue({ items })
-    const { container } = setup()
-    await waitFor(() => {
-      const links = container.querySelectorAll('a[href*="/host-a/project-a/e/"]')
-      expect(links.length).toBe(12)
-    })
-    // Confirm no "View more" / "Show fewer" affordance in the DOM.
-    expect(screen.queryByText(/View more/i)).toBeNull()
-    expect(screen.queryByText(/Show fewer/i)).toBeNull()
-  })
-
-  it('off-project routes render restored expansion without reading project items', async () => {
-    // Settings-style route: no project owns it, but storage says project-a and
-    // all of its list sections were left open. Rendering the tree must not
-    // read its items.
+  it('closed projects read no item lists; opening one reads only its open sections', async () => {
+    // Off-project route: nothing is current, so every project starts closed.
     currentPathname = '/manage/file-access'
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify([ID_A, `${ID_A}#experiments`, `${ID_A}#reports`, `${ID_A}#wiki`]),
-    )
-
-    const { container } = setup()
-    const rowA = await waitFor(() => {
-      const row = projectRow(container, ID_A)
-      expect(row.querySelector('[data-slot="sidebar-section"]')).not.toBeNull()
-      return row
+    vi.mocked(fetchExperimentDocs).mockResolvedValue({
+      experiments: [makeSummary('E0001-alpha', 'ACTIVE', 'Alpha')],
     })
-    expect(
-      within(section(rowA, 'experiments')).getByRole('button', { name: 'Collapse Experiments' }),
-    ).toHaveAttribute('aria-expanded', 'true')
-    expect(rowA.querySelector('[data-sidebar-item]')).toBeNull()
+    const { container } = setup()
+    await waitFor(() => expect(projectOrder(container)).toEqual([ID_A, ID_B]))
+    for (const identity of [ID_A, ID_B]) {
+      expect(
+        projectRow(container, identity).querySelector('[data-slot="sidebar-section"]'),
+      ).toBeNull()
+    }
     expect(fetchExperimentDocs).not.toHaveBeenCalled()
     expect(fetchReports).not.toHaveBeenCalled()
     expect(fetchWiki).not.toHaveBeenCalled()
 
-    // Opening a project in this session IS an explicit read intent.
-    vi.mocked(fetchExperimentsInventory).mockResolvedValue({
-      items: [makeInventoryItem('E0001-alpha')],
-    })
+    // Opening a project alone reads nothing: none of its sections is open.
     await userEvent.click(within(projectRow(container, ID_B)).getByText('project-b'))
     const rowB = projectRow(container, ID_B)
+    expect(rowB.querySelector('[data-slot="sidebar-section"]')).not.toBeNull()
+    expect(fetchExperimentDocs).not.toHaveBeenCalled()
+
     await userEvent.click(within(rowB).getByRole('button', { name: 'Expand Experiments' }))
     await userEvent.click(within(rowB).getByRole('button', { name: 'Expand Reports' }))
-    await waitFor(() => expect(within(rowB).getByText('E0001-alpha')).toBeInTheDocument())
+    await waitFor(() => expect(within(rowB).getByText('Alpha')).toBeInTheDocument())
     expect(fetchExperimentDocs).toHaveBeenCalledWith(PROJECT_B)
     expect(fetchReports).toHaveBeenCalledWith(PROJECT_B)
     expect(fetchExperimentDocs).not.toHaveBeenCalledWith(PROJECT_A)
     expect(fetchReports).not.toHaveBeenCalledWith(PROJECT_A)
     expect(fetchWiki).not.toHaveBeenCalled()
-    expect(rowA.querySelector('[data-sidebar-item]')).toBeNull()
+    expect(projectRow(container, ID_A).querySelector('[data-sidebar-item]')).toBeNull()
+
+    // Closing the project hides its items again.
+    await userEvent.click(within(rowB).getByText('project-b'))
+    await waitFor(() => expect(rowB.querySelector('[data-sidebar-item]')).toBeNull())
+    expectNoPersistedExpansion()
   })
 
-  it('central: duplicate Project names retain Host-qualified persistence, fetches, and links', async () => {
+  it('on a project page, the other closed project issues no item reads', async () => {
+    currentPathname = '/host-a/project-a/r/1'
+    vi.mocked(fetchReports).mockResolvedValue({
+      reports: [{ id: 'R0001', slug: 'one', title: 'One', mtime: 1 }] as never,
+    })
+    setup()
+    await screen.findByRole('link', { name: /One/ })
+    expect(fetchReports).toHaveBeenCalledTimes(1)
+    expect(fetchReports).toHaveBeenCalledWith(PROJECT_A)
+    expect(fetchExperimentDocs).not.toHaveBeenCalled()
+    expect(fetchWiki).not.toHaveBeenCalled()
+  })
+
+  it('central: duplicate Project names retain Host-qualified identities, fetches, and links', async () => {
     currentPathname = '/host-a/shared-project/e/1'
     vi.mocked(fetchHosts).mockResolvedValue({
       hosts: [makeHost('host-a'), makeHost('host-b')],
@@ -705,25 +876,30 @@ describe('AppSidebar', () => {
         centralProject('host-b', 'shared-project'),
       ],
     })
-    vi.mocked(fetchExperimentsInventory).mockResolvedValue({
-      items: [makeInventoryItem('E0001-alpha')],
+    vi.mocked(fetchExperimentDocs).mockResolvedValue({
+      experiments: [makeSummary('E0001-alpha', 'ACTIVE', 'Alpha')],
     })
 
     const { container } = setup()
     const hostA = await waitFor(() => {
       const row = projectRow(container, 'h:host-a/p:shared-project')
-      expect(within(row).getByText('E0001-alpha')).toBeInTheDocument()
+      expect(within(row).getByText('Alpha')).toBeInTheDocument()
       return row
     })
     const hostB = projectRow(container, 'h:host-b/p:shared-project')
     expect(hostA.querySelector('[data-slot="sidebar-project-host"]')).toHaveTextContent('host-a')
     expect(hostB.querySelector('[data-slot="sidebar-project-host"]')).toHaveTextContent('host-b')
     expect(hostB.querySelector('[data-slot="sidebar-section"]')).toBeNull()
+    expect(fetchExperimentDocs).not.toHaveBeenCalledWith({
+      host: 'host-b',
+      project: 'shared-project',
+    })
 
     await userEvent.click(within(hostB).getByText('shared-project'))
+    // The same Experiment number on host-b is not current, so its section starts closed.
     await userEvent.click(within(hostB).getByRole('button', { name: 'Expand Experiments' }))
     await waitFor(() => {
-      expect(within(hostB).getByText('E0001-alpha')).toBeInTheDocument()
+      expect(within(hostB).getByText('Alpha')).toBeInTheDocument()
     })
 
     const hostALink = hostA.querySelector('a[href="/host-a/shared-project/e/1"]')
@@ -734,27 +910,12 @@ describe('AppSidebar', () => {
       'href',
       '/host-b/shared-project/journal',
     )
-    expect(fetchExperimentsInventory).toHaveBeenCalledWith({
-      host: 'host-a',
-      project: 'shared-project',
-    })
-    expect(fetchExperimentsInventory).toHaveBeenCalledWith({
-      host: 'host-b',
-      project: 'shared-project',
-    })
     expect(fetchExperimentDocs).toHaveBeenCalledWith({ host: 'host-a', project: 'shared-project' })
     expect(fetchExperimentDocs).toHaveBeenCalledWith({ host: 'host-b', project: 'shared-project' })
+    expect(fetchExperimentsInventory).not.toHaveBeenCalled()
     expect(fetchGitStatus).toHaveBeenCalledWith({ host: 'host-a', project: 'shared-project' })
     expect(fetchGitStatus).toHaveBeenCalledWith({ host: 'host-b', project: 'shared-project' })
-    await waitFor(() => {
-      expect(storedExpansion()).toEqual(
-        expect.arrayContaining([
-          'h:host-b/p:shared-project',
-          'h:host-b/p:shared-project#experiments',
-        ]),
-      )
-    })
-    expect(storedExpansion().some((key) => key.startsWith('h:host-a/'))).toBe(false)
+    expectNoPersistedExpansion()
   })
 
   it('central viewer: lists only Host-qualified scoped projects', async () => {

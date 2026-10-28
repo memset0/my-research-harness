@@ -9,17 +9,14 @@ import {
   FlaskConical,
   Gauge,
   GitPullRequest,
-  GripVertical,
   Loader2,
   NotebookPen,
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  type ExperimentListRow,
   fetchExperimentDocs,
-  fetchExperimentsInventory,
   fetchGitStatus,
   fetchHosts,
   fetchProjects,
@@ -31,12 +28,7 @@ import {
   projectName,
   projectRouteTarget,
 } from '../lib/api'
-import {
-  compareExperimentNavigation,
-  EXPERIMENT_GROUPS,
-  experimentGroup,
-  shortExperimentId,
-} from '../lib/experiment-navigation'
+import { experimentGroup, shortExperimentId } from '../lib/experiment-navigation'
 import {
   artifactNumber,
   type ProjectPage,
@@ -48,14 +40,12 @@ import {
 import { queryKeys } from '../lib/query-keys'
 import { useUserPreferenceState } from '../lib/use-user-preference-state'
 import { cn } from '../lib/utils'
-import { ExperimentNavigationGroup } from './experiment-navigation-group'
 import { GitDiffDialog } from './git-diff-dialog'
 import { GitStatusPill } from './git-status-pill'
 import { HOST_STATUS_PRESENTATION } from './host-status-badge'
 import { useIsDocumentOnlyViewer, useSession } from './session-provider'
 import { SidebarResizeHandle } from './sidebar-resize-handle'
 import { SlurmStatusWidget } from './slurm-status-widget'
-import { ExperimentStatusPill } from './status-pill'
 import { ThemeToggle } from './theme-toggle'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
 import {
@@ -68,8 +58,6 @@ import {
   SidebarMenuItem,
 } from './ui/sidebar'
 
-/** Open projects and sections (`<project identity>` / `<identity>#<section>`), per browser. */
-const STORAGE_KEY = 'memon:sidebar:expanded'
 /** The owner's project order (project identities), synced like other preferences. */
 const PROJECT_ORDER_KEY = 'memon:sidebar:project-order'
 
@@ -110,20 +98,20 @@ interface SectionSpec {
 
 const SECTIONS: SectionSpec[] = [
   {
+    key: 'wiki',
+    name: 'Wiki',
+    icon: BookOpen,
+    page: { kind: 'wiki-list' },
+    pages: ['wiki-list', 'wiki'],
+    expandable: true,
+  },
+  {
     key: 'experiments',
     name: 'Experiments',
     icon: FlaskConical,
     page: { kind: 'overview' },
     pages: ['overview', 'experiments', 'experiment'],
     expandable: true,
-  },
-  {
-    key: 'journal',
-    name: 'Journal',
-    icon: NotebookPen,
-    page: { kind: 'journal' },
-    pages: ['journal'],
-    expandable: false,
   },
   {
     key: 'reports',
@@ -142,12 +130,12 @@ const SECTIONS: SectionSpec[] = [
     expandable: false,
   },
   {
-    key: 'wiki',
-    name: 'Wiki',
-    icon: BookOpen,
-    page: { kind: 'wiki-list' },
-    pages: ['wiki-list', 'wiki'],
-    expandable: true,
+    key: 'journal',
+    name: 'Journal',
+    icon: NotebookPen,
+    page: { kind: 'journal' },
+    pages: ['journal'],
+    expandable: false,
   },
 ]
 
@@ -247,45 +235,17 @@ export function AppSidebar() {
     setDropTarget(null)
   }
 
-  // The active project and section are always open, so the current page is
-  // visible in the tree without any click.
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
-  const [hydrated, setHydrated] = useState(false)
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY)
-      setExpanded(new Set(raw ? (JSON.parse(raw) as string[]) : []))
-    } catch {
-      /* ignore */
-    }
-    setHydrated(true)
-  }, [])
-  useEffect(() => {
-    if (!hydrated) return
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify([...expanded]))
-    } catch {
-      /* ignore */
-    }
-  }, [expanded, hydrated])
+  // Nothing is open by default except the current page's project and
+  // section. Clicks override that for this session only; a project lists its
+  // items only while open, so no page fans out reads to every project.
+  const [overrides, setOverrides] = useState<Map<string, boolean>>(() => new Map())
   const isOpen = (key: string): boolean =>
-    expanded.has(key) ||
+    overrides.get(key) ??
     (active !== null &&
       (key === active.identity ||
         (active.section !== null && key === `${active.identity}#${active.section}`)))
-  // Restored expansion renders the tree without reading project data: only
-  // the active project and projects opened in this session list their items,
-  // so a non-project page never fans out reads to every project.
-  const [requested, setRequested] = useState<Set<string>>(() => new Set())
-  const toggle = (key: string, open: boolean) => {
-    setExpanded((current) => {
-      const next = new Set(current)
-      if (open) next.add(key)
-      else next.delete(key)
-      return next
-    })
-    if (open) setRequested((current) => new Set(current).add(key.split('#')[0]!))
-  }
+  const toggle = (key: string, open: boolean) =>
+    setOverrides((current) => new Map(current).set(key, open))
 
   return (
     <Sidebar>
@@ -313,7 +273,6 @@ export function AppSidebar() {
               active={active?.identity === identity ? active : null}
               open={isOpen(identity)}
               isSectionOpen={(section) => isOpen(`${identity}#${section}`)}
-              readItems={active?.identity === identity || requested.has(identity)}
               onToggle={(open) => toggle(identity, open)}
               onToggleSection={(section, open) => toggle(`${identity}#${section}`, open)}
               onPillClick={() => setDiffDialogProject(target)}
@@ -404,7 +363,6 @@ function ProjectNode({
   active,
   open,
   isSectionOpen,
-  readItems,
   onToggle,
   onToggleSection,
   onPillClick,
@@ -425,7 +383,6 @@ function ProjectNode({
   active: ActiveLocation | null
   open: boolean
   isSectionOpen: (section: SectionKey) => boolean
-  readItems: boolean
   onToggle: (open: boolean) => void
   onToggleSection: (section: SectionKey, open: boolean) => void
   onPillClick: () => void
@@ -452,9 +409,9 @@ function ProjectNode({
       data-slot="sidebar-project"
       data-project={identity}
       className={cn(
-        'rounded-md border border-transparent',
-        dragging && 'opacity-50',
-        dropTarget && 'border-sidebar-primary',
+        'rounded-md',
+        dragging && 'opacity-40',
+        dropTarget && 'ring-1 ring-sidebar-primary/60',
       )}
       onDragOver={(event) => {
         if (!draggable) return
@@ -467,11 +424,11 @@ function ProjectNode({
         onDrop()
       }}
     >
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: pointer drag to reorder; the row's controls stay keyboard reachable */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: the whole row drags to reorder; its controls stay keyboard reachable */}
       <div
         className={cn(
-          'group/project flex h-8 items-center gap-1 rounded-md pr-1 text-sidebar-foreground hover:bg-sidebar-accent',
-          active && 'text-sidebar-primary',
+          'flex h-8 items-center gap-1.5 rounded-md px-2 text-sidebar-foreground transition-colors hover:bg-sidebar-accent',
+          active && 'text-sidebar-accent-foreground',
         )}
         draggable={draggable}
         onDragStart={(event) => {
@@ -481,20 +438,22 @@ function ProjectNode({
         }}
         onDragEnd={onDragEnd}
       >
-        {draggable ? (
-          <GripVertical
-            aria-hidden
-            className="size-3.5 shrink-0 cursor-grab text-muted-foreground/0 group-hover/project:text-muted-foreground/70"
-          />
-        ) : (
-          <span className="w-3.5 shrink-0" />
-        )}
         <CollapsibleTrigger className="flex h-full min-w-0 flex-1 items-center gap-1.5 text-left">
           <ChevronRight
             aria-hidden
-            className={cn('size-3.5 shrink-0 transition-transform', open && 'rotate-90')}
+            className={cn(
+              'size-3.5 shrink-0 text-muted-foreground transition-transform',
+              open && 'rotate-90',
+            )}
           />
-          <span className="min-w-0 flex-1 truncate text-xs font-semibold">{name}</span>
+          <span
+            className={cn(
+              'min-w-0 flex-1 truncate text-[13px] font-medium',
+              active && 'font-semibold',
+            )}
+          >
+            {name}
+          </span>
         </CollapsibleTrigger>
         {hostName && <HostChip host={hostName} availability={host} />}
         {gitEnabled ? (
@@ -503,7 +462,7 @@ function ProjectNode({
             data-slot="git-status-pill-trigger"
             aria-label={`View git diff for ${name}`}
             onClick={onPillClick}
-            className="shrink-0 cursor-pointer rounded px-1 hover:bg-accent hover:text-accent-foreground"
+            className="shrink-0 cursor-pointer rounded hover:bg-accent hover:text-accent-foreground"
           >
             <GitStatusPill project={target} variant="compact" className="shrink-0" />
           </button>
@@ -513,7 +472,7 @@ function ProjectNode({
       </div>
       <CollapsibleContent>
         {showSections && (
-          <SidebarMenu className="gap-0 pb-1 pl-4">
+          <SidebarMenu className="gap-px pt-0.5 pb-2 pl-3.5">
             {SECTIONS.map((section) => (
               <SectionNode
                 key={section.key}
@@ -522,7 +481,7 @@ function ProjectNode({
                 active={active?.section === section.key ? active : null}
                 open={section.expandable && isSectionOpen(section.key)}
                 onToggle={(next) => onToggleSection(section.key, next)}
-                readItems={open && readItems}
+                readItems={open}
               />
             ))}
           </SidebarMenu>
@@ -552,37 +511,38 @@ function SectionNode({
   const Icon = section.icon
   return (
     <SidebarMenuItem data-slot="sidebar-section" data-section={section.key}>
-      <div className="flex items-center">
-        {section.expandable ? (
+      <div className="group/section relative flex items-center">
+        <SidebarMenuButton
+          asChild
+          size="sm"
+          isActive={current}
+          className={cn('min-w-0 flex-1 pr-7', active && !current && 'font-medium')}
+        >
+          <Link href={href} prefetch={false} aria-current={current ? 'page' : undefined}>
+            <Icon className="size-3.5 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate">{section.name}</span>
+          </Link>
+        </SidebarMenuButton>
+        {section.expandable && (
           <button
             type="button"
             aria-label={`${open ? 'Collapse' : 'Expand'} ${section.name}`}
             aria-expanded={open}
             onClick={() => onToggle(!open)}
-            className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            className={cn(
+              'absolute right-1 flex size-5 items-center justify-center rounded text-muted-foreground transition-opacity hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+              !open && 'opacity-0 group-hover/section:opacity-100 focus-visible:opacity-100',
+            )}
           >
             <ChevronRight
               aria-hidden
               className={cn('size-3.5 transition-transform', open && 'rotate-90')}
             />
           </button>
-        ) : (
-          <span className="size-6 shrink-0" />
         )}
-        <SidebarMenuButton
-          asChild
-          size="sm"
-          isActive={current}
-          className={cn('min-w-0 flex-1', active && !current && 'text-sidebar-primary')}
-        >
-          <Link href={href} prefetch={false} aria-current={current ? 'page' : undefined}>
-            <Icon className="size-3.5" />
-            <span className="min-w-0 flex-1 truncate">{section.name}</span>
-          </Link>
-        </SidebarMenuButton>
       </div>
       {open && (
-        <div className="ml-6 border-l border-sidebar-border pl-1">
+        <div className="mt-px mb-1 ml-[0.9rem] flex flex-col gap-px border-l border-sidebar-border pl-2">
           {section.key === 'experiments' && (
             <ExperimentItems
               project={project}
@@ -622,13 +582,13 @@ function useRevealWhenActive(active: boolean) {
 function ItemLink({
   href,
   active,
+  id,
   title,
-  children,
 }: {
   href: string
   active: boolean
+  id: string
   title: string
-  children: ReactNode
 }) {
   const ref = useRevealWhenActive(active)
   return (
@@ -636,31 +596,44 @@ function ItemLink({
       ref={ref}
       href={href}
       prefetch={false}
-      title={title}
+      title={`${id} · ${title}`}
       aria-current={active ? 'page' : undefined}
       data-sidebar-item=""
       className={cn(
-        'block rounded-md px-2 py-1 text-xs leading-snug transition-colors',
+        'flex h-7 min-w-0 items-center gap-1.5 rounded-md px-2 text-xs transition-colors',
         active
-          ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-          : 'text-sidebar-foreground hover:bg-sidebar-accent/50',
+          ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
+          : 'text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground',
       )}
     >
-      {children}
+      <span className="shrink-0 font-mono text-[10px] text-muted-foreground tabular-nums">
+        {id.replace(/^([A-Z])0+(?=\d)/, '$1')}
+      </span>
+      <span className="min-w-0 flex-1 truncate">{title}</span>
     </Link>
   )
 }
 
 function ItemsLoading({ label }: { label: string }) {
   return (
-    <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-sidebar-foreground/50">
+    <div className="flex h-7 items-center px-2 text-sidebar-foreground/50">
       <Loader2 className="size-3.5 animate-spin" aria-label={label} />
     </div>
   )
 }
 
 function ItemsEmpty({ text }: { text: string }) {
-  return <div className="px-2 py-1.5 text-xs text-sidebar-foreground/50">{text}</div>
+  return <div className="flex h-7 items-center px-2 text-xs text-sidebar-foreground/50">{text}</div>
+}
+
+/** Newest first: the declared update time, else the file time. */
+function byRecency<T>(items: readonly T[], time: (item: T) => number): T[] {
+  return [...items].sort((a, b) => time(b) - time(a))
+}
+
+function timeOf(updatedAt: string | null | undefined, mtime: number | undefined): number {
+  const declared = updatedAt ? Date.parse(updatedAt) : Number.NaN
+  return Number.isFinite(declared) ? declared : (mtime ?? 0)
 }
 
 function ReportItems({
@@ -672,35 +645,37 @@ function ReportItems({
   activeNumber: number | null
   enabled: boolean
 }) {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: queryKeys.reports(project),
     queryFn: () => fetchReports(project),
     enabled,
     staleTime: 5_000,
   })
   const target = projectRouteTarget(project)
-  const reports = data?.reports ?? []
+  const reports = useMemo(
+    () => byRecency(data?.reports ?? [], (report) => timeOf(report.updatedAt, report.mtime)),
+    [data],
+  )
   if (!enabled) return null
   if (isLoading && reports.length === 0) return <ItemsLoading label="Loading reports" />
-  if (reports.length === 0) return <ItemsEmpty text="No reports" />
+  if (reports.length === 0)
+    return <ItemsEmpty text={isError ? 'Reports failed to load' : 'No reports'} />
   return (
-    <div className="flex flex-col py-0.5">
+    <>
       {reports.map((report) => {
         const number = artifactNumber(report.id)
         if (number === null) return null
         return (
           <ItemLink
             key={report.id}
+            id={report.id}
             href={projectPagePath(target, { kind: 'report', number })}
             active={number === activeNumber}
-            title={`${report.id} · ${report.title ?? ''}`}
-          >
-            <span className="mr-1.5 font-mono text-[10px] text-muted-foreground">{report.id}</span>
-            <span className="break-words">{report.title ?? report.slug}</span>
-          </ItemLink>
+            title={report.title ?? report.slug}
+          />
         )
       })}
-    </div>
+    </>
   )
 }
 
@@ -713,7 +688,7 @@ function WikiItems({
   activeNumber: number | null
   enabled: boolean
 }) {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: queryKeys.wiki(project),
     queryFn: () => fetchWiki(project),
     enabled,
@@ -721,34 +696,33 @@ function WikiItems({
   })
   const target = projectRouteTarget(project)
   const pages = useMemo(
-    () => [...(data?.pages ?? [])].sort((a, b) => a.id.localeCompare(b.id)),
+    () => byRecency(data?.pages ?? [], (page) => timeOf(page.updatedAt, page.mtime)),
     [data],
   )
   if (!enabled) return null
   if (isLoading && pages.length === 0) return <ItemsLoading label="Loading wiki pages" />
-  if (pages.length === 0) return <ItemsEmpty text="No wiki pages" />
+  if (pages.length === 0)
+    return <ItemsEmpty text={isError ? 'Wiki failed to load' : 'No wiki pages'} />
   return (
-    <div className="flex flex-col py-0.5">
+    <>
       {pages.map((page) => {
         const number = artifactNumber(page.id)
         if (number === null) return null
         return (
           <ItemLink
             key={page.id}
+            id={page.id}
             href={projectPagePath(target, { kind: 'wiki', number })}
             active={number === activeNumber}
-            title={`${page.id} · ${page.title}`}
-          >
-            <span className="mr-1.5 font-mono text-[10px] text-muted-foreground">{page.id}</span>
-            <span className="break-words">{page.title}</span>
-          </ItemLink>
+            title={page.title}
+          />
         )
       })}
-    </div>
+    </>
   )
 }
 
-/** Status-grouped Experiments; list summaries fill in over the identity-only inventory. */
+/** Active Experiments only, newest first; other statuses live on the Experiments page. */
 function ExperimentItems({
   project,
   activeNumber,
@@ -758,87 +732,40 @@ function ExperimentItems({
   activeNumber: number | null
   enabled: boolean
 }) {
-  const { data: inventory, isLoading } = useQuery({
-    queryKey: queryKeys.experimentsInventory(project),
-    queryFn: () => fetchExperimentsInventory(project),
-    enabled,
-    staleTime: 5_000,
-  })
-  const { data: summaries, isLoading: summariesLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: queryKeys.experiments(project),
     queryFn: () => fetchExperimentDocs(project),
     enabled,
     retry: false,
   })
-  const docs = useMemo(() => {
-    const rows = new Map<string, { id: string; summary?: ExperimentListRow }>()
-    for (const item of inventory?.items ?? []) rows.set(item.id, { id: item.id })
-    for (const summary of summaries?.experiments ?? [])
-      rows.set(summary.id, { id: summary.id, summary })
-    return [...rows.values()]
-  }, [inventory?.items, summaries?.experiments])
   const target = projectRouteTarget(project)
+  const experiments = useMemo(
+    () =>
+      byRecency(
+        (data?.experiments ?? []).filter((row) => experimentGroup(row) === 'ACTIVE'),
+        (row) => timeOf(row.effectiveUpdatedAt, row.readmeMtime),
+      ),
+    [data],
+  )
   if (!enabled) return null
-  if ((isLoading || summariesLoading) && docs.length === 0)
-    return <ItemsLoading label="Loading experiments" />
-  if (docs.length === 0) return <ItemsEmpty text="No experiments" />
+  if (isLoading && experiments.length === 0) return <ItemsLoading label="Loading experiments" />
+  if (experiments.length === 0)
+    return <ItemsEmpty text={isError ? 'Experiments failed to load' : 'No active experiments'} />
   return (
-    <div>
-      {EXPERIMENT_GROUPS.map((group) => {
-        const members = docs
-          .filter((row) => experimentGroup(row.summary) === group.key)
-          .sort((a, b) =>
-            group.key !== 'UNKNOWN' && a.summary && b.summary
-              ? compareExperimentNavigation(a.summary, b.summary)
-              : a.id.localeCompare(b.id),
-          )
-        if (!members.length) return null
+    <>
+      {experiments.map((row) => {
+        const number = artifactNumber(row.id)
+        if (number === null) return null
         return (
-          <ExperimentNavigationGroup
-            key={`${sidebarProjectIdentity(project)}:${group.key}`}
-            group={group}
-            count={members.length}
-            compact
-            forceOpen={members.some((row) => artifactNumber(row.id) === activeNumber)}
-          >
-            <div className="flex flex-col">
-              {members.map(({ id, summary }) => {
-                const number = artifactNumber(id)
-                const title = summary?.frontMatter.title || id
-                const known = experimentGroup(summary) !== 'UNKNOWN'
-                return (
-                  <ItemLink
-                    key={id}
-                    href={
-                      number === null
-                        ? projectPagePath(target, { kind: 'overview' })
-                        : projectPagePath(target, { kind: 'experiment', number })
-                    }
-                    active={number !== null && number === activeNumber}
-                    title={`${id} · ${title}`}
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="font-mono text-[10px] text-muted-foreground">
-                        {shortExperimentId(id)}
-                      </span>
-                      {known && summary ? (
-                        <ExperimentStatusPill
-                          status={summary.displayStatus ?? summary.frontMatter.status}
-                          archived={summary.frontMatter.archived}
-                          className="px-1 py-0 text-[9px]"
-                        />
-                      ) : (
-                        <span className="text-[9px] text-muted-foreground">Unknown</span>
-                      )}
-                    </div>
-                    <div className="line-clamp-2 break-words">{title}</div>
-                  </ItemLink>
-                )
-              })}
-            </div>
-          </ExperimentNavigationGroup>
+          <ItemLink
+            key={row.id}
+            id={shortExperimentId(row.id)}
+            href={projectPagePath(target, { kind: 'experiment', number })}
+            active={number === activeNumber}
+            title={row.frontMatter.title || row.id}
+          />
         )
       })}
-    </div>
+    </>
   )
 }

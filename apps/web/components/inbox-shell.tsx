@@ -34,17 +34,17 @@ import { cn } from '../lib/utils'
 import {
   ContentBadges,
   ContentFilters,
-  ContentMetadata,
   ContentPresentation,
   emptyContentFilter,
   matchesContentFilter,
   ServiceAvailability,
 } from './content-presentation'
 import { DocumentArtifactLinkProvider } from './document-artifact-link-provider'
+import { DocumentHeader } from './document-header'
 import { FrontmatterPanel } from './frontmatter-panel'
 import { Markdown } from './markdown'
 import { ReadmeMonaco } from './readme-monaco'
-import { ReportHtmlZoomProvider } from './report-html-embed'
+import { ReportHtmlHostContext, ReportHtmlZoomProvider } from './report-html-embed'
 import { useIsDocumentOnlyViewer } from './session-provider'
 import { ListSkeleton } from './skeletons'
 import { TimestampLocal } from './timestamp'
@@ -394,6 +394,7 @@ function SelectedItemPane({
   const documentOnly = useIsDocumentOnlyViewer()
   const editable = kind === 'reports'
   const [editing, setEditing] = useState(false)
+  const [toolbarSlot, setToolbarSlot] = useState<HTMLElement | null>(null)
 
   if (isLoading && !data) {
     return (
@@ -425,36 +426,68 @@ function SelectedItemPane({
     )
   }
 
-  return (
-    <div className="flex h-full flex-col">
-      <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b bg-background/95 px-4 py-2 backdrop-blur">
-        <div className="flex min-w-0 items-center gap-2">
-          <div className="flex min-w-0 items-baseline gap-2 text-xs">
-            <SelectedArtifactIdentity
-              kind={kind}
+  // An HTML or service Report is one embed: no editor, no padding, and the
+  // embed's controls sit in the header.
+  const isApp =
+    !data.contentError && (data.presentation === 'html' || data.presentation === 'service')
+  const identity = (
+    <>
+      <SelectedArtifactIdentity
+        kind={kind}
+        project={project}
+        data={data}
+        items={items}
+        itemsLoading={itemsLoading}
+        quickSwitchEnabled={!documentOnly}
+      />
+      <span className="text-muted-foreground/60">·</span>
+      <TimestampLocal value={new Date(data.mtime).toISOString()} />
+    </>
+  )
+  const header = (
+    <DocumentHeader
+      identity={identity}
+      content={data}
+      project={project}
+      kind="report"
+      id={selectedId}
+      actions={
+        isApp ? (
+          <div ref={setToolbarSlot} className="flex items-center" data-embed-toolbar-slot="" />
+        ) : editable ? (
+          <Button
+            size="sm"
+            variant={editing ? 'secondary' : 'outline'}
+            onClick={() => setEditing((v) => !v)}
+          >
+            {editing ? <X className="size-3.5" /> : <Pencil className="size-3.5" />}
+            {editing ? 'Cancel' : 'Edit'}
+          </Button>
+        ) : null
+      }
+    />
+  )
+  if (isApp)
+    return (
+      <div className="flex h-full flex-col">
+        {header}
+        <div className="flex min-h-0 flex-1 flex-col" data-inbox-reading-surface={kind}>
+          <ReportHtmlHostContext.Provider value={{ toolbarSlot }}>
+            <ContentPresentation
+              content={data}
               project={project}
-              data={data}
-              items={items}
-              itemsLoading={itemsLoading}
-              quickSwitchEnabled={!documentOnly}
+              kind="report"
+              id={selectedId}
+              expandInUrl
             />
-            <span className="text-muted-foreground/60">·</span>
-            <TimestampLocal value={new Date(data.mtime).toISOString()} />
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {editable ? (
-            <Button
-              size="sm"
-              variant={editing ? 'secondary' : 'outline'}
-              onClick={() => setEditing((v) => !v)}
-            >
-              {editing ? <X className="size-3.5" /> : <Pencil className="size-3.5" />}
-              {editing ? 'Cancel' : 'Edit'}
-            </Button>
-          ) : null}
+          </ReportHtmlHostContext.Provider>
         </div>
       </div>
+    )
+
+  return (
+    <div className="flex h-full flex-col">
+      {header}
       <div className={cn('flex flex-1 overflow-hidden', editing ? 'md:divide-x' : '')}>
         <div
           className={cn(
@@ -595,7 +628,6 @@ export function RenderedItem({
   )
     return (
       <div>
-        <ContentMetadata content={metadata} />
         <ContentPresentation
           content={metadata}
           project={project}
@@ -607,7 +639,6 @@ export function RenderedItem({
     )
   const rendered = (
     <>
-      {metadata && <ContentMetadata content={metadata} />}
       {frontmatter && (
         <FrontmatterPanel
           data={frontmatter}

@@ -164,6 +164,70 @@ describe('InboxShell report index — card grid', () => {
 })
 
 describe('InboxShell selected Report', () => {
+  it('keeps metadata in the header behind Details and edits only Markdown Reports', async () => {
+    vi.mocked(fetchReports).mockResolvedValue({ reports: [FIRST] as never })
+    vi.mocked(fetchReport).mockResolvedValue({
+      ...FIRST,
+      hash: 'h1',
+      content: '# First\nBody text.',
+      format: 'markdown',
+      category: 'analysis',
+      freshness: 'CURRENT',
+      asOf: '2026-10-01T12:00:00+08:00',
+    } as never)
+    const { container } = renderWithQuery(
+      <InboxShell kind="reports" project={PROJECT} selectedId="R0001" />,
+    )
+    await screen.findByText(/Body text\./)
+    const header = container.querySelector('[data-document-header]') as HTMLElement
+    expect(within(header).getByText('analysis')).toBeInTheDocument()
+    expect(within(header).getByRole('button', { name: 'Edit' })).toBeInTheDocument()
+    expect(screen.queryByText(/Evidence as of/)).toBeNull()
+    await userEvent.click(within(header).getByRole('button', { name: 'Details' }))
+    expect(within(header).getByText(/Evidence as of/)).toBeInTheDocument()
+  })
+
+  it('gives an HTML Report the whole body and its embed controls the header', async () => {
+    vi.mocked(fetchReports).mockResolvedValue({ reports: [FIRST] as never })
+    vi.mocked(fetchReport).mockResolvedValue({
+      ...FIRST,
+      hash: 'h1',
+      content: '{}',
+      format: 'bundle',
+      presentation: 'html',
+    } as never)
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response('<!doctype html>', { headers: { 'content-type': 'text/html' } }),
+        ),
+    )
+    const { container } = renderWithQuery(
+      <InboxShell kind="reports" project={PROJECT} selectedId="R0001" />,
+    )
+    const header = await waitFor(() => {
+      const node = container.querySelector<HTMLElement>('[data-document-header]')
+      expect(node).not.toBeNull()
+      return node!
+    })
+    expect(within(header).queryByRole('button', { name: 'Edit' })).toBeNull()
+    await waitFor(() =>
+      expect(
+        within(header.querySelector('[data-embed-toolbar-slot]') as HTMLElement).getByRole(
+          'button',
+          { name: 'Expand' },
+        ),
+      ).toBeInTheDocument(),
+    )
+    expect(container.querySelector('[data-report-html-wrapper]')).toHaveAttribute(
+      'data-hosted',
+      'true',
+    )
+    vi.unstubAllGlobals()
+  })
+
   it('fills the main area with the Report and offers the quick switch in its header', async () => {
     vi.mocked(fetchReports).mockResolvedValue({ reports: [FIRST, SECOND] as never })
     vi.mocked(fetchReport).mockResolvedValue({

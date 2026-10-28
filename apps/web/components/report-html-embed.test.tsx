@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   REPORT_HTML_CHANGE_POLL_MS,
   ReportHtmlEmbed,
+  ReportHtmlHostContext,
   ReportHtmlZoomProvider,
 } from './report-html-embed'
 
@@ -171,6 +172,30 @@ describe('<ReportHtmlEmbed>', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Expand' }))
     expect(wrapper).toHaveAttribute('data-expanded', 'true')
     expect(screen.getByTitle('Live app')).toBe(iframe)
+  })
+
+  it('fills a hosting page and puts its controls in the host toolbar until expanded', () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response()))
+    const slot = document.createElement('div')
+    document.body.append(slot)
+    const { container } = render(
+      <ReportHtmlHostContext.Provider value={{ toolbarSlot: slot }}>
+        <ReportHtmlEmbed src="/api/content-services/h/p/report/R0010/" title="Live app" live />
+      </ReportHtmlHostContext.Provider>,
+    )
+    const wrapper = container.querySelector('[data-report-html-wrapper]') as HTMLElement
+    expect(wrapper).toHaveAttribute('data-hosted', 'true')
+    expect(wrapper).toHaveClass('h-full', 'border-0')
+    // The controls live in the host slot; the embed renders no title bar.
+    expect(within(slot).getByRole('button', { name: 'Expand' })).toBeInTheDocument()
+    expect(within(wrapper).queryByRole('button', { name: 'Expand' })).toBeNull()
+    expect(within(wrapper).queryByText('Live app')).toBeNull()
+
+    fireEvent.click(within(slot).getByRole('button', { name: 'Expand' }))
+    expect(wrapper).toHaveAttribute('data-expanded', 'true')
+    expect(within(wrapper).getByRole('button', { name: 'Exit expanded view' })).toBeInTheDocument()
+    expect(within(slot).queryByRole('button', { name: 'Exit expanded view' })).toBeNull()
+    slot.remove()
   })
 
   it('changes iframe zoom in ten-percent steps and clamps the supported range', async () => {

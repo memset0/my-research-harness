@@ -52,17 +52,17 @@ import { cn } from '../lib/utils'
 import { wikiKinds } from '../lib/wiki-kinds'
 import {
   ContentFilters,
-  ContentMetadata,
   ContentPresentation,
   emptyContentFilter,
   matchesContentFilter,
   ServiceAvailability,
 } from './content-presentation'
 import { DocumentArtifactLinkProvider } from './document-artifact-link-provider'
+import { DocumentHeader } from './document-header'
 import { FrontmatterPanel } from './frontmatter-panel'
 import { Markdown } from './markdown'
 import { ReadmeMonaco } from './readme-monaco'
-import { ReportHtmlZoomProvider } from './report-html-embed'
+import { ReportHtmlHostContext, ReportHtmlZoomProvider } from './report-html-embed'
 import { useIsDocumentOnlyViewer, useIsOwner } from './session-provider'
 import { ListSkeleton } from './skeletons'
 import { TimestampLocal } from './timestamp'
@@ -429,6 +429,7 @@ function WikiSelectedPane({
   const documentOnly = useIsDocumentOnlyViewer()
   const [editing, setEditing] = useState(false)
   const [widthLimited, setWidthLimited] = useState(true)
+  const [toolbarSlot, setToolbarSlot] = useState<HTMLElement | null>(null)
   const notFound = (error as (Error & { status?: number }) | null)?.status === 404
 
   if (isLoading && !page) {
@@ -464,44 +465,84 @@ function WikiSelectedPane({
     headingIdPrefix: `wiki-${page.id}`,
   })
 
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 border-b bg-background/95 px-4 py-2 backdrop-blur">
-        <div className="flex min-w-0 items-center gap-2">
-          <div className="flex min-w-0 items-baseline gap-2 text-xs">
-            <WikiIdentity
+  // An HTML or service page is one embed: no editor or width toggle, no
+  // padding, and the embed's controls sit in the header.
+  const isApp =
+    !page.contentError && (page.presentation === 'html' || page.presentation === 'service')
+  const header = (
+    <DocumentHeader
+      identity={
+        <>
+          <WikiIdentity
+            project={project}
+            page={page}
+            pages={pages}
+            pagesLoading={pagesLoading}
+            quickSwitchEnabled={!documentOnly}
+          />
+          <span className="text-muted-foreground/60">·</span>
+          <TimestampLocal value={page.updatedAt} />
+        </>
+      }
+      content={page}
+      project={project}
+      kind="wiki"
+      id={page.id}
+      actions={
+        isApp ? (
+          <div ref={setToolbarSlot} className="flex items-center" data-embed-toolbar-slot="" />
+        ) : (
+          <>
+            <WikiKindHelp />
+            <Button
+              size="sm"
+              variant="outline"
+              aria-label="Limit reading width to 800px"
+              aria-pressed={widthLimited}
+              title={widthLimited ? 'Use full width' : 'Limit reading width to 800px'}
+              onClick={() => setWidthLimited((value) => !value)}
+            >
+              {widthLimited ? '800px' : 'Full width'}
+            </Button>
+            <Button
+              size="sm"
+              variant={editing ? 'secondary' : 'outline'}
+              onClick={() => setEditing((value) => !value)}
+            >
+              {editing ? <X className="size-3.5" /> : <Pencil className="size-3.5" />}
+              {editing ? 'Cancel' : 'Edit'}
+            </Button>
+          </>
+        )
+      }
+    />
+  )
+  if (isApp)
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        {header}
+        <div className="flex min-h-0 flex-1 flex-col" data-wiki-reading-surface="">
+          {page.diagnostics.length > 0 && (
+            <div className="px-4 pt-3">
+              <WikiDiagnosticsBlock diagnostics={page.diagnostics} />
+            </div>
+          )}
+          <ReportHtmlHostContext.Provider value={{ toolbarSlot }}>
+            <ContentPresentation
+              content={page}
               project={project}
-              page={page}
-              pages={pages}
-              pagesLoading={pagesLoading}
-              quickSwitchEnabled={!documentOnly}
+              kind="wiki"
+              id={page.id}
+              expandInUrl
             />
-            <span className="text-muted-foreground/60">·</span>
-            <TimestampLocal value={page.updatedAt} />
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <WikiKindHelp />
-          <Button
-            size="sm"
-            variant="outline"
-            aria-label="Limit reading width to 800px"
-            aria-pressed={widthLimited}
-            title={widthLimited ? 'Use full width' : 'Limit reading width to 800px'}
-            onClick={() => setWidthLimited((value) => !value)}
-          >
-            {widthLimited ? '800px' : 'Full width'}
-          </Button>
-          <Button
-            size="sm"
-            variant={editing ? 'secondary' : 'outline'}
-            onClick={() => setEditing((value) => !value)}
-          >
-            {editing ? <X className="size-3.5" /> : <Pencil className="size-3.5" />}
-            {editing ? 'Cancel' : 'Edit'}
-          </Button>
+          </ReportHtmlHostContext.Provider>
         </div>
       </div>
+    )
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {header}
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div
@@ -692,7 +733,6 @@ export function WikiDocumentView({
   if (page.presentation === 'html' || page.presentation === 'service' || page.contentError) {
     return (
       <div>
-        <ContentMetadata content={page} />
         <WikiDiagnosticsBlock diagnostics={page.diagnostics} />
         <ContentPresentation
           content={page}
@@ -729,7 +769,6 @@ export function WikiDocumentView({
         </div>
       )}
 
-      <ContentMetadata content={page} />
       {frontmatter && <FrontmatterPanel data={frontmatter} timestampKeys={WIKI_TIMESTAMP_KEYS} />}
 
       <WikiDiagnosticsBlock diagnostics={page.diagnostics} />

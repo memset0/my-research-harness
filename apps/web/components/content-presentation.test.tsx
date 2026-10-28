@@ -17,7 +17,8 @@ const embedProps: Array<{
   expanded?: boolean
   onExpandedChange?: (value: boolean) => void
 }> = []
-vi.mock('./report-html-embed', () => ({
+vi.mock('./report-html-embed', async () => ({
+  ReportHtmlHostContext: (await import('react')).createContext(null),
   ReportHtmlZoomProvider: ({ children }: { children: React.ReactNode }) => children,
   ReportHtmlEmbed: (props: {
     src: string

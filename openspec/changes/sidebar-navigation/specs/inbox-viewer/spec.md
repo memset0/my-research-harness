@@ -8,6 +8,14 @@ With no Report selected, the Report page SHALL show a heading with the Report co
 - **WHEN** the user selects freshness STALE on `/<host>/<project>/reports`
 - **THEN** only STALE Reports remain as cards and the heading shows `<matching> / <total>`
 
+### Requirement: Document header carries metadata and HTML controls
+
+A selected Report SHALL show one sticky header line with its identity, time and content badges and a Details toggle; expanding it SHALL show the stale reason, evidence cutoff, source revisions and, for a service Report, its availability with Check again and Open application. The body SHALL NOT repeat this metadata. An HTML or service Report SHALL offer no Edit action; its embed SHALL fill the body without padding or frame, and its controls (status, zoom, Reload, Open in new tab, Expand) SHALL sit at the right of the header, returning inside the full-screen layer while expanded.
+
+#### Scenario: A live Report
+- **WHEN** the owner opens a service Report whose application is reachable
+- **THEN** the application fills the body, its controls sit in the header, and Details shows its availability actions
+
 ## REMOVED Requirements
 
 ### Requirement: Desktop Report picker visibility persists across visits

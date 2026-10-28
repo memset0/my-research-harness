@@ -3,11 +3,11 @@
 import type { ContentFields } from '@memon/core'
 import { useQuery } from '@tanstack/react-query'
 import { Clock, LayoutTemplate, type LucideIcon, Tag } from 'lucide-react'
-import { useState } from 'react'
+import { useContext, useState } from 'react'
 import { type ProjectTarget, projectHost, projectName } from '../lib/api'
 import { queryKeys } from '../lib/query-keys'
 import { useExpandedInUrl } from './expanded-view'
-import { ReportHtmlEmbed, ReportHtmlZoomProvider } from './report-html-embed'
+import { ReportHtmlEmbed, ReportHtmlHostContext, ReportHtmlZoomProvider } from './report-html-embed'
 import { useIsOwner } from './session-provider'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
@@ -100,6 +100,97 @@ export function ContentBadges({ content }: { content: ContentFields }) {
     </span>
   )
 }
+/** Whether a document has metadata beyond its badges for the header's details. */
+export function hasContentDetails(content: ContentFields): boolean {
+  return Boolean(
+    (content.freshness === 'STALE' && content.staleReason) ||
+      content.asOf ||
+      content.sourceCommits ||
+      content.presentation === 'service',
+  )
+}
+
+/**
+ * The expanded header details of a Report or Wiki page: stale reason,
+ * evidence cutoff, source revisions and, for a live application, its
+ * availability with Check again / Open application.
+ */
+export function ContentDetails({
+  content,
+  project,
+  kind,
+  id,
+}: {
+  content: ContentFields
+  project: ProjectTarget
+  kind: 'wiki' | 'report'
+  id: string
+}) {
+  return (
+    <div className="space-y-2 text-xs text-muted-foreground" data-content-details>
+      {content.freshness === 'STALE' && content.staleReason && <p>{content.staleReason}</p>}
+      {content.asOf && (
+        <p>
+          Evidence as of <time dateTime={content.asOf}>{content.asOf}</time>
+        </p>
+      )}
+      {content.sourceCommits && (
+        <details>
+          <summary className="cursor-pointer">Source revisions</summary>
+          <ul className="mt-2 space-y-1">
+            {Object.entries(content.sourceCommits).map(([repo, sha]) => (
+              <li key={repo} className="break-all">
+                <span>{repo}</span> · <code>{sha}</code>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {content.presentation === 'service' && (
+        <ServiceControls
+          project={project}
+          kind={kind}
+          id={id}
+          entry={content.contentEntry ?? './'}
+        />
+      )}
+    </div>
+  )
+}
+
+function ServiceControls({
+  project,
+  kind,
+  id,
+  entry,
+}: {
+  project: ProjectTarget
+  kind: 'wiki' | 'report'
+  id: string
+  entry: string
+}) {
+  const health = useAvailability(project, kind, id, true)
+  const prefix = contentUrl(project, kind, id, 'content-services')
+  return (
+    <div className="flex flex-wrap items-center gap-2" data-service-controls>
+      <Badge variant="outline">
+        {health.isFetching ? 'Checking' : health.isError ? 'Unavailable' : 'Reachable'}
+      </Badge>
+      <Button size="sm" variant="outline" className="h-7" onClick={() => health.refetch()}>
+        Check again
+      </Button>
+      <Button size="sm" variant="ghost" className="h-7" asChild>
+        <a href={prefix + entry.replace(/^\.\//, '')} target="_blank" rel="noreferrer">
+          Open application ↗
+        </a>
+      </Button>
+      <span className="min-w-0 break-all">
+        Base URL <code>{prefix}</code>
+      </span>
+    </div>
+  )
+}
+
 export function ContentMetadata({ content }: { content: ContentFields }) {
   return (
     <div className="mb-3 space-y-2 text-xs text-muted-foreground" data-content-metadata>
@@ -263,6 +354,8 @@ function LiveContent({
   // Viewers reach the service only through a service link; the health check
   // tells whether this browser holds one.
   const owner = useIsOwner()
+  // A hosting page shows availability and actions in its header details.
+  const hosted = useContext(ReportHtmlHostContext) !== null
   const health = useAvailability(project, kind, id, true)
   const prefix = contentUrl(project, kind, id, 'content-services')
   const url = prefix + entry.replace(/^\.\//, '')
@@ -274,6 +367,31 @@ function LiveContent({
     )
   if (!owner && !health.data && !health.isError)
     return <p className="text-sm text-muted-foreground">Checking service…</p>
+  const embed = expandInUrl ? (
+    <UrlExpandedEmbed src={url} title={`${id} live application`} live />
+  ) : (
+    <ReportHtmlEmbed src={url} title={`${id} live application`} live />
+  )
+  if (hosted)
+    return health.data ? (
+      <ReportHtmlZoomProvider>{embed}</ReportHtmlZoomProvider>
+    ) : (
+      <div className="space-y-3 p-4 text-sm text-muted-foreground md:p-6" data-live-content>
+        {health.isError ? (
+          <>
+            <p>
+              Start the application on the declared port of the experiment machine, then retry.
+              memon forwards traffic and does not start the service.
+            </p>
+            <Button size="sm" variant="outline" onClick={() => health.refetch()}>
+              Check again
+            </Button>
+          </>
+        ) : (
+          <p>Checking service…</p>
+        )}
+      </div>
+    )
   return (
     <div className="space-y-3" data-live-content>
       <div className="flex flex-wrap items-center gap-2 text-xs">

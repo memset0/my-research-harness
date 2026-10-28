@@ -1,6 +1,17 @@
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+// Release builds may skip Next's own type check and lint: the commit already
+// passed the repository-wide typecheck and Biome hooks.
+const skipBuildChecks = process.env.MEMON_SKIP_BUILD_CHECKS === '1'
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Trace from the monorepo root, never from a stray lockfile further up.
+  outputFileTracingRoot: join(dirname(fileURLToPath(import.meta.url)), '../..'),
+  typescript: { ignoreBuildErrors: skipBuildChecks },
+  eslint: { ignoreDuringBuilds: skipBuildChecks },
   // Production browser artifacts must not expose server-only registry/config
   // source through source maps.
   productionBrowserSourceMaps: false,
