@@ -38,6 +38,7 @@ import { remarkCallouts } from '../lib/markdown-callouts'
 import { markdownHeadingSlug, normalizeHeadingIdPrefix } from '../lib/markdown-outline'
 import { handleFragmentClick } from '../lib/scroll-to-fragment'
 import { cn } from '../lib/utils'
+import { CodeBlock } from './code-block'
 import { ComponentBlockView } from './components'
 import { GithubPermalinkPreview, isGithubBlobPermalink } from './github-permalink-preview'
 import { MarkdownCalloutTitle } from './markdown-callout-title'
@@ -319,7 +320,7 @@ export function Markdown({
       pre: ({ node, children: preChildren, ...rest }) => {
         const block = componentBlockFromPre(node)
         if (block) return <ComponentBlockView block={block} document={document} />
-        return <pre {...rest}>{preChildren}</pre>
+        return <CodeBlock {...rest}>{preChildren}</CodeBlock>
       },
     }),
     [activeArtifactLinks, document, project, resourceBaseUrl, translationSegments],

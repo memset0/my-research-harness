@@ -1,4 +1,5 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ArtifactInventory, ArtifactTarget } from '../lib/artifact-links'
 import { resolveDocumentResourceUrl } from '../lib/document-resource-url'
@@ -478,5 +479,16 @@ describe('<Markdown> raw HTML with inline styles', () => {
     expect(span).not.toBeNull()
     expect(span?.getAttribute('style')).toBeTruthy()
     expect(span!.getAttribute('style')).toMatch(/color/)
+  })
+})
+
+describe('Markdown code blocks', () => {
+  it('copies the plain text of a fenced block', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    render(<Markdown>{'```python\nprint("a")\nprint("b")\n```'}</Markdown>)
+    await userEvent.click(screen.getByRole('button', { name: 'Copy all' }))
+    expect(writeText).toHaveBeenCalledWith('print("a")\nprint("b")\n')
+    expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument()
   })
 })
