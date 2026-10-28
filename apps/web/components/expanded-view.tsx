@@ -10,7 +10,8 @@
 // embed's own Expand.
 
 import { useSearchParams } from 'next/navigation'
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
+import { embedFrameSrc, pageUrlForFrame } from '../lib/embed-location'
 
 export function useExpandedInUrl(): {
   expanded: boolean
@@ -25,4 +26,27 @@ export function useExpandedInUrl(): {
     window.history.replaceState(null, '', url)
   }, [])
   return { expanded, setExpanded }
+}
+
+/**
+ * Mirror an embedded document's location (`view` parameter and fragment) in
+ * the page URL: the frame starts where the page URL points, and in-document
+ * navigation replaces the page URL the same way `expanded` does.
+ */
+export function useEmbedLocationInUrl(src: string): {
+  frameSrc: string
+  onFrameLocation: (href: string) => void
+} {
+  // Fixed for the mounted frame: a changing src attribute would reload it.
+  const [frameSrc] = useState(() =>
+    typeof window === 'undefined' ? src : embedFrameSrc(src, new URL(window.location.href)),
+  )
+  const onFrameLocation = useCallback(
+    (href: string) => {
+      const next = pageUrlForFrame(src, href, new URL(window.location.href))
+      if (next && next.href !== window.location.href) window.history.replaceState(null, '', next)
+    },
+    [src],
+  )
+  return { frameSrc, onFrameLocation }
 }

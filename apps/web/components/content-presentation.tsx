@@ -6,7 +6,7 @@ import { Clock, LayoutTemplate, type LucideIcon, Tag } from 'lucide-react'
 import { useContext, useState } from 'react'
 import { type ProjectTarget, projectHost, projectName } from '../lib/api'
 import { queryKeys } from '../lib/query-keys'
-import { useExpandedInUrl } from './expanded-view'
+import { useEmbedLocationInUrl, useExpandedInUrl } from './expanded-view'
 import { ReportHtmlEmbed, ReportHtmlHostContext, ReportHtmlZoomProvider } from './report-html-embed'
 import { useIsOwner } from './session-provider'
 import { Badge } from './ui/badge'
@@ -318,9 +318,12 @@ export function ContentPresentation({
 
 function UrlExpandedEmbed({ src, title, live }: { src: string; title: string; live?: boolean }) {
   const { expanded, setExpanded } = useExpandedInUrl()
+  const { frameSrc, onFrameLocation } = useEmbedLocationInUrl(src)
   return (
     <ReportHtmlEmbed
       src={src}
+      frameSrc={frameSrc}
+      onFrameLocation={onFrameLocation}
       title={title}
       live={live}
       expanded={expanded}

@@ -100,6 +100,17 @@ export interface ReportHtmlEmbedProps {
    */
   expanded?: boolean
   onExpandedChange?: (expanded: boolean) => void
+  /**
+   * Where the frame first navigates (a location inside `src`'s document,
+   * e.g. restored from the page URL). Defaults to `src`, which alone is probed.
+   */
+  frameSrc?: string
+  /**
+   * Called with the frame's location after every same-origin navigation:
+   * loads, fragment changes and History API updates. The page fragment, when
+   * it changes, is applied back to the frame.
+   */
+  onFrameLocation?: (href: string) => void
 }
 
 /**
@@ -118,6 +129,8 @@ export function ReportHtmlEmbed({
   live = false,
   expanded,
   onExpandedChange,
+  frameSrc,
+  onFrameLocation,
 }: ReportHtmlEmbedProps) {
   const inline = typeof srcDoc === 'string'
   const documentId = inline ? 'srcdoc' : (src ?? '')
@@ -275,6 +288,73 @@ export function ReportHtmlEmbed({
     }
   }, [hasApproachedViewport, phase])
 
+  // The frame's own location (same-origin only), reported after every load,
+  // fragment change and History API update; a Reload resumes from it.
+  const frameHrefRef = useRef<string | null>(null)
+  const onFrameLocationRef = useRef(onFrameLocation)
+  onFrameLocationRef.current = onFrameLocation
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a reload (iframeAttempt) mounts a new frame
+  useEffect(() => {
+    const iframe = iframeRef.current
+    if (inline || !onFrameLocationRef.current || !iframe) return
+    let detach = () => {}
+    const instrument = () => {
+      detach()
+      let frame: Window | null = null
+      try {
+        frame = iframe.contentWindow
+        if (!frame || frame.location.href === 'about:blank') return
+      } catch {
+        return
+      }
+      const target = frame
+      const report = () => {
+        try {
+          frameHrefRef.current = target.location.href
+          onFrameLocationRef.current?.(target.location.href)
+        } catch {
+          /* The document left our origin. */
+        }
+      }
+      const history = target.history
+      const pushState = history.pushState
+      const replaceState = history.replaceState
+      history.pushState = function (...args: Parameters<History['pushState']>) {
+        pushState.apply(this, args)
+        report()
+      }
+      history.replaceState = function (...args: Parameters<History['replaceState']>) {
+        replaceState.apply(this, args)
+        report()
+      }
+      const applyPageHash = () => {
+        try {
+          if (target.location.hash !== window.location.hash)
+            target.location.hash = window.location.hash
+        } catch {
+          /* The document left our origin. */
+        }
+      }
+      target.addEventListener('hashchange', report)
+      target.addEventListener('popstate', report)
+      window.addEventListener('hashchange', applyPageHash)
+      report()
+      detach = () => {
+        history.pushState = pushState
+        history.replaceState = replaceState
+        target.removeEventListener('hashchange', report)
+        target.removeEventListener('popstate', report)
+        window.removeEventListener('hashchange', applyPageHash)
+      }
+    }
+    iframe.addEventListener('load', instrument)
+    if (iframe.contentDocument?.readyState === 'complete') instrument()
+    return () => {
+      iframe.removeEventListener('load', instrument)
+      detach()
+    }
+  }, [inline, probedSrc, iframeAttempt, phase === 'checking'])
+
   useEffect(() => {
     if (inline || live || !src || phase !== 'ready' || updateAvailable || !isEmbedVisible) return
     let checking = false
@@ -386,6 +466,11 @@ export function ReportHtmlEmbed({
   }
 
   const iframeScale = zoomPercent / 100
+  // biome-ignore lint/correctness/useExhaustiveDependencies: recomputed only for a new frame, never while it navigates
+  const frameUrl = useMemo(
+    () => (iframeAttempt > 0 && frameHrefRef.current ? frameHrefRef.current : (frameSrc ?? src)),
+    [documentId, iframeAttempt],
+  )
 
   const fixedHeightPx =
     typeof height === 'number'
@@ -552,7 +637,7 @@ export function ReportHtmlEmbed({
           <iframe
             key={`${documentId}:${iframeAttempt}`}
             ref={iframeRef}
-            src={inline ? undefined : src}
+            src={inline ? undefined : frameUrl}
             srcDoc={srcDoc}
             title={title}
             className="border-0 bg-background"
