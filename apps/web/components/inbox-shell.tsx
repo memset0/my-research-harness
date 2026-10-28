@@ -10,7 +10,7 @@ import { BodyTranslation } from './body-translation'
 
 import type { ContentFields } from '@memon/core'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, Pencil, X } from 'lucide-react'
+import { Pencil, X } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -47,9 +47,7 @@ import { ReadmeMonaco } from './readme-monaco'
 import { ReportHtmlHostContext, ReportHtmlZoomProvider } from './report-html-embed'
 import { useIsDocumentOnlyViewer } from './session-provider'
 import { ListSkeleton } from './skeletons'
-import { TimestampLocal } from './timestamp'
 import { Button } from './ui/button'
-import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from './ui/sheet'
 
 export type InboxKind = 'reports'
@@ -72,6 +70,7 @@ interface FullItem extends ContentFields {
   hash: string
   content: string
   subLabel: string
+  title?: string
   format?: 'markdown' | 'bundle'
 }
 
@@ -115,7 +114,7 @@ export function InboxShell({
   // Navigation lives in the sidebar; the Report list page is a filterable
   // card index and a Report page uses the whole width.
   return (
-    <div className="flex h-[calc(100svh-3rem)] overflow-hidden">
+    <div className="flex h-full overflow-hidden">
       <main className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
         {selectedId === null ? (
           <ReportIndex
@@ -137,8 +136,6 @@ export function InboxShell({
             data={selected.data}
             isLoading={selected.isLoading}
             error={selected.error}
-            items={items}
-            itemsLoading={itemsLoading}
           />
         )}
       </main>
@@ -379,8 +376,6 @@ function SelectedItemPane({
   data,
   isLoading,
   error,
-  items,
-  itemsLoading,
 }: {
   kind: InboxKind
   project: ProjectTarget
@@ -388,10 +383,7 @@ function SelectedItemPane({
   data: FullItem | undefined
   isLoading: boolean
   error: Error | null
-  items: CommonItem[]
-  itemsLoading: boolean
 }) {
-  const documentOnly = useIsDocumentOnlyViewer()
   const editable = kind === 'reports'
   const [editing, setEditing] = useState(false)
   const [toolbarSlot, setToolbarSlot] = useState<HTMLElement | null>(null)
@@ -430,27 +422,16 @@ function SelectedItemPane({
   // embed's controls sit in the header.
   const isApp =
     !data.contentError && (data.presentation === 'html' || data.presentation === 'service')
-  const identity = (
-    <>
-      <SelectedArtifactIdentity
-        kind={kind}
-        project={project}
-        data={data}
-        items={items}
-        itemsLoading={itemsLoading}
-        quickSwitchEnabled={!documentOnly}
-      />
-      <span className="text-muted-foreground/60">·</span>
-      <TimestampLocal value={new Date(data.mtime).toISOString()} />
-    </>
-  )
   const header = (
     <DocumentHeader
-      identity={identity}
+      id={data.id}
+      title={data.title || data.subLabel}
+      slug={data.subLabel}
+      updatedAt={data.updatedAt ?? new Date(data.mtime).toISOString()}
+      createdAt={data.createdAt}
       content={data}
       project={project}
       kind="report"
-      id={selectedId}
       actions={
         isApp ? (
           <div ref={setToolbarSlot} className="flex items-center" data-embed-toolbar-slot="" />
@@ -531,75 +512,6 @@ function SelectedItemPane({
         </Sheet>
       )}
     </div>
-  )
-}
-
-function SelectedArtifactIdentity({
-  kind,
-  project,
-  data,
-  items,
-  itemsLoading,
-  quickSwitchEnabled,
-}: {
-  kind: InboxKind
-  project: ProjectTarget
-  data: FullItem
-  items: CommonItem[]
-  itemsLoading: boolean
-  quickSwitchEnabled: boolean
-}) {
-  const [open, setOpen] = useState(false)
-  const identity = `${data.id} ${data.subLabel}`
-
-  if (kind !== 'reports' || !quickSwitchEnabled) {
-    return (
-      <>
-        <span className="font-mono tabular-nums">{data.id}</span>
-        <span className="truncate text-muted-foreground">{data.subLabel}</span>
-      </>
-    )
-  }
-
-  return (
-    <>
-      <span className="flex min-w-0 items-baseline gap-2 md:hidden" data-report-identity-mobile>
-        <span className="font-mono tabular-nums">{data.id}</span>
-        <span className="truncate text-muted-foreground">{data.subLabel}</span>
-      </span>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="hidden h-6 min-w-0 max-w-[min(28rem,45vw)] gap-1.5 px-1.5 md:inline-flex"
-            aria-label={`Switch report, current ${identity}`}
-            title={identity}
-          >
-            <span className="shrink-0 font-mono tabular-nums">{data.id}</span>
-            <span className="min-w-0 truncate text-muted-foreground">{data.subLabel}</span>
-            <ChevronDown className="size-3 shrink-0 text-muted-foreground" aria-hidden />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-80 gap-0 p-0" aria-label="Switch report">
-          <div className="flex items-center justify-between border-b px-3 py-2 text-xs uppercase tracking-wide text-muted-foreground">
-            <span>Reports</span>
-            <span className="tabular-nums">{items.length}</span>
-          </div>
-          <div className="max-h-[min(24rem,60vh)] overflow-y-auto" data-report-quick-switch-list>
-            <RailList
-              kind="reports"
-              project={project}
-              items={items}
-              selectedId={data.id}
-              loading={itemsLoading}
-              onSelect={() => setOpen(false)}
-            />
-          </div>
-        </PopoverContent>
-      </Popover>
-    </>
   )
 }
 

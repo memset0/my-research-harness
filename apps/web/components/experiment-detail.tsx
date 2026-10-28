@@ -54,7 +54,7 @@ function ExperimentDetailLayout({ exp, project }: { exp: FullExperiment; project
     // Note: the scroll container is a plain block; the inner flex-column
     // holds the actual cards. Putting `overflow-y-auto` directly on a
     // `flex-col` container squashes flex children instead of overflowing.
-    <div className="flex h-[calc(100svh-3rem)] overflow-hidden">
+    <div className="flex h-full overflow-hidden">
       <div className="min-w-0 flex-1 overflow-y-auto">
         <div className="flex flex-col gap-4 p-4 md:p-6">
           <RunRecordNotes

@@ -7,6 +7,8 @@
 - [x] 1.5 Update sidebar, AppBar, Report and Wiki shell tests to the new navigation
 - [x] 1.6 Document header with Details toggle; hosted HTML/service embeds fill the body with controls in the header; no Edit for them
 - [x] 1.7 Tests: hosted embed toolbar, header Details and Edit only for Markdown Reports
+- [x] 1.8 Header line shows title and relative update time, toggles on click with a leading indicator; remove the Report and Wiki quick switchers
+- [x] 1.9 Report, Wiki and Experiment panes fill the layout scroller instead of a viewport calc, so the page no longer scrolls the header under the AppBar
 
 ## 2. Verification
 

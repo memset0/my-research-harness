@@ -8,9 +8,9 @@ Navigation is split across three places: projects grouped by Host in the sidebar
 - An expanded project shows Wiki, Experiments, Reports, Code Review and Journal (no counts), each linking to its list page. Wiki, Experiments and Reports expand into flat lists ordered by update time, newest first; Experiments lists ACTIVE ones only.
 - Nothing is expanded by default except the current page's project and section, and the current item scrolls into view; manual expansion lasts for the session.
 - The AppBar keeps its tabs and counts, reordered to Wiki, Experiments, Reports, Code Review, Journal.
-- **BREAKING (UI)**: the Report and Wiki right rails, their visibility toggles and mobile drawers are removed. The list pages become filterable card grids (Reports: the three content filters; Wiki: those plus kind and text filters). A selected Report or Wiki page uses the full width and keeps the identity quick switcher.
+- **BREAKING (UI)**: the Report and Wiki right rails, their visibility toggles and mobile drawers are removed. The list pages become filterable card grids (Reports: the three content filters; Wiki: those plus kind and text filters). A selected Report or Wiki page uses the full width; the identity quick switchers are removed.
 
-- Report and Wiki pages carry their metadata in the sticky header: badges always, the rest behind a Details toggle. HTML and service pages lose Edit (and the Wiki width toggle); the embed fills the body without padding and its controls move into the header.
+- Report and Wiki pages carry their metadata in the sticky header: ID, title, time since the last update and badges on one line; clicking the line toggles the rest. HTML and service pages lose Edit (and the Wiki width toggle); the embed fills the body without padding and its controls move into the header.
 
 ## Capabilities
 

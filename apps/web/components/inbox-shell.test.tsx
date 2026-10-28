@@ -183,8 +183,13 @@ describe('InboxShell selected Report', () => {
     expect(within(header).getByText('analysis')).toBeInTheDocument()
     expect(within(header).getByRole('button', { name: 'Edit' })).toBeInTheDocument()
     expect(screen.queryByText(/Evidence as of/)).toBeNull()
-    await userEvent.click(within(header).getByRole('button', { name: 'Details' }))
+    // The collapsed line names the Report; clicking anywhere on it opens the rest.
+    const line = header.querySelector('[data-document-header-line]') as HTMLElement
+    await userEvent.click(line)
     expect(within(header).getByText(/Evidence as of/)).toBeInTheDocument()
+    expect(within(header).getByRole('button', { expanded: true })).toBeInTheDocument()
+    await userEvent.click(line)
+    expect(screen.queryByText(/Evidence as of/)).toBeNull()
   })
 
   it('gives an HTML Report the whole body and its embed controls the header', async () => {
@@ -247,20 +252,8 @@ describe('InboxShell selected Report', () => {
     expect(container.querySelector('[data-report-index]')).toBeNull()
     expect(screen.queryByRole('complementary')).toBeNull()
 
-    const quickSwitch = screen.getByRole('button', {
-      name: 'Switch report, current R0001 first-report',
-    })
-    await userEvent.click(quickSwitch)
-    const list = await waitFor(() => {
-      const node = document.body.querySelector<HTMLElement>('[data-report-quick-switch-list]')
-      expect(node).not.toBeNull()
-      expect(node!.querySelectorAll('[data-report-card]')).toHaveLength(2)
-      return node!
-    })
-    const [current, other] = Array.from(list.querySelectorAll('[data-report-card]'))
-    expect(current).toHaveAttribute('aria-current', 'page')
-    expect(other).not.toHaveAttribute('aria-current')
-    expect(other).toHaveAttribute('href', '/host-a/project-a/r/2')
+    // Navigation between Reports lives in the sidebar, not the header.
+    expect(screen.queryByRole('button', { name: /Switch report/ })).toBeNull()
   })
 })
 

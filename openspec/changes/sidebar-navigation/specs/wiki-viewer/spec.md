@@ -36,7 +36,7 @@ An id that does not match `^W\d{4}$` SHALL render the standard not-found respons
 
 ### Requirement: Wiki list page is a filterable card index
 
-With no Wiki page selected, the Wiki page SHALL show a heading with the page count, the content filters plus the kind and text filters, and a responsive grid of Wiki page cards in the existing order. The desktop and mobile page rails SHALL NOT be rendered; a selected page keeps its reading surface, outline and quick switcher without a rail. An empty Wiki SHALL show the authoring empty copy.
+With no Wiki page selected, the Wiki page SHALL show a heading with the page count, the content filters plus the kind and text filters, and a responsive grid of Wiki page cards in the existing order. The desktop and mobile page rails SHALL NOT be rendered; a selected page keeps its reading surface and outline without a rail; navigation between pages uses the sidebar. An empty Wiki SHALL show the authoring empty copy.
 
 #### Scenario: Searching the index
 - **WHEN** the user types a tag into the text filter on `/<host>/<project>/wiki`
@@ -44,9 +44,15 @@ With no Wiki page selected, the Wiki page SHALL show a heading with the page cou
 
 ### Requirement: Wiki document header carries metadata and HTML controls
 
-A selected Wiki page SHALL use the same header as a Report: identity, time and content badges with a Details toggle for the remaining metadata. An HTML or service page SHALL offer neither Edit nor the width toggle; its embed SHALL fill the body without padding, with its controls at the right of the header.
+A selected Wiki page SHALL use the same header as a Report: expand indicator, ID, title, time since the last update and content badges, with the whole line toggling the remaining metadata and no quick switcher. An HTML or service page SHALL offer neither Edit nor the width toggle; its embed SHALL fill the body without padding, with its controls at the right of the header.
 
 #### Scenario: An HTML Wiki page
 - **WHEN** an HTML Wiki page is open
 - **THEN** no Edit button is shown and the embed controls sit in the page header
 
+
+## REMOVED Requirements
+
+### Requirement: Collapsed wiki identity opens a quick switcher
+**Reason**: Navigation between Wiki pages moved to the sidebar tree; the header line now toggles the document details.
+**Migration**: Use the sidebar Wiki section or the Wiki card index.

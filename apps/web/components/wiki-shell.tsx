@@ -11,7 +11,7 @@ import { BodyTranslation } from './body-translation'
 
 import type { WikiDiagnostic } from '@memon/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, Pencil, X } from 'lucide-react'
+import { Pencil, X } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -65,11 +65,9 @@ import { ReadmeMonaco } from './readme-monaco'
 import { ReportHtmlHostContext, ReportHtmlZoomProvider } from './report-html-embed'
 import { useIsDocumentOnlyViewer, useIsOwner } from './session-provider'
 import { ListSkeleton } from './skeletons'
-import { TimestampLocal } from './timestamp'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
-import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from './ui/sheet'
 import { WikiKindHelp } from './wiki-kind-help'
@@ -151,7 +149,7 @@ export function WikiShell({
   // Navigation lives in the sidebar; the Wiki list page is a filterable card
   // index and a Wiki page uses the whole width.
   return (
-    <div className="flex h-[calc(100svh-3rem)] overflow-hidden">
+    <div className="flex h-full overflow-hidden">
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {selectedId === null ? (
           <WikiIndex
@@ -184,8 +182,6 @@ export function WikiShell({
             page={detail.data}
             isLoading={detail.isLoading}
             error={(detail.error as Error | null) ?? null}
-            pages={pages}
-            pagesLoading={isLoading}
           />
         )}
       </main>
@@ -415,18 +411,13 @@ function WikiSelectedPane({
   page,
   isLoading,
   error,
-  pages,
-  pagesLoading,
 }: {
   project: ProjectTarget
   selectedId: string
   page: WikiPageDetail | undefined
   isLoading: boolean
   error: Error | null
-  pages: readonly WikiListItem[]
-  pagesLoading: boolean
 }) {
-  const documentOnly = useIsDocumentOnlyViewer()
   const [editing, setEditing] = useState(false)
   const [widthLimited, setWidthLimited] = useState(true)
   const [toolbarSlot, setToolbarSlot] = useState<HTMLElement | null>(null)
@@ -471,23 +462,14 @@ function WikiSelectedPane({
     !page.contentError && (page.presentation === 'html' || page.presentation === 'service')
   const header = (
     <DocumentHeader
-      identity={
-        <>
-          <WikiIdentity
-            project={project}
-            page={page}
-            pages={pages}
-            pagesLoading={pagesLoading}
-            quickSwitchEnabled={!documentOnly}
-          />
-          <span className="text-muted-foreground/60">·</span>
-          <TimestampLocal value={page.updatedAt} />
-        </>
-      }
+      id={page.id}
+      title={page.title || page.slug}
+      slug={page.slug}
+      updatedAt={page.updatedAt}
+      createdAt={page.createdAt}
       content={page}
       project={project}
       kind="wiki"
-      id={page.id}
       actions={
         isApp ? (
           <div ref={setToolbarSlot} className="flex items-center" data-embed-toolbar-slot="" />
@@ -636,73 +618,6 @@ function WikiFragmentDeepLink({ pageId }: { pageId: string }) {
     scrollFragmentIntoSurface(id)
   }, [pageId])
   return null
-}
-
-function WikiIdentity({
-  project,
-  page,
-  pages,
-  pagesLoading,
-  quickSwitchEnabled,
-}: {
-  project: ProjectTarget
-  page: WikiPageDetail
-  pages: readonly WikiListItem[]
-  pagesLoading: boolean
-  quickSwitchEnabled: boolean
-}) {
-  const [open, setOpen] = useState(false)
-  const identity = `${page.id} ${page.slug}`
-
-  if (!quickSwitchEnabled) {
-    return (
-      <>
-        <span className="font-mono tabular-nums">{page.id}</span>
-        <span className="truncate text-muted-foreground">{page.slug}</span>
-      </>
-    )
-  }
-
-  return (
-    <>
-      <span className="flex min-w-0 items-baseline gap-2 md:hidden" data-wiki-identity-mobile>
-        <span className="font-mono tabular-nums">{page.id}</span>
-        <span className="truncate text-muted-foreground">{page.slug}</span>
-      </span>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="hidden h-6 min-w-0 max-w-[min(28rem,45vw)] gap-1.5 px-1.5 md:inline-flex"
-            aria-label={`Switch wiki page, current ${identity}`}
-            title={identity}
-          >
-            <span className="shrink-0 font-mono tabular-nums">{page.id}</span>
-            <span className="min-w-0 truncate text-muted-foreground">{page.slug}</span>
-            <ChevronDown className="size-3 shrink-0 text-muted-foreground" aria-hidden />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-80 gap-0 p-0" aria-label="Switch wiki page">
-          <div className="flex items-center justify-between border-b px-3 py-2 text-xs uppercase tracking-wide text-muted-foreground">
-            <span>Wiki</span>
-            <span className="tabular-nums">{pages.length}</span>
-          </div>
-          <div className="max-h-[min(24rem,60vh)] overflow-y-auto" data-wiki-quick-switch-list>
-            <WikiCardList
-              project={project}
-              pages={pages}
-              selectedId={page.id}
-              loading={pagesLoading}
-              filtered={false}
-              onSelect={() => setOpen(false)}
-            />
-          </div>
-        </PopoverContent>
-      </Popover>
-    </>
-  )
 }
 
 export function WikiDocumentView({

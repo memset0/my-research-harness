@@ -100,16 +100,6 @@ export function ContentBadges({ content }: { content: ContentFields }) {
     </span>
   )
 }
-/** Whether a document has metadata beyond its badges for the header's details. */
-export function hasContentDetails(content: ContentFields): boolean {
-  return Boolean(
-    (content.freshness === 'STALE' && content.staleReason) ||
-      content.asOf ||
-      content.sourceCommits ||
-      content.presentation === 'service',
-  )
-}
-
 /**
  * The expanded header details of a Report or Wiki page: stale reason,
  * evidence cutoff, source revisions and, for a live application, its

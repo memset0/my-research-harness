@@ -140,7 +140,7 @@ describe('WikiShell', () => {
     )
   })
 
-  it('renders the selected document with the sticky outline and the header quick switch', async () => {
+  it('renders the selected document with the sticky outline and no header quick switch', async () => {
     const older = summary('W0002', '2026-05-04T08:00:00+00:00', {
       title: 'Kernel evidence',
       tags: ['kernel'],
@@ -221,20 +221,8 @@ describe('WikiShell', () => {
     expect(column).toHaveClass('max-w-[800px]')
     expect(body).toHaveClass('max-w-[800px]')
 
-    // The identity header switches pages: newest edit first, current marked.
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Switch wiki page, current W0002 w0002-page' }),
-    )
-    const list = await waitFor(() => {
-      const node = document.body.querySelector<HTMLElement>('[data-wiki-quick-switch-list]')
-      expect(node).not.toBeNull()
-      expect(node!.querySelectorAll('[data-wiki-card]')).toHaveLength(2)
-      return node!
-    })
-    const switchCards = Array.from(list.querySelectorAll('[data-wiki-card]'))
-    expect(switchCards.map((card) => card.getAttribute('data-wiki-id'))).toEqual(['W0005', 'W0002'])
-    expect(switchCards[1]).toHaveAttribute('aria-current', 'page')
-    expect(switchCards[0]).toHaveAttribute('href', '/host-a/project-a/w/5')
+    // Navigation between pages lives in the sidebar, not the header.
+    expect(screen.queryByRole('button', { name: /Switch wiki page/ })).toBeNull()
   })
 
   it('scrolls only the reading surface when an outline entry is activated', async () => {
