@@ -164,12 +164,25 @@ source operations and 10,000 replay records. `X-Memon-Concurrency` can request a
 lower admission limit, never raise the server maximum. Descriptor-held source
 slots outlive a caller disconnect while the physical operation is still running.
 
-## Optional loopback service forwarding
+## Optional service forwarding
 
 `/v1/services/<project>/<port>/<path>` forwards streaming HTTP and WebSockets to
-loopback only. It requires the existing mTLS project grant and source-identity
-header, an explicit `serviceGrants: { "<certificate-fingerprint>": { "project-a": true } }`,
-and `servicePorts: [8000]` on that project. File access alone grants no service
-access. Services use a separate bounded admission pool. No process starts or
-stops, no manifest parsing, and no arbitrary target host is accepted. Central
+the application behind a configured port. It requires the existing mTLS project
+grant and source-identity header, an explicit
+`serviceGrants: { "<certificate-fingerprint>": { "project-a": true } }`, and the
+port in `servicePorts` on that project. A bare number forwards to loopback; an
+object names a host on the cluster network:
+
+```json
+"servicePorts": [8000, { "host": "gpu-node-1", "port": 8792 }]
+```
+
+The port is the one a Report manifest names; the host comes only from this
+operator config (an IP address or DNS name, each port at most once), so a
+document can never point the agent at another host. An unreachable or slow
+upstream answers `SOURCE_UNAVAILABLE` like a stopped local one (5 s connect,
+10 s response headers). Agents with host support advertise `service-hosts-v1`;
+older agents refuse the object form at load. File access alone grants no
+service access. Services use a separate bounded admission pool. No process
+starts or stops and no manifest parsing happens here. Central
 must be upgraded separately from this independent source agent.

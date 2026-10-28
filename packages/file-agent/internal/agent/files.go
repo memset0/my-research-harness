@@ -68,14 +68,14 @@ func (l Limits) valid() bool {
 }
 
 type ProjectConfig struct {
-	ServicePorts                  []int  `json:"servicePorts,omitempty"`
-	Root                          string `json:"root"`
-	SourceIdentity                string `json:"sourceIdentity"`
-	ReadOnly                      bool   `json:"readOnly"`
-	AcknowledgedWriterLockVersion int    `json:"acknowledgedWriterLockVersion"`
-	StorageGroup                  string `json:"storageGroup,omitempty"`
-	MountType                     string `json:"mountType,omitempty"`
-	MountSource                   string `json:"mountSource,omitempty"`
+	ServicePorts                  []ServicePort `json:"servicePorts,omitempty"`
+	Root                          string        `json:"root"`
+	SourceIdentity                string        `json:"sourceIdentity"`
+	ReadOnly                      bool          `json:"readOnly"`
+	AcknowledgedWriterLockVersion int           `json:"acknowledgedWriterLockVersion"`
+	StorageGroup                  string        `json:"storageGroup,omitempty"`
+	MountType                     string        `json:"mountType,omitempty"`
+	MountSource                   string        `json:"mountSource,omitempty"`
 }
 type rootReference struct{ count atomic.Int64 }
 type Project struct {
