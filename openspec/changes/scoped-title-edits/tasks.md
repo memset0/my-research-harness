@@ -19,4 +19,4 @@
 ## 4. Verification
 
 - [x] 4.1 Typecheck, Biome, Go tests and the touched test files
-- [ ] 4.2 Rendered check of the Rename flow on a local project
+- [x] 4.2 Rendered check of the Rename flow (local agent e2e; production dialog render; rename and revert on both deployed Projects)
