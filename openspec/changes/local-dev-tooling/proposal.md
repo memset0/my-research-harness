@@ -6,6 +6,7 @@ Rendered-page checks were rebuilt by hand in each session, and the machine-local
 
 - Add `scripts/verify-page.mjs`: a headless Chrome check over the DevTools protocol that waits for a selector, runs `--eval`, `--click`, `--reload` and `--screenshot` steps, and reports the document status, failed requests and page exceptions. It exits 1 on a missing selector, a 5xx, a network failure or an exception.
 - AGENTS.md §1.1: `LOCAL.md` is the never-committed notebook for this machine's deployment and development details, read at the start of every development, test, release or deploy session.
+- `apps/web/next.config.mjs` reads extra dev-server origins from `MEMON_ALLOWED_DEV_ORIGINS`, so a preview dev server behind a public hostname keeps HMR; hostnames stay in machine-local env.
 - AGENTS.md §4.3 gains the scripted rendered check as step 6. The `.gitignore` comment points to AGENTS.md.
 
 ## Capabilities
@@ -18,4 +19,4 @@ None: repository tooling and agent instructions only (`skip_specs`).
 
 ## Impact
 
-`scripts/verify-page.mjs`, `AGENTS.md`, `.gitignore`. No distributed artifact or central change, so no release.
+`scripts/verify-page.mjs`, `AGENTS.md`, `.gitignore`, `apps/web/next.config.mjs` (dev only). No distributed artifact or central change, so no release.
