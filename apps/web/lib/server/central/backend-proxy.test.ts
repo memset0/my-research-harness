@@ -10,11 +10,13 @@ import {
 import { describe, expect, it, vi } from 'vitest'
 import { BACKEND_ACTOR_CONTEXT_HEADER } from './backend-headers'
 import {
+  backendRouteCapabilities,
   CentralBackendProxyError,
   DEFAULT_BACKEND_HEADER_TIMEOUT_MS,
   MAX_BACKEND_CONTROL_BODY_BYTES,
   proxyCentralApiRequest,
 } from './backend-proxy'
+import { mapCentralApiToBackend } from './backend-route'
 import { CentralHostRegistry, HostRoutingError } from './host-registry'
 
 const TOKEN = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
@@ -504,5 +506,17 @@ describe('central Backend proxy failures and mutation replay', () => {
     expect(response.status).toBe(503)
     expect(fetchImpl).toHaveBeenCalledOnce()
     expect(registry.getAvailability('host-a')?.state).toBe('offline')
+  })
+})
+
+describe('bounded edit routes', () => {
+  it('need no broad mutation capability, unlike whole-document writes', () => {
+    for (const path of ['/api/reports/R0001/title', '/api/wiki/W0001/title'])
+      expect(backendRouteCapabilities(mapCentralApiToBackend('POST', path), 'POST')).toEqual([
+        'projects',
+      ])
+    expect(
+      backendRouteCapabilities(mapCentralApiToBackend('PUT', '/api/reports/R0001'), 'PUT'),
+    ).toContain('mutations')
   })
 })

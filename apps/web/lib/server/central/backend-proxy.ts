@@ -149,10 +149,13 @@ export function backendRouteCapabilities(
   if (route.manifestRoute === 'log/stream/route.ts') required.add('logStreaming')
   if (route.manifestRoute.startsWith('report-assets/')) required.add('reportAssets')
   if (route.manifestRoute.startsWith('wiki-assets/')) required.add('wikiAssets')
+  // A bounded edit (`allowed_edits`) is admitted per Project by the
+  // read-only gate, so it does not need the Host's broad write capability.
   if (
     method !== 'GET' &&
     route.ownership.auth !== 'shell' &&
-    route.ownership.capability !== 'shares'
+    route.ownership.capability !== 'shares' &&
+    route.ownership.edit === undefined
   ) {
     required.add('mutations')
   }
