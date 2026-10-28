@@ -59,6 +59,18 @@ export class RunFrontMatterPatchError extends Error {
  * rather than silently inventing one).
  */
 export function patchRunFrontMatter(content: string, patch: RunFrontMatterPatch): string {
+  return patchFrontMatterFields(content, patch)
+}
+
+/**
+ * The key-agnostic form of {@link patchRunFrontMatter}: string values are
+ * written verbatim, so callers pass YAML-safe text (for free text, a
+ * JSON-quoted string).
+ */
+export function patchFrontMatterFields(
+  content: string,
+  patch: Readonly<Record<string, string | boolean | null | undefined>>,
+): string {
   const entries = Object.entries(patch).filter(([, value]) => value !== undefined)
   if (entries.length === 0) return content
   const split = splitFrontmatter(content)

@@ -814,6 +814,8 @@ export interface ProjectConfig {
   storageGroup?: string
   /** Application-level write refusal for this Project's data. */
   readOnly?: boolean
+  /** Bounded edits a read-only Project still permits (`allowed_edits`). */
+  allowedEdits?: readonly ProjectEditKind[]
   /** Opt in to dumped LRU observations; only actual SSHFS roots are eligible. Default false. */
   persistentCache?: boolean
   /** Explicit command-execution context; see ProjectExecutionConfig. */
@@ -821,6 +823,9 @@ export interface ProjectConfig {
   /** GitHub repo -> local path mappings for code-preview (optional). */
   github?: GithubRepoMapping[]
 }
+
+/** A bounded on-disk edit central may make on an otherwise read-only Project. */
+export type ProjectEditKind = 'title'
 
 export interface PollConfig {
   minIntervalMs: number

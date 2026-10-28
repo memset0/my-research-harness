@@ -18,6 +18,7 @@ import {
   type Config,
   configureFileAgentAdapters,
   getProjectFileContext,
+  type ProjectEditKind,
   parseFileOperationReason,
   prepareProjectFileAccess,
   projectSourceGroup,
@@ -108,6 +109,7 @@ export function withStandaloneProject<T>(
   work: () => Promise<T>,
   write = false,
   control = false,
+  edit?: ProjectEditKind,
 ): Promise<T> {
   const matches = config.projects.filter(
     (project) => project.host === undefined && project.name === name,
@@ -139,7 +141,12 @@ export function withStandaloneProject<T>(
       sourceIdentity: project.access?.kind === 'agent' ? project.access.sourceIdentity : undefined,
       reason: write ? 'write' : (parent?.reason ?? requestedReason ?? 'automatic'),
       observationPolicy: control || write ? 'revalidate' : parent?.observationPolicy,
-      readOnly: !control && project.readOnly === true,
+      // An allowed bounded edit (`allowed_edits`) is the only write a
+      // read-only Project admits; its File Agent grant still bounds it.
+      readOnly:
+        !control &&
+        project.readOnly === true &&
+        !(edit !== undefined && project.allowedEdits?.includes(edit)),
       persistentCache: !control && project.persistentCache === true,
       attentionId: parent?.attentionId ?? scope?.attentionId,
     },
@@ -149,6 +156,9 @@ export function withStandaloneProject<T>(
     },
   )
 }
+
+/** Document methods that make the bounded `title` edit. */
+const TITLE_EDITS = new Set(['setReportTitle', 'setWikiTitle'])
 
 /** Project methods are scoped individually; lazy iterator pulls retain that scope. */
 function scopeService<T extends object>(config: Config, service: T, kind: string): T {
@@ -197,8 +207,10 @@ function scopeService<T extends object>(config: Config, service: T, kind: string
           /^(put|patch|mark|unmark|set|delete)/.test(String(key)) ||
           (kind === 'shares' && ['add', 'revoke'].includes(String(key)))
         const control = kind === 'shares'
+        const edit =
+          kind === 'documents' && TITLE_EDITS.has(String(key)) ? ('title' as const) : undefined
         const run = <R>(work: () => Promise<R>) =>
-          withStandaloneProject(config, name, work, write, control)
+          withStandaloneProject(config, name, work, write, control, edit)
         if (kind === 'streaming' && key === 'streamLog') {
           const iterator = invoke() as AsyncIterableIterator<unknown>
           return {

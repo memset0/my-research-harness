@@ -145,6 +145,7 @@ export const API_ROUTE_MANIFEST = {
     'bytes',
   ),
   'reports/[id]/route.ts': backend(['GET', 'PUT'], 'resource', 'mixed'),
+  'reports/[id]/title/route.ts': backend(['POST'], 'resource', 'mutating'),
   'reports/route.ts': backend(['GET'], 'project-query', 'read'),
   'runs/[id]/archive/route.ts': backend(['PATCH'], 'resource', 'mutating'),
   'runs/[id]/files/route.ts': backend(['GET'], 'resource', 'read'),
@@ -166,6 +167,7 @@ export const API_ROUTE_MANIFEST = {
     'bytes',
   ),
   'wiki/[id]/route.ts': backend(['GET', 'PUT'], 'resource', 'mixed'),
+  'wiki/[id]/title/route.ts': backend(['POST'], 'resource', 'mutating'),
   // Backlinks have their own resource lifecycle so Wiki source resolution
   // never delays the Experiment detail response.
   'wiki/backlinks/[artifact]/route.ts': central(['GET'], 'read', 'none', 'project-query'),

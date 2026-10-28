@@ -89,6 +89,25 @@ Central deletion first renames to quarantine, then cleans members using bounded
 operations. Failed cleanup may leave quarantine data; no multi-file atomicity is
 promised. A final symlink unlink removes the link itself.
 
+### Scoped document edits (`read-edit`)
+
+A `read-edit` grant reads like `read` and allows only small document fixes, such
+as renaming a Report or Wiki title from central. Enable it like a write grant
+(`acknowledgedWriterLockVersion: 1`, `readOnly` cleared) but grant `read-edit`
+instead of `read-write`:
+
+```json
+"grants": { "<sha256-of-client-certificate-der>": { "project-a": "read-edit" } }
+```
+
+Such a principal may only `replace` an existing file under a `match`
+precondition, without mode, destination or directory guards, at a path under
+`docs/reports/` or `docs/wiki/` named `manifest.json` or `*.md`, or at
+`.memon/index/reports.json` / `.memon/index/wiki.json`. The current and new bytes
+may differ within one span of at most 4096 bytes (outside their common prefix
+and suffix). Anything else is refused with `FORBIDDEN`. Agents with this support
+advertise `scoped-edits-v1`; older agents refuse the grant value at load.
+
 Replay keys are scoped to the authenticated certificate principal and bound to a
 payload digest. Completed records survive restart within the advertised retention
 (default 24 hours); different payloads cannot reuse a key. A crash after starting

@@ -148,7 +148,7 @@ Other sources of truth — consult these instead of copying lists here:
   validate it; existing unmarked research requires explicit migration.
 - **Configuration split**: central `config.yml` Project entries hold only
   the project path and deployment facts (`name`, `root`, `host`, `storage`,
-  `storage_group`, `persistent_cache`, `read_only`, `access`, `execution`). Protected `file_agents`
+  `storage_group`, `persistent_cache`, `read_only`, `allowed_edits`, `access`, `execution`). Protected `file_agents`
   connection settings remain central-only. Agent entries select a connection and
   project instead of a local `root`; native `access` selects none/memory caching,
   SSHFS and agent select memory. Legacy memory-disk normalizes to memory. Layout

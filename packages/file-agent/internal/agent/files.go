@@ -544,6 +544,7 @@ type FileCheck struct {
 }
 type Mutation struct {
 	Authority               string        `json:"-"`
+	Scoped                  bool          `json:"-"`
 	Project                 string        `json:"project"`
 	Path                    string        `json:"path"`
 	Operation               string        `json:"operation"`
@@ -699,6 +700,11 @@ func (p *Project) mutateLocked(m Mutation, limits Limits) error {
 		}
 		if int64(len(bytes)) > limits.MaxBodyBytes {
 			return fail("LIMIT_EXCEEDED")
+		}
+		if m.Scoped {
+			if err := p.checkScopedSpan(rel, bytes, limits.MaxBodyBytes); err != nil {
+				return err
+			}
 		}
 		mode := fs.FileMode(0644)
 		if info, err := p.root.Stat(rel); err == nil {

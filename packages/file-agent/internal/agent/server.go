@@ -106,7 +106,7 @@ func loadSnapshot(cfg Config, previous *snapshot) (*snapshot, error) {
 			return nil, fail("BAD_REQUEST")
 		}
 		for project, grant := range grants {
-			if state.projects[project] == nil || (grant != "read" && grant != "read-write") {
+			if state.projects[project] == nil || (grant != "read" && grant != "read-write" && grant != "read-edit") {
 				state.close()
 				return nil, fail("BAD_REQUEST")
 			}
@@ -244,6 +244,22 @@ func (st *snapshot) authorize(r *http.Request, project string, write bool) (stri
 	}
 	return principal, nil
 }
+
+// authorizeMutation admits read-write principals and read-edit principals; the
+// second result reports that the mutation is limited to scoped edits.
+func (st *snapshot) authorizeMutation(r *http.Request, project string) (string, bool, error) {
+	principal, err := st.authorize(r, project, false)
+	if err != nil {
+		return "", false, err
+	}
+	switch st.grants[principal][project] {
+	case "read-write":
+		return principal, false, nil
+	case "read-edit":
+		return principal, true, nil
+	}
+	return "", false, fail("FORBIDDEN")
+}
 func respond(w http.ResponseWriter, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
@@ -355,7 +371,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("X-Memon-Source-Identity", state.projects[q.Project].Identity())
 		if r.URL.Path == "/v1/capabilities" {
-			respond(w, map[string]any{"protocolMajor": ProtocolMajor, "writerLockVersion": WriterLockVersion, "sourceIdentity": state.projects[q.Project].Identity(), "capabilities": []string{"read", "list", "stat", "lstat", "resolve", "range", "mutate", "batch", "replay", "directory-guards-v1", "read-handles-v1", "services-v1"}, "limits": s.advertisedLimits()})
+			respond(w, map[string]any{"protocolMajor": ProtocolMajor, "writerLockVersion": WriterLockVersion, "sourceIdentity": state.projects[q.Project].Identity(), "capabilities": []string{"read", "list", "stat", "lstat", "resolve", "range", "mutate", "batch", "replay", "directory-guards-v1", "read-handles-v1", "services-v1", "scoped-edits-v1"}, "limits": s.advertisedLimits()})
 			return
 		}
 		q.Operation = strings.TrimPrefix(r.URL.Path, "/v1/")
@@ -417,10 +433,17 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			respondError(w, fail("BAD_REQUEST"))
 			return
 		}
-		principal, err := state.authorize(r, mutation.Project, true)
+		principal, scoped, err := state.authorizeMutation(r, mutation.Project)
 		if err != nil {
 			respondError(w, err)
 			return
+		}
+		if scoped {
+			if err := validateScopedEdit(mutation); err != nil {
+				respondError(w, err)
+				return
+			}
+			mutation.Scoped = true
 		}
 		if mutation.RequestID == "" || len(mutation.RequestID) > 256 {
 			respondError(w, fail("BAD_REQUEST"))

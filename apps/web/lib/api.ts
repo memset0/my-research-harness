@@ -396,6 +396,21 @@ export async function putReport(
   })
 }
 
+/** Rename a Report or Wiki page's display title (owner-only). */
+export async function renameDocument(
+  project: ProjectTarget,
+  kind: 'report' | 'wiki',
+  id: string,
+  title: string,
+): Promise<{ ok: true; title: string }> {
+  const base = kind === 'report' ? '/api/reports' : '/api/wiki'
+  return jsonFetch(projectQueryUrl(`${base}/${encodeURIComponent(id)}/title`, project), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ title }),
+  })
+}
+
 // ---------- Wiki ----------
 
 export async function fetchWiki(project: ProjectTarget): Promise<WikiPagesResponse> {

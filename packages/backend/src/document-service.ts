@@ -24,8 +24,10 @@ import {
   type CodeReviewCompletion,
   type CodeReviewFrontMatter,
   type ContentFields,
+  changedByteSpan,
   collectWikiSourceReferences,
   type DiscoveredWikiPage,
+  DocumentTitleError,
   deriveCompletion,
   discoverRuns,
   EXPERIMENT_REF_REGEX,
@@ -37,6 +39,7 @@ import {
   type IndexRole,
   type MutationFs,
   markJournalInvocationOutcome,
+  normalizeDocumentTitle,
   type ProjectConfig,
   parseCodeReview,
   parseContent,
@@ -48,7 +51,11 @@ import {
   ResourceIdSchema,
   type Run,
   researchDescriptionProblem,
+  SCOPED_EDIT_MAX_SPAN,
   serializeWikiPage,
+  setCatalogEntryTitle,
+  setManifestTitle,
+  setMarkdownTitle,
   toggleCommitReviewed,
   toggleTodoDone,
   updateWikiFrontmatter,
@@ -63,7 +70,8 @@ import {
   writeFileAtomic,
   writeProjectCatalog,
 } from '@memon/core'
-import { dirname, join, relative, resolve, sep } from '@memon/file-protocol/paths'
+import { isFileAccessError } from '@memon/file-protocol'
+import { dirname, isFileURI, join, relative, resolve, sep } from '@memon/file-protocol/paths'
 import { PathContainmentError, resolveContained } from './containment.js'
 import {
   containedReal,
@@ -72,6 +80,7 @@ import {
   indexedWikiPages,
 } from './indexed-documents.js'
 import { missingOrThrow } from './missing-path.js'
+import { BackendMutationError } from './mutation-service.js'
 import { hasUnrefreshedDocument, registeredCatalog } from './project-catalogs.js'
 import { withAutomaticProjectFileContext } from './project-file-context.js'
 import { FilesystemProjectService, type InventoryListOptions } from './project-service.js'
@@ -349,6 +358,28 @@ export class FilesystemDocumentService implements BackendDocumentService {
         return this.write(project, entry, input)
       }),
     )
+  }
+
+  /** Rename a Report's display title; only the title bytes change. */
+  async setReportTitle(projectName: string, id: string, input: { title: unknown }) {
+    const project = this.requireProject(projectName)
+    const title = documentTitle(input.title)
+    const entry = exactEntry(await this.discoverReports(project, id), id)
+    const mtime = await rewriteTitle(project, entry.absolutePath, entry.resource, title)
+    await patchCatalogTitle(project, 'reports', id, title, mtime)
+    return this.getReport(projectName, id)
+  }
+
+  /** Rename a Wiki page's display title; only the title bytes change. */
+  async setWikiTitle(projectName: string, id: string, input: { title: unknown }) {
+    const project = this.requireProject(projectName)
+    const title = documentTitle(input.title)
+    const summary = await this.wikiPageSummary(project, id)
+    const absolutePath = wikiAbsolutePath(project, summary)
+    await assertWithin(project.root, absolutePath)
+    const mtime = await rewriteTitle(project, absolutePath, summary.path, title)
+    await patchCatalogTitle(project, 'wiki', id, title, mtime)
+    return this.getWiki(projectName, id)
   }
 
   async listCodeReviews(projectName: string, options: InventoryListOptions = {}) {
@@ -968,6 +999,87 @@ function requireWikiPage(projection: WikiProjectProjection, id: string): WikiSum
     throw new BackendDocumentServiceError('AMBIGUOUS_RESOURCE', 'Wiki identity is ambiguous')
   if (!summary) throw new BackendDocumentServiceError('RESOURCE_NOT_FOUND', 'Wiki page not found')
   return summary
+}
+
+function documentTitle(input: unknown): string {
+  try {
+    return normalizeDocumentTitle(input)
+  } catch (error) {
+    throw new BackendMutationError('BAD_REQUEST', (error as Error).message)
+  }
+}
+
+/** A read-only refusal from central (EROFS) or a narrower File Agent grant. */
+function titleWriteRefused(error: unknown): never {
+  if ((error as NodeJS.ErrnoException)?.code === 'EROFS')
+    throw new BackendMutationError('FORBIDDEN', 'Title edits are not enabled for this Project')
+  if (isFileAccessError(error) && error.code === 'FORBIDDEN')
+    throw new BackendMutationError(
+      'FORBIDDEN',
+      'The file agent refused the edit; it needs a read-edit or read-write grant',
+    )
+  if (error instanceof DocumentTitleError)
+    throw new BackendDocumentServiceError('INVALID_RESOURCE', error.message)
+  throw error
+}
+
+/**
+ * Replace the title bytes of one document (guarded by the bytes just read)
+ * and return its new mtime. No journal receipt: on a scoped Project the
+ * receipt itself would be a refused write.
+ */
+async function rewriteTitle(
+  project: ProjectConfig,
+  absolutePath: string,
+  resource: string,
+  title: string,
+) {
+  try {
+    const current = await fs.readFile(absolutePath, 'utf8')
+    const next = resource.endsWith('manifest.json')
+      ? setManifestTitle(current, title)
+      : setMarkdownTitle(current, title)
+    if (next !== current) {
+      // A File Agent keeps the mode itself, and a scoped grant refuses one.
+      const mode = isFileURI(absolutePath) ? undefined : (await fs.stat(absolutePath)).mode
+      await writeFileAtomic(absolutePath, next, mode === undefined ? {} : { mode })
+    }
+    return (await fs.stat(absolutePath)).mtimeMs
+  } catch (error) {
+    return titleWriteRefused(error)
+  } finally {
+    projectReadIndex(project.root).invalidate()
+  }
+}
+
+/**
+ * Carry the new title and mtime into the published catalog entry, if the
+ * Project publishes one. A change too wide for one scoped replacement is
+ * written as two (title, then mtime).
+ */
+async function patchCatalogTitle(
+  project: ProjectConfig,
+  kind: 'reports' | 'wiki',
+  id: string,
+  title: string,
+  mtime: number,
+) {
+  if (!(await registeredCatalog(project, kind))) return
+  const path = join(project.root, `.memon/index/${kind}.json`)
+  try {
+    const current = await fs.readFile(path, 'utf8')
+    const titled = setCatalogEntryTitle(current, id, { title })
+    const next = setCatalogEntryTitle(titled, id, { mtime })
+    if (next === current) return
+    if (titled !== current && changedByteSpan(current, next) > SCOPED_EDIT_MAX_SPAN) {
+      await writeFileAtomic(path, titled)
+      if (next !== titled) await writeFileAtomic(path, next)
+    } else {
+      await writeFileAtomic(path, next)
+    }
+  } catch (error) {
+    titleWriteRefused(error)
+  }
 }
 
 function wikiAbsolutePath(project: ProjectConfig, summary: WikiSummary): string {

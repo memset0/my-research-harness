@@ -271,6 +271,7 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
       // Either spelling is accepted; the schema rejects supplying both.
       ...(storageGroup === undefined ? {} : { storageGroup }),
       ...(readOnly === undefined ? {} : { readOnly }),
+      ...(p.allowed_edits?.length ? { allowedEdits: [...new Set(p.allowed_edits)] } : {}),
       ...(p.access
         ? { persistentCache: false }
         : p.persistent_cache === undefined

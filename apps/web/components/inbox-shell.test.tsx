@@ -188,6 +188,7 @@ describe('InboxShell selected Report', () => {
     await userEvent.click(line)
     expect(within(header).getByText(/Evidence as of/)).toBeInTheDocument()
     expect(within(header).getByRole('button', { expanded: true })).toBeInTheDocument()
+    expect(within(header).getByRole('button', { name: 'Rename' })).toBeInTheDocument()
     await userEvent.click(line)
     expect(screen.queryByText(/Evidence as of/)).toBeNull()
   })

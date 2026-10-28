@@ -315,6 +315,8 @@ export const ProjectConfigRawSchema = z
     storageGroup: StorageGroupRawSchema.optional(),
     read_only: z.boolean().optional(),
     readOnly: z.boolean().optional(),
+    /** Edits a `read_only` Project still permits; `title` renames Reports and Wiki pages. */
+    allowed_edits: z.array(z.enum(['title'])).optional(),
     persistent_cache: z.boolean().optional(),
     execution: ProjectExecutionRawSchema.optional(),
   })

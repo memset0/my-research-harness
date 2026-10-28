@@ -48,6 +48,7 @@ export {
 } from './config/permissions.js'
 export { projectSourceGroup } from './config/source-group.js'
 export * from './content.js'
+export * from './content-title.js'
 export * from './derived-index/index.js'
 export type {
   DeprecationResult,
@@ -431,6 +432,7 @@ export type {
   RunFrontMatterPatch,
 } from './readme/frontmatter-patch.js'
 export {
+  patchFrontMatterFields,
   patchRunFrontMatter,
   RunFrontMatterPatchError,
 } from './readme/frontmatter-patch.js'

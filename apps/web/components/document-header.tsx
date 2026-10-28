@@ -7,6 +7,8 @@ import type { ProjectTarget } from '../lib/api'
 import { formatRelativeTime } from '../lib/format-relative-time'
 import { cn } from '../lib/utils'
 import { ContentBadges, ContentDetails } from './content-presentation'
+import { RenameDocumentButton } from './rename-document-dialog'
+import { useIsDocumentOnlyViewer, useIsOwner } from './session-provider'
 import { TimestampLocal } from './timestamp'
 
 /** "3h ago", rendered after hydration and refreshed every minute. */
@@ -56,6 +58,9 @@ export function DocumentHeader({
 }) {
   const [open, setOpen] = useState(false)
   const toggle = () => setOpen((value) => !value)
+  const owner = useIsOwner()
+  const documentOnly = useIsDocumentOnlyViewer()
+  const canRename = owner && !documentOnly
   return (
     <div className="sticky top-0 z-10 shrink-0 border-b bg-background" data-document-header="">
       {/* biome-ignore lint/a11y/noStaticElementInteractions: the whole line is a mouse target; the leading button is the keyboard control. */}
@@ -128,6 +133,9 @@ export function DocumentHeader({
             </dd>
           </dl>
           <ContentDetails content={content} project={project} kind={kind} id={id} />
+          {canRename && (
+            <RenameDocumentButton project={project} kind={kind} id={id} title={title} />
+          )}
         </div>
       )}
     </div>

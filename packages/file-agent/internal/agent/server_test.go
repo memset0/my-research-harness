@@ -127,6 +127,19 @@ func TestTLSGrantsReloadConditionalAndLimits(t *testing.T) {
 	if response.StatusCode != 403 {
 		t.Fatal("read grant mutated", response.StatusCode)
 	}
+	// A read-edit grant still refuses anything but a guarded document replacement.
+	cfg.Grants = map[string]map[string]string{certs.fingerprint: {"project-a": "read-edit"}}
+	if err = handler.Reload(cfg); err != nil {
+		t.Fatal(err)
+	}
+	response, err = post(string(bytes))
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != 403 {
+		t.Fatal("read-edit grant created a file", response.StatusCode)
+	}
 	cfg.Grants = map[string]map[string]string{certs.fingerprint: {"project-a": "read-write"}}
 	if err = handler.Reload(cfg); err != nil {
 		t.Fatal(err)

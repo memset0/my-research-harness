@@ -11,7 +11,7 @@
 
 # A Project entry holds the project path and deployment facts only: `name`,
 # `root`, `host`, `storage`, `storage_group`, `persistent_cache`, `read_only`,
-# `execution`. The project layout — `run_dirs`, `include`, `exclude`,
+# `allowed_edits`, `execution`. The project layout — `run_dirs`, `include`, `exclude`,
 # `github` — lives in the project's tracked `.memon/project.yml`:
 #
 #   schema_version: 1
@@ -90,6 +90,8 @@ projects:
 #       source_identity: <exact identity from memon-file-agent --describe>
 #     storage_group: storage-a
 #     read_only: true
+#     # Still allow renaming Report/Wiki titles (needs a `read-edit` agent grant).
+#     allowed_edits: [title]
 #     # Agent entries have no local root. Business services stay central-side.
 #     # Git/Slurm require their own explicit `execution: { kind: ssh, ... }`.
 #
