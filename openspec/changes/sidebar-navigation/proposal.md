@@ -5,7 +5,7 @@ Navigation is split across three places: projects grouped by Host in the sidebar
 ## What Changes
 
 - The sidebar lists projects flat, each with a Host chip (Host id plus an availability dot) and its git pill, in the owner's own order: drag a project row to reorder it (user preference `memon:sidebar:project-order`).
-- An expanded project shows Experiments, Journal, Reports, Code Review and Wiki, each linking to its list page with the former tab badge. Experiments, Reports and Wiki expand to list their items.
+- An expanded project shows Experiments, Journal, Reports, Code Review and Wiki, each linking to its list page (no counts). Experiments, Reports and Wiki expand to list their items.
 - The current project, section and item open automatically, and the current item scrolls into view. Restored expansion still reads no project data off the project's routes.
 - **BREAKING (UI)**: the top bar loses its view tabs and shows a Host / project / section breadcrumb beside the Share control.
 - **BREAKING (UI)**: the Report and Wiki right rails, their visibility toggles and mobile drawers are removed. The list pages become filterable card grids (Reports: the three content filters; Wiki: those plus kind and text filters). A selected Report or Wiki page uses the full width and keeps the identity quick switcher.

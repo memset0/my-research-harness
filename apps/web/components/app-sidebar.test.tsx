@@ -368,15 +368,15 @@ describe('AppSidebar', () => {
       '/host-a/project-a/code-review',
       '/host-a/project-a/wiki',
     ])
-    expect(links.map((link) => link.textContent?.replace(/\d+$/, ''))).toEqual([
+    expect(links.map((link) => link.textContent)).toEqual([
       'Experiments',
       'Journal',
       'Reports',
       'Code Review',
       'Wiki',
     ])
-    // Each section shows its TabBadge count.
-    for (const node of sections) expect(node.querySelector('[data-slot="count"]')).not.toBeNull()
+    // Sections show no counts.
+    for (const node of sections) expect(node.querySelector('[data-slot="count"]')).toBeNull()
     // The overview page is the Experiments section's own page.
     expect(links[0]).toHaveAttribute('aria-current', 'page')
     expect(links[2]).not.toHaveAttribute('aria-current')

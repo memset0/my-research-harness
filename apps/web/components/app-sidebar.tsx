@@ -56,7 +56,6 @@ import { useIsDocumentOnlyViewer, useSession } from './session-provider'
 import { SidebarResizeHandle } from './sidebar-resize-handle'
 import { SlurmStatusWidget } from './slurm-status-widget'
 import { ExperimentStatusPill } from './status-pill'
-import { TabBadge, type TabKind } from './tab-badge'
 import { ThemeToggle } from './theme-toggle'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
 import {
@@ -102,7 +101,6 @@ interface SectionSpec {
   key: SectionKey
   name: string
   icon: typeof FlaskConical
-  badge: TabKind
   page: ProjectPage
   /** Page kinds that make this section current. */
   pages: readonly ProjectPage['kind'][]
@@ -115,7 +113,6 @@ const SECTIONS: SectionSpec[] = [
     key: 'experiments',
     name: 'Experiments',
     icon: FlaskConical,
-    badge: 'experiments',
     page: { kind: 'overview' },
     pages: ['overview', 'experiments', 'experiment'],
     expandable: true,
@@ -124,7 +121,6 @@ const SECTIONS: SectionSpec[] = [
     key: 'journal',
     name: 'Journal',
     icon: NotebookPen,
-    badge: 'journal',
     page: { kind: 'journal' },
     pages: ['journal'],
     expandable: false,
@@ -133,7 +129,6 @@ const SECTIONS: SectionSpec[] = [
     key: 'reports',
     name: 'Reports',
     icon: FileText,
-    badge: 'reports',
     page: { kind: 'reports' },
     pages: ['reports', 'report'],
     expandable: true,
@@ -142,7 +137,6 @@ const SECTIONS: SectionSpec[] = [
     key: 'code-review',
     name: 'Code Review',
     icon: GitPullRequest,
-    badge: 'code-review',
     page: { kind: 'code-reviews' },
     pages: ['code-reviews', 'code-review'],
     expandable: false,
@@ -151,7 +145,6 @@ const SECTIONS: SectionSpec[] = [
     key: 'wiki',
     name: 'Wiki',
     icon: BookOpen,
-    badge: 'wiki',
     page: { kind: 'wiki-list' },
     pages: ['wiki-list', 'wiki'],
     expandable: true,
@@ -530,7 +523,6 @@ function ProjectNode({
                 open={section.expandable && isSectionOpen(section.key)}
                 onToggle={(next) => onToggleSection(section.key, next)}
                 readItems={open && readItems}
-                showCount={readItems}
               />
             ))}
           </SidebarMenu>
@@ -547,7 +539,6 @@ function SectionNode({
   open,
   onToggle,
   readItems,
-  showCount,
 }: {
   project: ProjectTarget
   section: SectionSpec
@@ -555,8 +546,6 @@ function SectionNode({
   open: boolean
   onToggle: (open: boolean) => void
   readItems: boolean
-  /** Counts read project data, so restored-only projects show none. */
-  showCount: boolean
 }) {
   const href = projectPagePath(projectRouteTarget(project), section.page)
   const current = active !== null && active.number === null
@@ -589,7 +578,6 @@ function SectionNode({
           <Link href={href} prefetch={false} aria-current={current ? 'page' : undefined}>
             <Icon className="size-3.5" />
             <span className="min-w-0 flex-1 truncate">{section.name}</span>
-            {showCount && <TabBadge kind={section.badge} project={project} active={current} />}
           </Link>
         </SidebarMenuButton>
       </div>
