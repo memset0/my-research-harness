@@ -27,7 +27,7 @@ describe('AppBar Wiki tab', () => {
       within(tablist)
         .getAllByRole('tab')
         .map((tab) => tab.textContent),
-    ).toEqual(['Wiki1', 'Experiments1', 'Reports1', 'Code Review1', 'Journal1'])
+    ).toEqual(['Wiki1', 'Experiments1', 'Reports1', 'Discussions1', 'Code Review1', 'Journal1'])
     expect(screen.queryByRole('tab', { name: /Hypotheses/i })).toBeNull()
     const wiki = within(tablist).getByRole('tab', { name: /^Wiki 1$/ })
     expect(wiki).toHaveAttribute('href', '/host-a/project-a/wiki')

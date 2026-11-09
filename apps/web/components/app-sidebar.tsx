@@ -83,7 +83,7 @@ export function sidebarProjectBasePath(target: ProjectTarget): string {
   return typeof target === 'string' ? '' : projectBasePath(target)
 }
 
-type SectionKey = 'experiments' | 'journal' | 'reports' | 'code-review' | 'wiki'
+type SectionKey = 'discussions' | 'experiments' | 'journal' | 'reports' | 'code-review' | 'wiki'
 
 interface SectionSpec {
   key: SectionKey
@@ -120,6 +120,14 @@ const SECTIONS: SectionSpec[] = [
     page: { kind: 'reports' },
     pages: ['reports', 'report'],
     expandable: true,
+  },
+  {
+    key: 'discussions',
+    name: 'Discussions',
+    icon: FileText,
+    page: { kind: 'discussions' },
+    pages: ['discussions', 'discussion'],
+    expandable: false,
   },
   {
     key: 'code-review',

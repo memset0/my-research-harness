@@ -103,6 +103,21 @@ export async function mutateAgent(
   const base = { ...target, requestId: randomUUID(), lockVersion: 1 as const }
   let request: FileMutationRequest
   switch (method) {
+    case 'appendFile': {
+      const options = args[2] as { expectedSize?: number } | undefined
+      if (!Number.isSafeInteger(options?.expectedSize) || options!.expectedSize! < 0)
+        throw new FileAccessError('BAD_REQUEST')
+      const bytes =
+        typeof args[1] === 'string' ? Buffer.from(args[1]) : Buffer.from(args[1] as Uint8Array)
+      await adapter.mutate({
+        ...base,
+        operation: 'append',
+        expectedSize: options!.expectedSize!,
+        content: bytes.toString('base64'),
+      })
+      state(context).delete(path)
+      return
+    }
     case 'writeFile': {
       const options = args[2] as
         | { flag?: string; encoding?: BufferEncoding; mode?: number }

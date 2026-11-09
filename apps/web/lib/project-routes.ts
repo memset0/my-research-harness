@@ -27,6 +27,8 @@ export type ProjectPage =
   | { kind: 'experiment'; number: number }
   | { kind: 'wiki-list' }
   | { kind: 'wiki'; number: number }
+  | { kind: 'discussions' }
+  | { kind: 'discussion'; number: number }
   | { kind: 'reports' }
   | { kind: 'report'; number: number }
   | { kind: 'journal' }
@@ -87,6 +89,10 @@ function pageSuffix(page: ProjectPage): string {
       return '/wiki'
     case 'wiki':
       return `/w/${page.number}`
+    case 'discussions':
+      return '/discussions'
+    case 'discussion':
+      return `/d/${page.number}`
     case 'reports':
       return '/reports'
     case 'report':
@@ -193,6 +199,8 @@ function parsePage(rest: string[]): ProjectPage | null {
         return { kind: 'experiments' }
       case 'wiki':
         return { kind: 'wiki-list' }
+      case 'discussions':
+        return { kind: 'discussions' }
       case 'reports':
         return { kind: 'reports' }
       case 'journal':
@@ -213,6 +221,7 @@ function parsePage(rest: string[]): ProjectPage | null {
     if (first === 'e') return { kind: 'experiment', number }
     if (first === 'w') return { kind: 'wiki', number }
     if (first === 'r') return { kind: 'report', number }
+    if (first === 'd') return { kind: 'discussion', number }
     return null
   }
   if (first === 'e' && third === 'cr' && fourth !== undefined) {

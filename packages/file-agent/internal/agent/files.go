@@ -22,6 +22,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+	"unicode/utf8"
 )
 
 const ProtocolMajor = 1
@@ -543,6 +544,7 @@ type FileCheck struct {
 	Precondition *Precondition `json:"precondition"`
 }
 type Mutation struct {
+	ExpectedSize            *int64        `json:"expectedSize,omitempty"`
 	Authority               string        `json:"-"`
 	Scoped                  bool          `json:"-"`
 	Project                 string        `json:"project"`
@@ -687,6 +689,15 @@ func (p *Project) mutateLocked(m Mutation, limits Limits) error {
 		return p.root.Mkdir(rel, mode)
 	}
 	if m.Operation == "replace" && m.Precondition != nil && (m.Precondition.Kind == "directory" || m.Precondition.Kind == "entry") {
+		return fail("BAD_REQUEST")
+	}
+	if m.Operation == "append" {
+		if m.Scoped && !scopedAppendPath.MatchString(rel) {
+			return fail("FORBIDDEN")
+		}
+		return p.appendLocked(rel, m)
+	}
+	if m.ExpectedSize != nil {
 		return fail("BAD_REQUEST")
 	}
 	if err = p.check(rel, m.Precondition, limits.MaxBodyBytes); err != nil {
@@ -905,4 +916,59 @@ func nodeIdentity(info fs.FileInfo) string {
 		proof += name + ":" + fmt.Sprint(field.Interface()) + "\x00"
 	}
 	return version([]byte(proof))
+}
+
+// appendLocked keeps the prefix and size check under the common project writer lock.
+func (p *Project) appendLocked(name string, m Mutation) error {
+	if m.ExpectedSize == nil || *m.ExpectedSize < 0 || *m.ExpectedSize > 9007199254740991 || m.Precondition != nil || m.Mode != nil || m.Destination != "" || m.DestinationPrecondition != nil || len(m.FileChecks) != 0 || m.Recursive {
+		return fail("BAD_REQUEST")
+	}
+	data, err := base64.StdEncoding.Strict().DecodeString(m.Content)
+	if err != nil || base64.StdEncoding.EncodeToString(data) != m.Content || len(data) < 3 || len(data) > 4096 || !utf8.Valid(data) || data[len(data)-1] != '\n' || strings.ContainsAny(string(data[:len(data)-1]), "\n\r") || !json.Valid(data) {
+		return fail("BAD_REQUEST")
+	}
+	info, err := p.root.Lstat(name)
+	absent := errors.Is(err, fs.ErrNotExist)
+	if err != nil && !absent {
+		return err
+	}
+	if absent && *m.ExpectedSize != 0 {
+		return fail("CONFLICT")
+	}
+	if !absent && (!info.Mode().IsRegular() || info.Size() != *m.ExpectedSize) {
+		return fail("CONFLICT")
+	}
+	flags := os.O_RDWR | os.O_APPEND
+	if absent {
+		flags |= os.O_CREATE | os.O_EXCL
+	}
+	file, err := p.root.OpenFile(name, flags, 0644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	actual, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	if !actual.Mode().IsRegular() || actual.Size() != *m.ExpectedSize {
+		return fail("CONFLICT")
+	}
+	if actual.Size() > 0 {
+		var tail [1]byte
+		if _, err := file.ReadAt(tail[:], actual.Size()-1); err != nil {
+			return err
+		}
+		if tail[0] != '\n' {
+			return fail("CONFLICT")
+		}
+	}
+	n, err := file.Write(data)
+	if err != nil {
+		return err
+	}
+	if n != len(data) {
+		return io.ErrShortWrite
+	}
+	return nil
 }

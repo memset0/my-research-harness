@@ -164,3 +164,12 @@ describe('project routes', () => {
     expect([...RESERVED_HOST_IDS]).toEqual([...CORE_RESERVED_HOST_IDS])
   })
 })
+
+it('round trips discussion list and detail paths', () => {
+  expect(projectPagePath(target, { kind: 'discussions' })).toBe('/host-a/project-a/discussions')
+  expect(projectPagePath(target, { kind: 'discussion', number: 12 })).toBe('/host-a/project-a/d/12')
+  expect(parseProjectPath('/host-a/project-a/d/12')?.page).toEqual({
+    kind: 'discussion',
+    number: 12,
+  })
+})

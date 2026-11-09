@@ -1230,3 +1230,40 @@ export async function mutateExperimentResearch(
     )
   }
 }
+
+export async function fetchDiscussions(
+  project: ProjectTarget,
+): Promise<import('./dto/discussions').DiscussionsResponse> {
+  const params = new URLSearchParams({ project: projectName(project) })
+  const host = projectHost(project)
+  if (host) params.set('host', host)
+  return jsonFetch(`/api/discussions?${params}`)
+}
+export async function fetchDiscussion(
+  project: ProjectTarget,
+  id: string,
+): Promise<import('./dto/discussions').DiscussionDetail> {
+  const params = new URLSearchParams({ project: projectName(project) })
+  const host = projectHost(project)
+  if (host) params.set('host', host)
+  return jsonFetch(`/api/discussions/${id}?${params}`)
+}
+export async function mutateDiscussion(
+  project: ProjectTarget,
+  id: string,
+  action: 'responses' | 'status',
+  input: unknown,
+): Promise<import('./dto/discussions').DiscussionDetail> {
+  const params = new URLSearchParams({ project: projectName(project) })
+  const host = projectHost(project)
+  if (host) params.set('host', host)
+  return jsonFetch(
+    `/api/discussions/${id}/${action}?${params}`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+    false,
+  )
+}

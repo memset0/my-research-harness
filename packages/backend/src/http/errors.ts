@@ -1,3 +1,4 @@
+import { DiscussionError } from '@memon/core'
 import { ProjectCatalogError } from '../project-catalogs.js'
 // The one error → HTTP mapping. Every error class a handler, body reader or
 // the pipeline can throw has exactly one mapper here, so the same domain error
@@ -124,7 +125,9 @@ function fileAccessError(error: FileAccessError): HttpError {
       return httpError(
         501,
         'FILE_CAPABILITY_UNAVAILABLE',
-        'The file source does not support this operation',
+        error.cause instanceof Error && error.cause.message.includes('scoped-append-v1')
+          ? 'Upgrade the File Agent for discussion appends (scoped-append-v1)'
+          : 'The file source does not support this operation',
       )
     case 'PROTOCOL_INCOMPATIBLE':
       return httpError(
@@ -211,6 +214,18 @@ const MAPPERS: readonly Mapper<never>[] = [
 
 /** The HTTP error for a known error class, or `null` for anything else. */
 export function toHttpError(error: unknown): HttpError | null {
+  if (error instanceof DiscussionError)
+    return httpError(
+      error.code === 'BAD_REQUEST'
+        ? 400
+        : error.code === 'CONFLICT'
+          ? 409
+          : error.code === 'PARTIAL'
+            ? 500
+            : 404,
+      error.code,
+      error.message,
+    )
   if (isFileAccessError(error)) return fileAccessError(error)
   for (const [type, map] of MAPPERS) {
     if (error instanceof type) return (map as (error: unknown) => HttpError)(error)

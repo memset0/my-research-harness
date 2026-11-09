@@ -1,4 +1,5 @@
 import {
+  buildDiscussionCatalog,
   buildExperimentCatalog,
   buildReportCatalog,
   buildWikiCatalog,
@@ -253,6 +254,7 @@ export async function rebuildIndex(
           experiments: buildExperimentCatalog(snapshot),
           wiki: await buildWikiCatalog(root, snapshot, fs),
           reports: await buildReportCatalog(root, fs),
+          discussions: await buildDiscussionCatalog(root, fs),
         }
       : undefined
   const finish = async (
@@ -294,7 +296,12 @@ export async function rebuildIndex(
     if (again.snapshotState === 'unsupported') return { ...base, status: 'unsupported' }
     const catalogs = await buildCatalogs(snapshot)
     const invalid = catalogs
-      ? [...catalogs.experiments.invalid, ...catalogs.wiki.invalid, ...catalogs.reports.invalid]
+      ? [
+          ...catalogs.experiments.invalid,
+          ...catalogs.wiki.invalid,
+          ...catalogs.reports.invalid,
+          ...catalogs.discussions.invalid,
+        ]
       : []
     if (invalid.length)
       return { ...(await finish(snapshot, 'invalid', catalogs)), snapshot: null, invalid }
@@ -303,12 +310,14 @@ export async function rebuildIndex(
       ? [
           ...(await newStandaloneDocuments(root, 'wiki', catalogs.wiki, fs)),
           ...(await newStandaloneDocuments(root, 'reports', catalogs.reports, fs)),
+          ...(catalogs.discussions.warnings ?? []),
         ]
       : []
     await writeSnapshot(root, snapshot, fs)
     if (catalogs) {
       await writeProjectCatalog(root, 'wiki', catalogs.wiki.entries, fs)
       await writeProjectCatalog(root, 'reports', catalogs.reports.entries, fs)
+      await writeProjectCatalog(root, 'discussions', catalogs.discussions.entries, fs)
     }
     const events = resolveIndexPaths(root).events
     for (const name of startEvents) await fs.rm(`${events}/${name}`, { force: true })

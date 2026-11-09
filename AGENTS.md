@@ -19,6 +19,7 @@ repository-specific requirements at the end of this file supplement it.
 - **Status enums are uppercase** and defined in `packages/core/src/types.ts`:
   Run `READY`/`QUEUED`/`RUNNING`/`FINISHED`/`INTERRUPTED`/`FAILED`/
   `RESUME_READY`/`UNKNOWN` (legacy `PENDING` remains readable);
+  Discussion `DRAFT`/`OPEN`/`CLOSED`, Question `OPEN`/`DECIDED`/`DEFERRED`/`DROPPED` (`ANSWERED`/`REVISED` are display-only);
   Experiment FS10 `ACTIVE`/`PAUSED`/`ARCHIVED`/`RETIRED` (human-only write;
   `RUNNING`/`COMPLETED` are display-only; legacy FS9 retains
   `OPEN`/`RESOLVED`/`ABANDONED`).
@@ -105,9 +106,15 @@ Other sources of truth — consult these instead of copying lists here:
 
 - `FS_CONVENTION_VERSION` lives in `packages/core/src/version.ts`.
 - **CLI**: routine leaves are `experiment create`, `run create`, `run update`,
-  `refresh`, `show` and `install-skills`. Another 11 optional leaves remain
-  under `memon` (17 total); independent entrypoints are deferred. No hidden retired aliases. Migration executors live under
+  `refresh`, `show` and `install-skills`. Additional command families, including `discussion`, remain
+  under `memon`; use its help for the current surface. Independent entrypoints are deferred. No hidden retired aliases. Migration executors live under
   `packages/core/migrations/scripts/` and are invoked through their guides/Skill.
+- **FS12 Discussion**: `docs/discussions/D<NNNN>-<slug>/README.md` holds the title,
+  DRAFT/OPEN/CLOSED lifecycle and all heading-scoped `question` fences. Categories
+  are user/agent-defined. One append-only `responses.jsonl` holds owner responses
+  and agent replies/acks. Agents publish drafts; owners can close/reopen published
+  discussions without resolving every question. Source refresh publishes
+  `.memon/index/discussions.json`; website responses use guarded bounded appends.
 - **FS11 Experiment**: `docs/experiments/E<NNNN>-<slug>/README.md` and
   `experiment.json` with `format: "lightweight"`, optional groups/columns and
   optional per-Variant `aggregate: "aggregate_variant.py"` settings. Directory

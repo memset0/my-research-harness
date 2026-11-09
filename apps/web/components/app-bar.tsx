@@ -39,6 +39,12 @@ export function AppBar({ project }: { project: ProjectTarget }) {
       pages: ['reports', 'report'],
     },
     {
+      name: 'Discussions',
+      kind: 'discussions',
+      href: href({ kind: 'discussions' }),
+      pages: ['discussions', 'discussion'],
+    },
+    {
       name: 'Code Review',
       kind: 'code-review',
       href: href({ kind: 'code-reviews' }),

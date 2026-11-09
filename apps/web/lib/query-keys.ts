@@ -17,9 +17,18 @@ function scope(project: ProjectTarget | undefined) {
   return project ? projectQueryKey(project) : ([] as const)
 }
 
-export type TabCollectionKind = 'experiments' | 'journal' | 'reports' | 'code-review' | 'wiki'
+export type TabCollectionKind =
+  | 'discussions'
+  | 'experiments'
+  | 'journal'
+  | 'reports'
+  | 'code-review'
+  | 'wiki'
 
 export const queryKeys = {
+  discussions: (project: ProjectTarget) => ['discussions', ...projectQueryKey(project)] as const,
+  discussion: (project: ProjectTarget, id: string) =>
+    ['discussion', ...projectQueryKey(project), id] as const,
   // Global
   projects: () => ['projects'] as const,
   hosts: () => ['hosts'] as const,
@@ -129,6 +138,8 @@ export const queryKeys = {
   /** Collection behind an AppBar tab count badge. */
   tabCollection: (kind: TabCollectionKind, project: ProjectTarget) => {
     switch (kind) {
+      case 'discussions':
+        return queryKeys.discussions(project)
       case 'experiments':
         return queryKeys.experimentsInventory(project)
       case 'journal':

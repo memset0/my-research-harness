@@ -346,6 +346,9 @@ const mutationBase = FileTargetSchema.extend({
 export const FileMutationRequestSchema = z
   .discriminatedUnion('operation', [
     mutationBase
+      .extend({ operation: z.literal('append'), expectedSize: safeInteger, content: bytesSchema })
+      .strict(),
+    mutationBase
       .extend({
         operation: z.literal('replace'),
         precondition: MutationPreconditionSchema,
@@ -377,6 +380,16 @@ export const FileMutationRequestSchema = z
       .strict(),
   ])
   .superRefine((request, context) => {
+    if (request.operation === 'append') {
+      try {
+        validateAppendLine(Buffer.from(request.content, 'base64'))
+      } catch {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'append requires one complete UTF-8 JSON line, at most 4096 bytes',
+        })
+      }
+    }
     if (request.operation !== 'rename' || !request.fileChecks?.length) return
     if (
       request.precondition.kind !== 'directory' ||
@@ -391,6 +404,26 @@ export const FileMutationRequestSchema = z
   })
 
 export type FileMutationRequest = z.infer<typeof FileMutationRequestSchema>
+
+/** Bounded record append contract; deliberately independent of domain schemas. */
+export function validateAppendLine(bytes: Uint8Array): void {
+  const value = Buffer.from(bytes)
+  const text = value.toString('utf8')
+  if (
+    value.length > 4096 ||
+    value.length < 3 ||
+    !Buffer.from(text).equals(value) ||
+    !text.endsWith('\n') ||
+    text.slice(0, -1).includes('\n') ||
+    text.includes('\r')
+  )
+    throw new FileAccessError('BAD_REQUEST')
+  try {
+    JSON.parse(text)
+  } catch {
+    throw new FileAccessError('BAD_REQUEST')
+  }
+}
 
 export const FileCapabilitiesSchema = z
   .object({

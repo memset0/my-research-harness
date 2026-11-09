@@ -22,10 +22,18 @@ function leaves(program: Command, prefix = ''): string[] {
     .sort()
 }
 
-it('keeps all 17 commands in one memon tree without duplicate groups', async () => {
+it('keeps the complete command surface in one memon tree without duplicate groups', async () => {
   const program = createResearchProgram()
   const registered = leaves(program)
   const expected = [
+    'discussion create',
+    'discussion list',
+    'discussion show',
+    'discussion pending',
+    'discussion resolve',
+    'discussion reply',
+    'discussion status',
+    'discussion decisions',
     'experiment create',
     'install-skills',
     'refresh',

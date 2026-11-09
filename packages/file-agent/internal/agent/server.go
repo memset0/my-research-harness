@@ -369,7 +369,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("X-Memon-Source-Identity", state.projects[q.Project].Identity())
 		if r.URL.Path == "/v1/capabilities" {
-			respond(w, map[string]any{"protocolMajor": ProtocolMajor, "writerLockVersion": WriterLockVersion, "sourceIdentity": state.projects[q.Project].Identity(), "capabilities": []string{"read", "list", "stat", "lstat", "resolve", "range", "mutate", "batch", "replay", "directory-guards-v1", "read-handles-v1", "services-v1", "service-hosts-v1", "scoped-edits-v1"}, "limits": s.advertisedLimits()})
+			respond(w, map[string]any{"protocolMajor": ProtocolMajor, "writerLockVersion": WriterLockVersion, "sourceIdentity": state.projects[q.Project].Identity(), "capabilities": []string{"read", "list", "stat", "lstat", "resolve", "range", "mutate", "batch", "replay", "directory-guards-v1", "read-handles-v1", "services-v1", "service-hosts-v1", "scoped-edits-v1", "scoped-append-v1"}, "limits": s.advertisedLimits()})
 			return
 		}
 		q.Operation = strings.TrimPrefix(r.URL.Path, "/v1/")

@@ -825,7 +825,7 @@ export interface ProjectConfig {
 }
 
 /** A bounded on-disk edit central may make on an otherwise read-only Project. */
-export type ProjectEditKind = 'title'
+export type ProjectEditKind = 'title' | 'discussion'
 
 export interface PollConfig {
   minIntervalMs: number
@@ -1054,3 +1054,9 @@ export interface FileCacheOptions {
   /** Freshness lifetime for every other cached document or listing path. */
   defaultTtlMs: number
 }
+
+/** Discussion readiness/lifecycle and per-question processing are independent. */
+export const DISCUSSION_STATUSES = ['DRAFT', 'OPEN', 'CLOSED'] as const
+export type DiscussionStatus = (typeof DISCUSSION_STATUSES)[number]
+export const QUESTION_STATUSES = ['OPEN', 'DECIDED', 'DEFERRED', 'DROPPED'] as const
+export type QuestionStatus = (typeof QUESTION_STATUSES)[number]

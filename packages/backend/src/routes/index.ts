@@ -1,3 +1,4 @@
+import { DISCUSSION_ROUTES } from './discussions.js'
 // The declarative Backend route table: the concatenation of the resource-domain
 // route modules. Every route's path, parameters, query, methods, route class,
 // read-only policy, gate, error policy and handler is declared exactly once in
@@ -14,6 +15,7 @@ export const BACKEND_ROUTES: readonly BackendRoute[] = [
   ...PROJECT_SHARE_ROUTES,
   ...RUN_EXPERIMENT_ROUTES,
   ...DOCUMENT_WIKI_ROUTES,
+  ...DISCUSSION_ROUTES,
   ...GIT_ROUTES,
   ...STREAM_ASSET_ROUTES,
 ]

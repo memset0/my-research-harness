@@ -22,3 +22,7 @@ experiment skills are consolidated into `memon-research`; the retirement
 registry lets installation remove unchanged shipped copies while preserving
 locally modified or unmanaged skills. Wiki review markers and Git review gates
 are removed; ordinary Git history and independent code review remain available.
+
+Research decisions can use native discussions: prepare a DRAFT, publish OPEN,
+collect owner feedback on the website, then read/reply/resolve through
+`memon discussion`. `memon-research` documents the question grammar and commands.

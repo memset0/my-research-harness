@@ -2,10 +2,11 @@
  * FS_CONVENTION_VERSION — the integer version of memon's on-disk schema.
  *
  * Independent from `package.json#version`. Bumped by exactly one (never
- * skipped, never decreased) when, and only when, memon ships a breaking
- * change to the on-disk schema (renamed file, removed required field,
- * restructured directory). Non-breaking additions (new optional frontmatter
- * field, new file in a new subdirectory) MUST NOT bump this constant.
+ * skipped or decreased) for a breaking on-disk schema change (renamed file,
+ * removed required field, restructured directory), or the reviewed FS12
+ * discussion convention boundary. Non-breaking additions (new optional frontmatter
+ * field, new file in a new subdirectory) MUST NOT bump this constant, except
+ * for the explicitly reviewed FS12 discussion convention boundary.
  *
  * Every bump SHALL ship with a corresponding migration guide at
  * `packages/core/migrations/v<old>-to-v<new>.md`. See

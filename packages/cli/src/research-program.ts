@@ -1,3 +1,4 @@
+import { registerDiscussionCommands } from './commands/discussion.js'
 import { runExperimentCreate } from './commands/experiment-doc.js'
 import { parseAgentList, runInstallSkills } from './commands/install-skills.js'
 import { registerRefreshCommand } from './commands/refresh.js'
@@ -148,6 +149,7 @@ export function createResearchProgram() {
       })
     })
 
+  registerDiscussionCommands(program, readGlobals)
   registerRefreshCommand(program, readGlobals)
   registerToolsCommands(program)
   registerLegacyCommands(program, experiment, run)

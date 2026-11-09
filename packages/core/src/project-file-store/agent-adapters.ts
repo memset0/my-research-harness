@@ -222,17 +222,21 @@ function budgetedAdapter(registration: Registration, client: FileAdapter): FileA
     mutate: (input) =>
       run(
         (input.operation === 'rename' && input.fileChecks?.length) ||
-          (input.operation !== 'mkdir' && input.precondition.kind === 'match')
+          (input.operation !== 'mkdir' &&
+            input.operation !== 'append' &&
+            input.precondition.kind === 'match')
           ? storeAccess().effectiveOptions().maxReadBytes
-          : input.operation === 'replace'
+          : input.operation === 'replace' || input.operation === 'append'
             ? Buffer.from(input.content, 'base64').length
             : 0,
         () => client.mutate(input),
         () =>
           (input.operation === 'rename' && input.fileChecks?.length) ||
-          (input.operation !== 'mkdir' && input.precondition.kind === 'match')
+          (input.operation !== 'mkdir' &&
+            input.operation !== 'append' &&
+            input.precondition.kind === 'match')
             ? storeAccess().effectiveOptions().maxReadBytes
-            : input.operation === 'replace'
+            : input.operation === 'replace' || input.operation === 'append'
               ? Buffer.from(input.content, 'base64').length
               : 0,
         'write',

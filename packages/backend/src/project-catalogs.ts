@@ -43,6 +43,7 @@ export async function registeredCatalog(
 
 /** Identity rules per catalog; only IDs that match are worth a source check. */
 const DOCUMENT_ID: Record<ProjectCatalogKind, RegExp> = {
+  discussions: /^D\d{4}$/,
   experiments: /^E\d{4}-[a-z0-9][a-z0-9-]*$/,
   wiki: /^W\d{4}$/,
   reports: /^R\d{4}$/,

@@ -100,13 +100,28 @@ instead of `read-write`:
 "grants": { "<sha256-of-client-certificate-der>": { "project-a": "read-edit" } }
 ```
 
-Such a principal may only `replace` an existing file under a `match`
+For a title edit, such a principal may only `replace` an existing file under a `match`
 precondition, without mode, destination or directory guards, at a path under
 `docs/reports/` or `docs/wiki/` named `manifest.json` or `*.md`, or at
-`.memon/index/reports.json` / `.memon/index/wiki.json`. The current and new bytes
+`.memon/index/reports.json` / `.memon/index/wiki.json`. Discussion-capable agents
+also admit `docs/discussions/D<NNNN>-<slug>/README.md` and
+`.memon/index/discussions.json` for bounded lifecycle edits. Central restricts
+those edits to status and catalog status/mtime; the kernel enforces paths and
+changed spans without parsing research metadata. The current and new bytes
 may differ within one span of at most 4096 bytes (outside their common prefix
-and suffix). Anything else is refused with `FORBIDDEN`. Agents with this support
+and suffix). Other replacements are refused with `FORBIDDEN`. Agents with this support
 advertise `scoped-edits-v1`; older agents refuse the grant value at load.
+
+Agents advertising `scoped-append-v1` also admit `append` at exactly
+`docs/discussions/D<NNNN>-<slug>/responses.jsonl`. Each request contains
+`expectedSize` and base64 `content` encoding one complete UTF-8 JSON line of at
+most 4096 bytes including its final newline. A missing log is creatable only
+with expected size zero. The agent checks size under the common writer lock;
+conflicts write nothing, and replay cannot append twice. Mode, destination,
+recursion and replacement preconditions are not accepted for append. Read-only
+projects and `read` grants continue refusing mutations. Central additionally
+requires `allowed_edits: [discussion]` for owner responses on a read-only Project.
+Upgrade the File Agent independently before enabling this capability.
 
 Replay keys are scoped to the authenticated certificate principal and bound to a
 payload digest. Completed records survive restart within the advertised retention

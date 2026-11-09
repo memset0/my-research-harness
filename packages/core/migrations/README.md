@@ -81,6 +81,8 @@ The current value lives in `packages/core/src/version.ts`. Guides present:
   Results summaries. Executed by `packages/core/migrations/scripts/migrate-v8-to-v9.mjs` (`plan` /
   `apply` / `verify` / `rollback`).
 
+- `v11-to-v12.md` — additive discussion convention and explicit marker-only transition.
+
 ## Current executors
 
 All migration executors live in this directory's `scripts/` subdirectory and

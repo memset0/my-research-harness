@@ -375,6 +375,7 @@ describe('AppSidebar', () => {
       'wiki',
       'experiments',
       'reports',
+      'discussions',
       'code-review',
       'journal',
     ])
@@ -383,6 +384,7 @@ describe('AppSidebar', () => {
       '/host-a/project-a/wiki',
       '/host-a/project-a',
       '/host-a/project-a/reports',
+      '/host-a/project-a/discussions',
       '/host-a/project-a/code-review',
       '/host-a/project-a/journal',
     ])
@@ -390,6 +392,7 @@ describe('AppSidebar', () => {
       'Wiki',
       'Experiments',
       'Reports',
+      'Discussions',
       'Code Review',
       'Journal',
     ])

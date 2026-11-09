@@ -92,6 +92,8 @@ projects:
 #     read_only: true
 #     # Still allow renaming Report/Wiki titles (needs a `read-edit` agent grant).
 #     allowed_edits: [title]
+#     # To allow owner discussion responses as well (scoped-append-v1 agent):
+#     # allowed_edits: [title, discussion]
 #     # Agent entries have no local root. Business services stay central-side.
 #     # Git/Slurm require their own explicit `execution: { kind: ssh, ... }`.
 #

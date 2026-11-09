@@ -127,7 +127,22 @@ func TestTLSGrantsReloadConditionalAndLimits(t *testing.T) {
 	if response.StatusCode != 403 {
 		t.Fatal("read grant mutated", response.StatusCode)
 	}
-	// A read-edit grant still refuses anything but a guarded document replacement.
+	// The read grant must also refuse the new append primitive.
+	if err := os.MkdirAll(filepath.Join(p.Config.Root, "docs/discussions/D0001-design"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	appendMutation := appendRequest(0, "{}\n")
+	appendMutation.Scoped = false
+	appendBytes, _ := json.Marshal(appendMutation)
+	appendResponse, appendErr := post(string(appendBytes))
+	if appendErr != nil {
+		t.Fatal(appendErr)
+	}
+	appendResponse.Body.Close()
+	if appendResponse.StatusCode != 403 {
+		t.Fatal("read grant appended", appendResponse.StatusCode)
+	}
+	// A read-edit grant refuses unbounded document mutations.
 	cfg.Grants = map[string]map[string]string{certs.fingerprint: {"project-a": "read-edit"}}
 	if err = handler.Reload(cfg); err != nil {
 		t.Fatal(err)
@@ -139,6 +154,14 @@ func TestTLSGrantsReloadConditionalAndLimits(t *testing.T) {
 	response.Body.Close()
 	if response.StatusCode != 403 {
 		t.Fatal("read-edit grant created a file", response.StatusCode)
+	}
+	appendResponse, appendErr = post(string(appendBytes))
+	if appendErr != nil {
+		t.Fatal(appendErr)
+	}
+	appendResponse.Body.Close()
+	if appendResponse.StatusCode != 200 {
+		t.Fatal("scoped append refused", appendResponse.StatusCode)
 	}
 	cfg.Grants = map[string]map[string]string{certs.fingerprint: {"project-a": "read-write"}}
 	if err = handler.Reload(cfg); err != nil {

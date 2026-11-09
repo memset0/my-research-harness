@@ -177,3 +177,25 @@
 #nprogress .peg {
   display: none !important;
 }
+
+@keyframes discussion-update {
+  0%,
+  35% {
+    outline: 2px solid var(--primary);
+    outline-offset: 3px;
+  }
+  100% {
+    outline: 2px solid transparent;
+    outline-offset: 3px;
+  }
+}
+.discussion-updated {
+  animation: discussion-update 3.5s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .discussion-updated {
+    animation: none;
+    outline: 2px solid var(--primary);
+    outline-offset: 3px;
+  }
+}

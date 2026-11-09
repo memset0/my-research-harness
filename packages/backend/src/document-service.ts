@@ -27,9 +27,13 @@ import {
   changedByteSpan,
   collectWikiSourceReferences,
   type DiscoveredWikiPage,
+  DiscussionError,
+  type DiscussionResponse,
+  type DiscussionStatus,
   DocumentTitleError,
   deriveCompletion,
   discoverRuns,
+  discussionRegistrations,
   EXPERIMENT_REF_REGEX,
   type Experiment,
   effectiveWikiId,
@@ -37,12 +41,15 @@ import {
   formatIsoLocal,
   projectFs as fs,
   type IndexRole,
+  listDiscussions,
+  loadDiscussion,
   type MutationFs,
   markJournalInvocationOutcome,
   normalizeDocumentTitle,
   type ProjectConfig,
   parseCodeReview,
   parseContent,
+  parseDiscussion,
   parseExperimentDescription,
   parseExperimentReadme,
   parseWikiFrontmatter,
@@ -51,9 +58,11 @@ import {
   ResourceIdSchema,
   type Run,
   researchDescriptionProblem,
+  respondToDiscussion,
   SCOPED_EDIT_MAX_SPAN,
   serializeWikiPage,
   setCatalogEntryTitle,
+  setDiscussionStatus,
   setManifestTitle,
   setMarkdownTitle,
   toggleCommitReviewed,
@@ -73,6 +82,7 @@ import {
 import { isFileAccessError } from '@memon/file-protocol'
 import { dirname, isFileURI, join, relative, resolve, sep } from '@memon/file-protocol/paths'
 import { PathContainmentError, resolveContained } from './containment.js'
+import { resolveProjectExecution } from './execution-service.js'
 import {
   containedReal,
   indexedCodeReviewInventory,
@@ -116,6 +126,19 @@ export type BackendDocumentWriteResult =
 export type BackendWikiWriteResult = BackendWikiWriteResponse | BackendWikiConflictResponse
 
 export interface BackendDocumentService {
+  listDiscussions?(project: string): Promise<unknown>
+  getDiscussion?(project: string, id: string): Promise<unknown>
+  respondDiscussion?(
+    project: string,
+    id: string,
+    input: { question: string; snapshot: string; answer: unknown; responseId?: string },
+  ): Promise<unknown>
+  setDiscussionStatus?(
+    project: string,
+    id: string,
+    input: { status: DiscussionStatus; expectedMtime: number; expectedHash: string },
+  ): Promise<unknown>
+
   listReports(project: string, options?: InventoryListOptions): Promise<unknown>
   getReport(project: string, id: string): Promise<unknown>
   putReport(
@@ -287,6 +310,164 @@ export class FilesystemDocumentService implements BackendDocumentService {
           refreshMs: Math.max(this.policy.walkRefreshMs, RUN_INVENTORY_REFRESH_MS),
         })
       : null
+  }
+
+  private async discussionProject(projectName: string, id?: string) {
+    const project = this.requireProject(projectName)
+    try {
+      await resolveContained(project.root, '.memon/index/discussions.json', { mustExist: false })
+      const entries = await discussionRegistrations(project.root)
+      for (const entry of entries.filter((entry) => id === undefined || entry.id === id)) {
+        await resolveContained(project.root, entry.resource)
+        await resolveContained(project.root, `${dirname(entry.resource)}/responses.jsonl`, {
+          mustExist: false,
+        })
+      }
+      return project
+    } catch (error) {
+      if (error instanceof PathContainmentError)
+        throw new DiscussionError('BAD_REQUEST', 'Discussion registration escapes the Project')
+      if (['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? ''))
+        throw new DiscussionError(
+          'NOT_REFRESHED',
+          'Discussion registration is missing; run memon refresh at the source',
+        )
+      throw error
+    }
+  }
+
+  async listDiscussions(projectName: string) {
+    const project = await this.discussionProject(projectName)
+    return { discussions: await listDiscussions(project.root) }
+  }
+  async getDiscussion(projectName: string, id: string) {
+    const project = await this.discussionProject(projectName, id)
+    const document = await loadDiscussion(project.root, id)
+    const comparisons: Record<
+      string,
+      {
+        before: string
+        after: string
+        source: 'git' | 'snapshot' | 'unavailable'
+        truncated: boolean
+      }
+    > = {}
+    const revised = document.questions.filter((q) => q.displayStatus === 'REVISED' && q.metadata)
+    let revisions: string[] = []
+    let gitResource = document.resource
+    let execution: ReturnType<typeof resolveProjectExecution> | null = null
+    if (revised.length) {
+      try {
+        execution = resolveProjectExecution(project)
+        const prefix = await execution.run(
+          'git',
+          ['-C', execution.resolvePath(project.root), 'rev-parse', '--show-prefix'],
+          { timeoutMs: 3000 },
+        )
+        if (prefix.code === 0) gitResource = prefix.stdout.replace(/\r?\n$/, '') + document.resource
+        const history = await execution.run(
+          'git',
+          [
+            '-C',
+            execution.resolvePath(project.root),
+            'log',
+            '-n',
+            '20',
+            '--format=%H',
+            '--',
+            document.resource,
+          ],
+          { timeoutMs: 3000 },
+        )
+        if (history.code === 0)
+          revisions = history.stdout
+            .trim()
+            .split('\n')
+            .filter((v) => /^[a-f0-9]{40}$/.test(v))
+      } catch {
+        execution = null
+      }
+    }
+    const originals = new Map<string, string>()
+    if (execution)
+      for (const revision of revisions) {
+        try {
+          const blob = await execution.run(
+            'git',
+            ['-C', execution.resolvePath(project.root), 'show', `${revision}:${gitResource}`],
+            { timeoutMs: 3000 },
+          )
+          if (blob.code !== 0) continue
+          for (const q of parseDiscussion(blob.stdout).questions)
+            if (q.metadata) originals.set(`${q.metadata.id}/${q.sectionHash}`, q.section)
+          if (
+            revised.every((q) => {
+              const r = q.history
+                .filter((e): e is DiscussionResponse => e.type === 'response')
+                .at(-1)
+              return r?.section_hash && originals.has(`${q.metadata!.id}/${r.section_hash}`)
+            })
+          )
+            break
+        } catch {
+          break
+        }
+      }
+    for (const q of revised) {
+      const latest = q.history.filter((e): e is DiscussionResponse => e.type === 'response').at(-1)
+      if (!latest) continue
+      const original = latest.section_hash
+        ? originals.get(`${q.metadata!.id}/${latest.section_hash}`)
+        : undefined
+      comparisons[q.metadata!.id] = {
+        before: original ?? latest.section ?? '',
+        after: q.section,
+        source:
+          original !== undefined
+            ? 'git'
+            : latest.section !== undefined
+              ? 'snapshot'
+              : 'unavailable',
+        truncated:
+          original === undefined &&
+          (latest.section_truncated === true || latest.section === undefined),
+      }
+    }
+    return { ...document, comparisons }
+  }
+  async respondDiscussion(
+    projectName: string,
+    id: string,
+    input: { question: string; snapshot: string; answer: unknown; responseId?: string },
+  ) {
+    const project = await this.discussionProject(projectName, id)
+    if (project.readOnly && !project.allowedEdits?.includes('discussion'))
+      throw new BackendMutationError(
+        'FORBIDDEN',
+        'Discussion edits are not allowed on this read-only Project',
+      )
+    await respondToDiscussion(project.root, id, input)
+    return this.getDiscussion(projectName, id)
+  }
+  async setDiscussionStatus(
+    projectName: string,
+    id: string,
+    input: { status: DiscussionStatus; expectedMtime: number; expectedHash: string },
+  ) {
+    const project = await this.discussionProject(projectName, id)
+    if (project.readOnly && !project.allowedEdits?.includes('discussion'))
+      throw new BackendMutationError(
+        'FORBIDDEN',
+        'Discussion edits are not allowed on this read-only Project',
+      )
+    await setDiscussionStatus(
+      project.root,
+      id,
+      input.status,
+      { mtime: input.expectedMtime, hash: input.expectedHash },
+      true,
+    )
+    return this.getDiscussion(projectName, id)
   }
 
   async listReports(projectName: string, options: InventoryListOptions = {}) {

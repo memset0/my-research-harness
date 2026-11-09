@@ -69,6 +69,14 @@ export async function withCliWriterLock<T>(root: string, work: () => Promise<T>)
  */
 export const CLI_LEDGER_CLASSES: Readonly<Record<string, CliLedgerClass>> = {
   show: 'readonly',
+  'discussion create': 'project',
+  'discussion status': 'project',
+  'discussion resolve': 'project',
+  'discussion reply': 'project',
+  'discussion list': 'readonly',
+  'discussion show': 'readonly',
+  'discussion pending': 'readonly',
+  'discussion decisions': 'readonly',
   refresh: 'readonly',
   'install-skills': 'project',
   'experiment create': 'project',

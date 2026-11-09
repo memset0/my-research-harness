@@ -204,11 +204,16 @@ function scopeService<T extends object>(config: Config, service: T, kind: string
         if (typeof name !== 'string') throw new Error('Project selector is required')
         const write =
           (kind === 'mutations' && key !== 'listWarnings' && key !== 'getExperimentResearch') ||
-          /^(put|patch|mark|unmark|set|delete)/.test(String(key)) ||
+          /^(put|patch|mark|unmark|set|delete|respond)/.test(String(key)) ||
           (kind === 'shares' && ['add', 'revoke'].includes(String(key)))
         const control = kind === 'shares'
         const edit =
-          kind === 'documents' && TITLE_EDITS.has(String(key)) ? ('title' as const) : undefined
+          kind === 'documents' && TITLE_EDITS.has(String(key))
+            ? ('title' as const)
+            : kind === 'documents' &&
+                ['respondDiscussion', 'setDiscussionStatus'].includes(String(key))
+              ? ('discussion' as const)
+              : undefined
         const run = <R>(work: () => Promise<R>) =>
           withStandaloneProject(config, name, work, write, control, edit)
         if (kind === 'streaming' && key === 'streamLog') {

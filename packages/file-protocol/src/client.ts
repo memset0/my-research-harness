@@ -431,6 +431,10 @@ export class FileAgentClient implements FileAdapter {
     const value = FileMutationRequestSchema.parse(input)
     if (value.operation === 'rename' && value.fileChecks?.length === 0) delete value.fileChecks
     const capabilities = await this.handshake(value.project)
+    if (value.operation === 'append' && !capabilities.capabilities.includes('scoped-append-v1'))
+      throw new FileAccessError('CAPABILITY_UNAVAILABLE', {
+        cause: new Error('upgrade the File Agent for scoped-append-v1'),
+      })
     if (
       !capabilities.capabilities.includes('mutate') ||
       !capabilities.capabilities.includes('replay')

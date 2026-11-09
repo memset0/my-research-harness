@@ -4,6 +4,7 @@ import type { BackendResourceInventoryResponse, BackendWikiInventoryResponse } f
 import { useQuery } from '@tanstack/react-query'
 import {
   fetchCodeReviewsInventory,
+  fetchDiscussions,
   fetchExperimentsInventory,
   fetchJournalCount,
   fetchReportsInventory,
@@ -14,7 +15,7 @@ import {
 import { queryKeys } from '../lib/query-keys'
 import { cn } from '../lib/utils'
 
-export type TabKind = 'experiments' | 'journal' | 'reports' | 'code-review' | 'wiki'
+export type TabKind = 'discussions' | 'experiments' | 'journal' | 'reports' | 'code-review' | 'wiki'
 
 /**
  * Small count badge rendered next to AppBar tab labels. File-backed
@@ -87,9 +88,12 @@ type TabCollection =
   | BackendResourceInventoryResponse
   | BackendWikiInventoryResponse
   | JournalCountResponse
+  | import('../lib/dto/discussions').DiscussionsResponse
 
 function fetchTabCollection(kind: TabKind, project: ProjectTarget): Promise<TabCollection> {
   switch (kind) {
+    case 'discussions':
+      return fetchDiscussions(project)
     case 'experiments':
       return fetchExperimentsInventory(project)
     case 'journal':
@@ -104,6 +108,7 @@ function fetchTabCollection(kind: TabKind, project: ProjectTarget): Promise<TabC
 }
 
 function countTabCollection(data: TabCollection): number {
+  if ('discussions' in data) return data.discussions.filter((d) => d.status === 'OPEN').length
   if ('items' in data) return data.items.length
   if ('totalEvents' in data) return data.totalEvents
   if ('pages' in data) return data.pages.length

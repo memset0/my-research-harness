@@ -63,3 +63,56 @@ Imported `legacy_sections` preserve old prose; do not maintain them for new Runs
 A fundamental redo gets a new E ID, not an experiment epoch. Change lifecycle
 ACTIVE/PAUSED/ARCHIVED/RETIRED only within the owner's authorization;
 RUNNING/COMPLETED are derived display states.
+
+## Decisions through discussions
+
+When the user needs to choose among proposals or answer research questions,
+author `docs/discussions/D<NNNN>-<slug>/README.md`. Create it with
+`memon --project-root . discussion create <slug> --title "Discussion title"`.
+Keep DRAFT while preparing it; publish only when ready with
+`memon --project-root . discussion status D0001 --status OPEN`.
+
+Place a fenced `question` block immediately after each question heading:
+
+````markdown
+## Where should results live?
+
+```question
+id: RESULT-STORAGE
+type: choice
+category: storage
+status: OPEN
+options:
+  - id: files
+    label: Project files
+  - id: central
+    label: Central storage
+prefer:
+  option: files
+  reason: Keep evidence portable.
+```
+
+Explain the proposal and its evidence here. Use tables, images, HTML and
+existing components freely. Choose categories together with the user.
+````
+
+Use choice, multi, confirm or text. Keep question IDs stable and uppercase with
+digits/hyphens. Confirm preferences use booleans; multi preferences use option
+arrays. The owner responds on the website. Read feedback with
+`memon --project-root . discussion pending` and inspect the full history with
+`memon --project-root . discussion show D0001`. Reply with
+`memon --project-root . discussion reply D0001/RESULT-STORAGE "Reply text"`.
+After acting on captured feedback, resolve it with
+`memon --project-root . discussion resolve D0001/RESULT-STORAGE --status DECIDED --decision files --note "Adopted and implemented"`.
+For multi decisions pass a JSON array; for confirm pass true or false. OPEN,
+DEFERRED and DROPPED are also valid question statuses. Preserve qualifications
+and unresolved work rather than fabricating consensus.
+
+Run plain `memon refresh` after direct author edits. README holds all questions;
+responses.jsonl is append-only owner responses and agent replies/acks. Never
+rewrite that history. Discussion lifecycle is DRAFT/OPEN/CLOSED, separate from
+question processing; closing does not imply every question was resolved. The
+owner can close/reopen published discussions in the browser. Changes to titles,
+options or descriptions require renewed feedback; recategorization and state
+updates preserve answer validity. Reuse existing content only after a deliberate
+per-project decision; do not automatically convert old Reports.

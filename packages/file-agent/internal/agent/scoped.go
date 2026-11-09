@@ -3,6 +3,7 @@ package agent
 import (
 	"io"
 	"path"
+	"regexp"
 	"strings"
 )
 
@@ -11,10 +12,13 @@ import (
 const MaxScopedEditSpan = 4096
 
 // scopedEditPath reports whether a read-edit principal may replace the path:
-// Report and Wiki documents and manifests, and the two published catalogs
-// that carry their titles.
+// Report/Wiki title documents, discussion lifecycle metadata and their
+// published catalogs. Central limits the changed fields.
 func scopedEditPath(name string) bool {
-	if name == ".memon/index/reports.json" || name == ".memon/index/wiki.json" {
+	if regexp.MustCompile(`^docs/discussions/D[0-9]{4}-[a-z0-9]+(-[a-z0-9]+)*/README\.md$`).MatchString(name) {
+		return true
+	}
+	if name == ".memon/index/discussions.json" || name == ".memon/index/reports.json" || name == ".memon/index/wiki.json" {
 		return true
 	}
 	if !strings.HasPrefix(name, "docs/reports/") && !strings.HasPrefix(name, "docs/wiki/") {
@@ -25,7 +29,19 @@ func scopedEditPath(name string) bool {
 }
 
 // validateScopedEdit admits only a guarded replacement of an existing file.
+var scopedAppendPath = regexp.MustCompile(`^docs/discussions/D[0-9]{4}-[a-z0-9]+(-[a-z0-9]+)*/responses\.jsonl$`)
+
 func validateScopedEdit(m Mutation) error {
+	if m.Operation == "append" {
+		if !validPath(m.Path, false) || !scopedAppendPath.MatchString(m.Path) || m.ExpectedSize == nil || *m.ExpectedSize < 0 || m.Precondition != nil || m.Mode != nil || m.Destination != "" || m.DestinationPrecondition != nil || len(m.FileChecks) != 0 || m.Recursive {
+			return fail("FORBIDDEN")
+		}
+		return nil
+	}
+	if m.ExpectedSize != nil {
+		return fail("FORBIDDEN")
+	}
+
 	if m.Operation != "replace" || m.Precondition == nil || m.Precondition.Kind != "match" ||
 		m.Mode != nil || m.Destination != "" || m.DestinationPrecondition != nil ||
 		len(m.FileChecks) > 0 || m.Recursive || !validPath(m.Path, false) || !scopedEditPath(m.Path) {

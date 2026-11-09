@@ -15,7 +15,7 @@
 // recompute must be visible on the next read.
 
 import { createHash } from 'node:crypto'
-import { projectFs, withProjectFileContext } from '@memon/core'
+import { loadDiscussion, projectFs, withProjectFileContext } from '@memon/core'
 
 const { realpath } = projectFs
 
@@ -92,7 +92,18 @@ async function serve(request: NextRequest, context: RouteContext, includeBody: b
   }
 
   const extension = extname(relative).toLowerCase()
-  const contentType = CONTENT_TYPES[extension]
+  const contentType =
+    CONTENT_TYPES[extension] ??
+    (relative.startsWith('docs/discussions/')
+      ? (
+          {
+            '.html': 'text/html; charset=utf-8',
+            '.htm': 'text/html; charset=utf-8',
+            '.css': 'text/css; charset=utf-8',
+            '.js': 'application/javascript; charset=utf-8',
+          } as Record<string, string>
+        )[extension]
+      : undefined)
   if (!contentType) return error(404, 'NOT_FOUND', 'not a document asset type')
   const thumbnail = new URL(request.url).searchParams.get('thumbnail') === '1'
   if (thumbnail && !contentType.startsWith('video/')) {
@@ -144,6 +155,24 @@ async function serve(request: NextRequest, context: RouteContext, includeBody: b
         }
         if (!absolutePath.startsWith(`${root}${sep}`)) {
           return error(400, 'BAD_REQUEST', 'document asset escapes the project root')
+        }
+        const actualRelative = absolutePath.slice(root.length + 1)
+        if (
+          relative === '.memon/index/discussions.json' ||
+          actualRelative === '.memon/index/discussions.json'
+        )
+          return error(404, 'NOT_FOUND', 'not a document asset')
+        for (const resource of [relative, actualRelative]) {
+          const discussion = /^docs\/discussions\/(D\d{4})-[^/]+\//.exec(resource)
+          if (discussion) {
+            try {
+              await loadDiscussion(project.root, discussion[1]!)
+            } catch (cause) {
+              if ((cause as { code?: string }).code === 'NOT_FOUND')
+                return error(404, 'NOT_FOUND', 'discussion is not published')
+              throw cause
+            }
+          }
         }
         const handle = await projectFs.open(absolutePath, 'r')
         let transferred = false

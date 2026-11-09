@@ -58,6 +58,8 @@ import { useRuntimeConfig } from '../lib/runtime-config'
  * and the metadata views projected from them.
  */
 const RESOURCE_QUERY_ROOTS: Record<string, true> = {
+  discussion: true,
+  discussions: true,
   'code-review': true,
   'code-reviews': true,
   'code-reviews-inventory': true,

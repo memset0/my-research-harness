@@ -34,6 +34,8 @@ describe('queryKeys', () => {
         "codeReviewsInventory",
         "commitMarks",
         "contentHealth",
+        "discussion",
+        "discussions",
         "docAsset",
         "experiment",
         "experimentResearch",
@@ -757,4 +759,15 @@ it('scopes research lock reads to the Experiment', () => {
     'project-a',
     'E0001-a',
   ])
+})
+
+it('scopes discussion lists and documents by Host and Project', () => {
+  expect(queryKeys.discussions(HOSTED)).toEqual(['discussions', 'host-a', 'project-a'])
+  expect(queryKeys.discussion(HOSTED, 'D0001')).toEqual([
+    'discussion',
+    'host-a',
+    'project-a',
+    'D0001',
+  ])
+  expect(queryKeys.discussion(STANDALONE, 'D0001')).toEqual(['discussion', 'project-a', 'D0001'])
 })

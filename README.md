@@ -512,3 +512,23 @@ directory is one capability (`experiment-readme`, `run-readme`,
 `memon-cli`, `memon-skills`, `web-dashboard`, etc.). Active proposals
 under [`openspec/changes/`](openspec/changes/); archived changes under
 [`openspec/changes/archive/`](openspec/changes/archive/).
+
+### Discussions
+
+Use `memon discussion create design --title "Design decisions"` to prepare a
+DRAFT in `docs/discussions/D0001-design/README.md`. Put a fenced `question` YAML
+block immediately after each question heading, with `id`, `type`, `category`
+and `status`; use `choice`, `multi`, `confirm` or `text`. Choose category names
+freely. Publish with `memon discussion status D0001 --status OPEN` and run
+`memon refresh` after direct author edits. The dashboard offers question cards,
+owner answers/comments, history, category filters and a waiting-for-you view.
+
+Agents read `memon discussion pending`, inspect `memon discussion show D0001`,
+append `memon discussion reply D0001/QUESTION-ID "Reply"`, and apply decisions
+with `memon discussion resolve D0001/QUESTION-ID --status DECIDED --decision a`.
+Owner feedback and agent acknowledgements remain append-only in responses.jsonl.
+The owner can close/reopen a published discussion while retaining unanswered
+questions. The browser remembers the last displayed state and highlights fetched
+changes. File Agent Projects require independently installed scoped-append-v1
+support and the central discussion edit allowance. See the v11-to-v12 migration
+guide before explicitly advancing a Project marker; deployment never migrates it.

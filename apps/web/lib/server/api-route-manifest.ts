@@ -18,7 +18,7 @@ export type ApiCapability = 'projects' | 'git' | 'shares' | 'slurm'
 export interface ApiRouteOwnership {
   methods: readonly ApiMethod[]
   /** A bounded edit (`allowed_edits`) a read-only Project may still admit. */
-  edit?: 'title'
+  edit?: 'title' | 'discussion'
   owner: ApiOwner
   scope: ApiScope
   auth: ApiAuthClass
@@ -57,6 +57,16 @@ const backend = (
 ): ApiRouteOwnership => ({ methods, owner: 'backend', scope, auth, streaming, capability })
 
 export const API_ROUTE_MANIFEST = {
+  'discussions/route.ts': backend(['GET'], 'project-query', 'read'),
+  'discussions/[id]/route.ts': backend(['GET'], 'resource', 'read'),
+  'discussions/[id]/responses/route.ts': {
+    ...backend(['POST'], 'resource', 'mutating'),
+    edit: 'discussion',
+  },
+  'discussions/[id]/status/route.ts': {
+    ...backend(['POST'], 'resource', 'mutating'),
+    edit: 'discussion',
+  },
   'translations/status/route.ts': central(['GET'], 'shell'),
   'translations/body/route.ts': central(['GET', 'POST'], 'shell'),
   'anomalies/route.ts': backend(['GET'], 'project-query', 'read'),
@@ -191,6 +201,11 @@ export interface DirectRuntimeSurface {
  * `central` entries may keep only the central runtime after the split.
  */
 export const DIRECT_RUNTIME_SURFACES = {
+  'lib/server/discussion-route.ts': {
+    owner: 'composed',
+    scope: 'resource',
+    purpose: 'project-data',
+  },
   'app/login/page.tsx': { owner: 'central', scope: 'global', purpose: 'auth' },
   'app/[host]/[project]/layout.tsx': {
     owner: 'composed',

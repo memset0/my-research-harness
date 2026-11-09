@@ -38,7 +38,7 @@ export function createProgram(): Command {
     )
     .addHelpText(
       'after',
-      '\nSix routine commands: experiment create, run create, run update, refresh, show, install-skills.\nEdit Markdown, JSON and CSV directly; memon refresh publishes edits.\nAll 19 retained commands use memon; migration scripts live in packages/core/migrations/.',
+      '\nSix routine commands: experiment create, run create, run update, refresh, show, install-skills.\nEdit Markdown, JSON and CSV directly; memon refresh publishes edits.\nAdditional commands, including discussion, use memon; migration scripts live in packages/core/migrations/.',
     )
 }
 

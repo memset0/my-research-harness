@@ -14,13 +14,20 @@ import { ensureIndexDirectory } from './derived-index/gitignore.js'
 import { resolveIndexPaths } from './derived-index/paths.js'
 import type { IndexSnapshot } from './derived-index/schema.js'
 import { IsoTimestampSchema, RelativePathSchema } from './derived-index/schema.js'
+import {
+  DISCUSSION_DIRECTORY,
+  DiscussionSummarySchema,
+  parseDiscussion,
+  parseDiscussionEvents,
+  summarizeDiscussion,
+} from './discussion/model.js'
 import { projectFs } from './project-file-store.js'
 import { deriveVariantStatus } from './results/summary.js'
 import { formatIsoLocal } from './time.js'
 import { parseWikiFrontmatter } from './wiki/frontmatter.js'
 import { buildWikiSummary } from './wiki/summary.js'
 
-export const PROJECT_CATALOG_KINDS = ['experiments', 'wiki', 'reports'] as const
+export const PROJECT_CATALOG_KINDS = ['experiments', 'wiki', 'reports', 'discussions'] as const
 export type ProjectCatalogKind = (typeof PROJECT_CATALOG_KINDS)[number]
 export const ProjectCatalogEntrySchema = z
   .object({
@@ -56,7 +63,14 @@ export const ProjectCatalogSchema = z
   .superRefine((value, ctx) => {
     const ids = new Set<string>()
     for (const [i, entry] of value.entries.entries()) {
-      const prefix = value.kind === 'experiments' ? 'E' : value.kind === 'wiki' ? 'W' : 'R'
+      const prefix =
+        value.kind === 'experiments'
+          ? 'E'
+          : value.kind === 'wiki'
+            ? 'W'
+            : value.kind === 'discussions'
+              ? 'D'
+              : 'R'
       if (
         !new RegExp(`^${prefix}\\d{4}${prefix === 'E' ? '-[a-z0-9-]+' : ''}$`).test(entry.id) ||
         !entry.resource.startsWith(`docs/${value.kind}/`) ||
@@ -76,7 +90,9 @@ export const ProjectCatalogSchema = z
           ? ExperimentSummarySchema
           : value.kind === 'wiki'
             ? BackendWikiSummarySchema
-            : BackendReportSummarySchema
+            : value.kind === 'discussions'
+              ? DiscussionSummarySchema
+              : BackendReportSummarySchema
       const { path: _path, ...portable } = summary as typeof summary & { path?: unknown }
       if (!schema.safeParse(portable).success)
         ctx.addIssue({
@@ -101,6 +117,7 @@ export interface ProjectCatalogIssue {
 export interface ProjectCatalogBuild {
   entries: ProjectCatalogEntry[]
   invalid: ProjectCatalogIssue[]
+  warnings?: ProjectCatalogIssue[]
 }
 
 /** Publication refused: nothing was written and every problem is listed. */
@@ -515,4 +532,82 @@ export async function newStandaloneDocuments(
         ]
       : [],
   )
+}
+
+/** Source-side only: browser readers use the published registrations. */
+export async function buildDiscussionCatalog(
+  root: string,
+  io: IndexFs = defaultIndexFs,
+): Promise<ProjectCatalogBuild> {
+  const candidates: ProjectCatalogEntry[] = [],
+    invalid: ProjectCatalogIssue[] = [],
+    warnings: ProjectCatalogIssue[] = []
+  let paths: Dirent[]
+  try {
+    paths = await io.readdir(await contained(root, 'docs/discussions'), { withFileTypes: true })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { entries: [], invalid: [] }
+    throw error
+  }
+  for (const entry of paths) {
+    if (!DISCUSSION_DIRECTORY.test(entry.name)) {
+      if (/^D[0-9]/.test(entry.name))
+        invalid.push({
+          kind: 'discussions',
+          resource: `docs/discussions/${entry.name}`,
+          message: 'discussion name must be D<NNNN>-<slug>',
+        })
+      continue
+    }
+    const resource = `docs/discussions/${entry.name}/README.md`
+    try {
+      const path = await contained(root, resource)
+      const [text, stat] = await Promise.all([io.readFile(path, 'utf8'), io.stat(path)])
+      const parsed = parseDiscussion(text)
+      const logResource = resource.replace(/README\.md$/, 'responses.jsonl')
+      try {
+        const log = await io.readFile(await contained(root, logResource), 'utf8')
+        for (const diagnostic of parseDiscussionEvents(log).diagnostics)
+          warnings.push({
+            kind: 'discussions',
+            resource: logResource,
+            message: `line ${diagnostic.line}: ${diagnostic.message}`,
+          })
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+      for (const diagnostic of parsed.diagnostics)
+        warnings.push({
+          kind: 'discussions',
+          resource,
+          message: `line ${diagnostic.line}: ${diagnostic.message}`,
+        })
+      const id = entry.name.slice(0, 5),
+        slug = entry.name.slice(6)
+      candidates.push({
+        id,
+        slug,
+        resource,
+        summary: summarizeDiscussion(id, slug, resource, parsed, stat.mtimeMs),
+      })
+    } catch (error) {
+      invalid.push({ kind: 'discussions', resource, message: (error as Error).message })
+    }
+  }
+  return {
+    ...validatedBuild(
+      'discussions',
+      candidates.sort((a, b) => a.id.localeCompare(b.id)),
+      invalid,
+    ),
+    warnings,
+  }
+}
+export async function publishDiscussionCatalog(
+  root: string,
+  io: IndexFs = defaultIndexFs,
+): Promise<void> {
+  const built = await buildDiscussionCatalog(root, io)
+  if (built.invalid.length) throw new ProjectCatalogInvalidError(built.invalid)
+  await writeProjectCatalog(root, 'discussions', built.entries, io)
 }
