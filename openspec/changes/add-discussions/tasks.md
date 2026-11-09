@@ -32,9 +32,11 @@ Implementation authorized by the owner on 2026-11-08. Track verified completion 
 - [x] 5.2 Add single-column question cards with shared Markdown/components, free-form category grouping/filtering, question-status overview, stable anchors, preference adoption and DECIDED folding; verify custom/renamed category behavior, rendered content and anchors.
 - [x] 5.3 Add typed owner response forms, comments/history and REVISED comparison with honest fallback notices; verify form tests cover all four types, conflicts and read-only viewers.
 - [x] 5.4 Persist last-displayed discussion state in localStorage and animate fetched changes; verify changed/new content and reload comparison, identical/failed fetches, storage failure fallback, reduced motion and preservation of scroll, expansion and unsent input.
+- [x] 5.5 Give Discussions a distinct paired-message icon in the sidebar and list heading; verify existing sidebar behavior, typecheck and rendered desktop/mobile output.
 
 ## 6. Convention and integration verification
 
 - [x] 6.1 Add the seven-section v11-to-v12 guide and align version policy/documentation for the explicit discussion convention boundary; verify guide checks and an isolated marker-only migration preserving existing documents.
 - [x] 6.2 Run the explicit change-relevant testlist, root typecheck, touched-file Biome checks and OpenSpec validation; record actual results and unrelated failures.
 - [x] 6.3 Build production in an inactive output directory and verify real browser rendering, mobile layout, answers, CLI pending/resolve/reply, revision handling, referenced assets and CSS tokens against a neutral fixture.
+- [x] 6.4 Write a reusable, optional Report-to-Discussion content migration handoff with source/history preservation, question/status mapping and CLI verification; keep it separate from filesystem convention migration.

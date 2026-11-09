@@ -52,6 +52,8 @@ Add discussions to the source-published catalog schema and refresh pipeline. Sto
 
 ### Browser routes and composition
 
+Use Lucide's MessagesSquare paired-message icon for the Discussions sidebar entry and list heading. It identifies the conversation workflow independently from Reports' FileText document icon. Keep adjacent text as the accessible label and hide the decorative icon from assistive technology.
+
 Use `/[host]/[project]/discussions` for the Project overview and `/[host]/[project]/d/[n]` for a discussion. Normal browsing defaults to OPEN, with CLOSED history available through a lifecycle filter. Waiting-for-you includes only eligible questions in OPEN discussions. A decisions view preserves published historical decisions. DRAFT is not published into these normal reader flows. Detail uses an ordered stream of ordinary prose and question cards. Each card composes existing shadcn primitives, the shared Markdown renderer and an owner response form when the discussion is OPEN. Long descriptions use a collapsible region; DECIDED defaults folded. Overview category/status controls link to uppercase question anchors. Share viewers have no form or mutation authority; whole-Project grants allow published discussion reads.
 
 API surfaces are `GET /api/discussions`, `GET /api/discussions/:id`, and `POST /api/discussions/:id/responses` with Project/Host identity carried by the existing conventions. Add backend handlers and Next routes, route manifest classifications, API client and query-key constructors together. Response bodies and DTOs carry raw source sections for display and comparison without client runtime imports from core.
@@ -65,6 +67,8 @@ Compare the successful fetched state with the previous displayed baseline before
 Use the existing query/fetch lifecycle; introduce no filesystem watcher or browser EventSource. Update animation is independent of question REVISED status: a new reply can animate without invalidating an answer, and a question requiring reconfirmation keeps that state after the brief animation ends.
 
 ### Compatibility and authoring
+
+Provide a standalone handoff prompt for project agents that the owner asks to move existing Report-based discussion content into native discussions. This is an optional, per-project content workflow, separate from the filesystem marker migration. Preserve source Reports and historical evidence; do not invent native owner-response events from imported prose or convert unrelated Reports automatically.
 
 Use the proposed handoff defaults in proposal.md, subject to owner review. Extend bundled CLI guidance so research agents know how to create question fences, inspect pending feedback, resolve and reply. The handoff requests FS12, but treating an additive feature as a new convention needs an explicit policy exception: old content remains readable; the guide refreshes ignored catalogs and changes only the tracked version marker after verification. A File Agent upgrade is independent and required only for scoped append support.
 

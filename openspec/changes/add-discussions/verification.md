@@ -68,3 +68,30 @@ The requested initial release is 12.0.0, with the reviewed additive FS12 excepti
 and consecutive migration guide. Implementation and release commits remain
 separate. Final release metadata validation and central activation are recorded
 at release time; this document does not claim an unexecuted production cutover.
+
+## Icon and content-handoff follow-up
+
+- Discussions now uses Lucide MessagesSquare in the sidebar and list heading;
+  Reports retains FileText. No new icon dependency or primitive override.
+- The optional Report-to-Discussion handoff documents scoped selection, source
+  preservation, stable ID mapping, lifecycle/decision semantics and honest import
+  of historical prose without fabricated native response events. It is separate
+  from filesystem marker migration.
+- Selected Web tests: `components/app-sidebar.test.tsx` (30) and
+  `components/discussions-view.test.tsx` (6), all 36 passed. The existing sidebar
+  dialog test emits its pre-existing missing-description warning.
+- Selected Core tests: `src/version.test.ts` and `src/release-policy.test.ts`,
+  all 12 passed. Root typecheck, touched TypeScript Biome checks and OpenSpec
+  validation passed. No full-suite or archive gate was run.
+- An isolated Project exercised the handoff's question example and CLI create,
+  refresh, show, pending, decisions, publish, resolve and reply commands. The
+  resulting document and history had no diagnostics. No operator data changed.
+- Production build passed. Real Chrome at 1280px and an emulated 390px rendered
+  the paired-message sidebar/list-heading icons and the distinct Report icon,
+  including the mobile drawer. Icon geometry was nonzero, the heading icon was
+  decorative, and page width matched viewport width. No page exceptions occurred;
+  the existing favicon 404 appeared separately. Three loaded stylesheets exposed
+  all five checked background/foreground/card/muted/primary tokens as oklch values.
+- The follow-up is a central-only 12.0.1 patch; release-transition validation
+  passed from 12.0.0/FS12 with the central surface. CLI reinstall and content or
+  filesystem migration are not part of the icon release.

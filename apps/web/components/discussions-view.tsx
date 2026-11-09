@@ -1,7 +1,15 @@
 'use client'
 import type { DiscussionQuestion, QuestionMetadata } from '@memon/core'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Check, ChevronDown, ChevronRight, MessageSquare, RefreshCw } from 'lucide-react'
+import {
+  ArrowLeft,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  MessageSquare,
+  MessagesSquare,
+  RefreshCw,
+} from 'lucide-react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useTheme } from 'next-themes'
@@ -108,7 +116,10 @@ function DiscussionList({ project }: { project: ProjectTarget }) {
   return (
     <div className="mx-auto w-full max-w-5xl space-y-6 p-4 md:p-8" data-discussion-list>
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Discussions</h1>
+        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+          <MessagesSquare className="size-6 shrink-0" aria-hidden="true" />
+          Discussions
+        </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Questions, feedback and decisions with your agents.
         </p>

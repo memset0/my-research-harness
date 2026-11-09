@@ -129,6 +129,13 @@ A discussion overview SHALL group questions by free-form category, filter by que
 - **WHEN** a reader opens waiting-for-you
 - **THEN** no question from a DRAFT or CLOSED discussion appears, even if that question itself is OPEN
 
+### Requirement: Discussions have a distinct visual identity
+The Discussions sidebar entry and list heading SHALL use a paired-message icon distinct from the Reports document icon. The adjacent text SHALL remain the accessible label.
+
+#### Scenario: Distinguish discussions from reports
+- **WHEN** a reader scans the Project sidebar or opens the Discussions list
+- **THEN** Discussions uses the same paired-message icon in both locations while Reports retains its document icon
+
 ### Requirement: Browser persists the last displayed discussion state
 The browser SHALL store a bounded, versioned last-displayed baseline in localStorage, isolated by reader context, Host, Project and discussion. Later successful fetches SHALL compare against it before advancing it. First use SHALL initialize without marking every item changed. Failed fetches SHALL retain the baseline. Storage corruption or refusal SHALL fall back to memory without blocking the page.
 

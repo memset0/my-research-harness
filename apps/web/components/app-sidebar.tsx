@@ -10,6 +10,7 @@ import {
   Gauge,
   GitPullRequest,
   Loader2,
+  MessagesSquare,
   NotebookPen,
 } from 'lucide-react'
 import Link from 'next/link'
@@ -124,7 +125,7 @@ const SECTIONS: SectionSpec[] = [
   {
     key: 'discussions',
     name: 'Discussions',
-    icon: FileText,
+    icon: MessagesSquare,
     page: { kind: 'discussions' },
     pages: ['discussions', 'discussion'],
     expandable: false,
