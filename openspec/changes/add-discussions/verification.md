@@ -18,7 +18,8 @@ readable; no operator Project was migrated. The change remains active.
   project catalogs: 11 cases passed, including nested Git Project roots. A regression checks that a conditional GET
   sees feedback appended after its original response instead of returning an
   unchanged validator with no recorded dependencies.
-- CLI: command surface, discussion commands and refresh: 32 cases passed.
+- CLI: command surface, discussion commands and refresh: 37 cases passed. Scalar-looking option IDs
+  and text decisions retain their declared types.
 - File protocol: append validation and existing protocol contracts: 25 cases passed.
 - File Agent: targeted Discussion, Scoped, ConcurrentReplay and TLSGrants Go tests
   passed locally, including append replay, competing sizes, read-grant refusal,

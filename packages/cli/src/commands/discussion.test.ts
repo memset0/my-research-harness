@@ -51,3 +51,31 @@ it('preserves exit 9 on a stale document guard', async () => {
   )
   expect(result.exitCode).toBe(9)
 })
+
+it.each([
+  ['choice', '1', '1'],
+  ['choice', 'false', 'false'],
+  ['text', 'false', 'false'],
+  ['confirm', 'false', false],
+  ['multi', '["1","2"]', ['1', '2']],
+] as const)('keeps the decision type for %s %s', async (type, value, expected) => {
+  const options =
+    type === 'choice' || type === 'multi'
+      ? 'options:\n  - id: "1"\n    label: One\n  - id: "2"\n    label: Two\n  - id: "false"\n    label: False label\n'
+      : ''
+  const p = await createTempProject({
+    files: {
+      '.memon/project.yml': 'schema_version: 1\n',
+      'docs/discussions/D0001-design/README.md': `---\ntitle: Design\nstatus: OPEN\n---\n## Question\n\`\`\`question\nid: Q\ntype: ${type}\ncategory: design\nstatus: OPEN\n${options}\`\`\`\n\nEvidence\n`,
+    },
+  })
+  await publishDiscussionCatalog(p.root)
+  const result = await captureCli(() =>
+    runDiscussion({ projectRoot: p.root, cwd: p.root, format: 'json' }, 'resolve', 'D0001/Q', {
+      status: 'DECIDED',
+      decision: value,
+    }),
+  )
+  expect(result.exitCode, result.stderr).toBe(0)
+  expect(result.json.questions[0].metadata.decision).toEqual(expected)
+})

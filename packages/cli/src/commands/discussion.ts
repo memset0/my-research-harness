@@ -41,9 +41,14 @@ export async function runDiscussion(
       case 'resolve': {
         let decision: unknown = options.decision
         if (options.decision !== undefined) {
-          try {
-            decision = JSON.parse(options.decision)
-          } catch {}
+          const [discussionId, questionId] = target!.split('/')
+          const document = await loadDiscussion(root, discussionId!, true)
+          const type = document.questions.find((q) => q.metadata?.id === questionId)?.metadata?.type
+          if (type === 'confirm' || type === 'multi' || options.decision.trim().startsWith('"')) {
+            try {
+              decision = JSON.parse(options.decision)
+            } catch {}
+          }
         }
         return resolveDiscussionQuestion(root, target!, {
           status: options.status as QuestionStatus,
