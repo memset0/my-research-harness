@@ -8,6 +8,7 @@ Rendered-page checks were rebuilt by hand in each session, and the machine-local
 - AGENTS.md §1.1: `LOCAL.md` is the never-committed notebook for this machine's deployment and development details, read at the start of every development, test, release or deploy session.
 - `apps/web/next.config.mjs` reads extra dev-server origins from `MEMON_ALLOWED_DEV_ORIGINS`, so a preview dev server behind a public hostname keeps HMR; hostnames stay in machine-local env.
 - AGENTS.md §4.3 gains the scripted rendered check as step 6. The `.gitignore` comment points to AGENTS.md.
+- Clarify AGENTS.md §6.2 per the owner: direct production hosting is preferred; systemd is permitted, including retaining an existing deployment. A supervisor choice alone does not require repeating an existing deployment authorization.
 
 ## Capabilities
 

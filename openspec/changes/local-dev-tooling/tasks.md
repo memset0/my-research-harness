@@ -4,6 +4,8 @@
 - [x] 1.2 Widen AGENTS.md §1.1 to deployment and development facts, add the scripted check to §4.3, and update the `.gitignore` comment
 - [x] 1.3 Read extra dev-server origins from `MEMON_ALLOWED_DEV_ORIGINS` in `apps/web/next.config.mjs`, so a preview dev server behind a public hostname keeps HMR
 
+- [x] 1.4 Clarify AGENTS.md §6.2 that direct hosting is preferred and systemd is allowed; verify the text removes the former prohibition and preserves the exact-build and post-deployment readiness rules.
+
 ## 2. Verification
 
 - [x] 2.1 Run the script against a healthy page (exit 0; Expand and `expanded=1` observed) and a page whose source is unreachable (exit 1 listing the 5xx requests); run Biome on the script and validate the change

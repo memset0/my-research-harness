@@ -350,12 +350,14 @@ the applicable active change artifacts; keep artifacts aligned with the code.
 
 ### 6.2 Local deployment
 
-- Direct production build + hosting on the local machine (§4.2); never create or
-  use systemd services for it.
+- Prefer direct production build + hosting on the local machine (§4.2).
+  systemd is allowed, including maintaining an existing deployment, but is not
+  the default recommendation. Do not ask again solely because systemd is
+  involved when deployment is already authorized.
 - Reuse an existing build of the exact release; do not rebuild or re-test just
   to deploy.
-- Start the prod host directly, leave it running after the session, check
-  readiness. Stop the old host before replacing its build output (F5).
+- Start the prod host through the selected hosting method, leave it running
+  after the session, and check readiness. Stop the old host before replacing its build output (F5).
 - "Deploy now without tests" skips extra test runs; it never turns unexecuted
   tests into passes.
 
