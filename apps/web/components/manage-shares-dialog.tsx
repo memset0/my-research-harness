@@ -7,11 +7,11 @@
 // (the default) or the whole Project; elsewhere links are Project-scoped. A
 // link is the page's own URL with `?share=<token>`; a listed whole-Project link
 // is copied for the page currently open. Report and Wiki pages can
-// also be made public (readable by anyone with the plain page URL). A service
-// Report or Wiki page additionally offers a service link, the only kind of
-// link whose token also reaches the page's live application. The list
-// shows every link of this Project with what it can reach, and copies or
-// revokes it.
+// also be made public (readable by anyone with the plain page URL). On a
+// service Report or Wiki page "This page only" issues a service link, the only
+// kind of link whose token also reaches the page's live application; a
+// whole-Project link never does. The list shows every link of this Project
+// with what it can reach, and copies or revokes it.
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Copy, Plus, Share2, Trash2 } from 'lucide-react'
@@ -189,7 +189,7 @@ export function ManageSharesDialog({ project }: Props) {
   const [open, setOpen] = useState(false)
   const [label, setLabel] = useState('')
   const [expires, setExpires] = useState('never')
-  const [reach, setReach] = useState<'page' | 'project' | 'service'>('page')
+  const [reach, setReach] = useState<'page' | 'project'>('page')
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
@@ -213,7 +213,7 @@ export function ManageSharesDialog({ project }: Props) {
 
   // Only Report and Wiki pages can be public or carry a service.
   const publishable = pageDoc && pageDoc.kind !== 'experiment' ? pageDoc : null
-  const { data: pageDetail } = useQuery({
+  const { data: pageDetail, isSuccess: pageDetailKnown } = useQuery({
     queryKey:
       publishable?.kind === 'wiki'
         ? queryKeys.wikiPage(project, publishable.id)
@@ -228,7 +228,10 @@ export function ManageSharesDialog({ project }: Props) {
     publishable && (pageDetail as { presentation?: string } | undefined)?.presentation === 'service'
       ? publishable
       : null
-  const service = serviceDoc !== null && reach === 'service'
+  // On a service page "This page only" is the page together with its service.
+  const service = serviceDoc !== null && reach === 'page'
+  // A page link waits for the presentation, so it never misses the service.
+  const presentationPending = publishable !== null && reach === 'page' && !pageDetailKnown
   const scope: ShareScopeDto = pageDoc && reach !== 'project' ? pageDoc : { kind: 'project' }
   const scopeName = service ? `Service · ${scopeLabel(scope)}` : scopeLabel(scope)
   const publicRecord = publishable
@@ -308,8 +311,8 @@ export function ManageSharesDialog({ project }: Props) {
           </DialogTitle>
           <DialogDescription>
             Links grant read-only access to one page or to the whole project, and open the page they
-            were issued from. Only a service link reaches a live application. Revoke a link to end
-            that access.
+            were issued from. Only a link for a service page itself reaches its live application.
+            Revoke a link to end that access.
           </DialogDescription>
         </DialogHeader>
 
@@ -409,10 +412,9 @@ export function ManageSharesDialog({ project }: Props) {
                   type="single"
                   variant="outline"
                   size="sm"
-                  value={reach === 'service' && !serviceDoc ? 'page' : reach}
+                  value={reach}
                   onValueChange={(value) => {
-                    if (value === 'page' || value === 'project' || value === 'service')
-                      setReach(value)
+                    if (value === 'page' || value === 'project') setReach(value)
                   }}
                   aria-label="Share scope"
                 >
@@ -420,12 +422,15 @@ export function ManageSharesDialog({ project }: Props) {
                     This page only ({KIND_LABEL[pageDoc.kind]} {pageDoc.id})
                   </ToggleGroupItem>
                   <ToggleGroupItem value="project">Whole project</ToggleGroupItem>
-                  {serviceDoc ? <ToggleGroupItem value="service">Service</ToggleGroupItem> : null}
                 </ToggleGroup>
                 {service ? (
                   <p className="text-xs text-muted-foreground" data-service-warning="">
                     This page plus its live application. Recipients can use the application fully,
                     including any writes it makes.
+                  </p>
+                ) : serviceDoc ? (
+                  <p className="text-xs text-muted-foreground" data-service-excluded="">
+                    A whole-project link does not reach this page's live application.
                   </p>
                 ) : null}
               </div>
@@ -466,7 +471,7 @@ export function ManageSharesDialog({ project }: Props) {
             </div>
             <Button
               onClick={() => createMutation.mutate()}
-              disabled={createMutation.isPending}
+              disabled={createMutation.isPending || presentationPending}
               size="sm"
             >
               <Plus className="size-3.5" />

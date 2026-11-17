@@ -78,7 +78,9 @@ describe('ManageSharesDialog', () => {
     expect(screen.getByText('Wiki W0004', { selector: '[data-share-scope]' })).toBeInTheDocument()
     expect(vi.mocked(fetch).mock.calls[0]?.[0]).toBe('/api/shares?project=project-x&host=host-a')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Create link for Wiki W0004' }))
+    const create = screen.getByRole('button', { name: 'Create link for Wiki W0004' })
+    await waitFor(() => expect(create).toBeEnabled())
+    await userEvent.click(create)
     await waitFor(() => expect(posted).toHaveLength(1))
     expect(posted[0]).toMatchObject({
       host: 'host-a',
@@ -86,6 +88,8 @@ describe('ManageSharesDialog', () => {
       scope: { kind: 'wiki', id: 'W0004' },
       expires: 'never',
     })
+    expect(posted[0]).not.toHaveProperty('service')
+    expect(document.querySelector('[data-service-warning]')).toBeNull()
 
     await userEvent.click(screen.getByRole('radio', { name: 'Whole project' }))
     await userEvent.click(screen.getByRole('button', { name: 'Create link for Whole project' }))
@@ -154,27 +158,61 @@ describe('ManageSharesDialog public pages', () => {
 })
 
 describe('ManageSharesDialog service links', () => {
-  it('offers a service link only on a service page and labels it', async () => {
+  it('issues a service link for "This page only" on a service page', async () => {
     pathname.mockReturnValue('/host-a/project-x/w/4')
-    const view = renderWithQuery(<ManageSharesDialog project={PROJECT} />)
-    await userEvent.click(screen.getByRole('button', { name: /Share/ }))
-    await screen.findByRole('button', { name: 'Create link for Wiki W0004' })
-    expect(screen.queryByRole('radio', { name: 'Service' })).not.toBeInTheDocument()
-    view.unmount()
-
     detail = { id: 'W0004', presentation: 'service' }
-    listed = [{ ...row('shr_service1', { kind: 'wiki', id: 'W0004' }), service: true }]
+    listed = [
+      { ...row('shr_service1', { kind: 'wiki', id: 'W0004' }), service: true },
+      row('shr_wikipage', { kind: 'wiki', id: 'W0004' }),
+    ]
     renderWithQuery(<ManageSharesDialog project={PROJECT} />)
     await userEvent.click(screen.getByRole('button', { name: /Share/ }))
     expect(
       await screen.findByText('Service · Wiki W0004', { selector: '[data-share-scope]' }),
     ).toBeInTheDocument()
-    await userEvent.click(await screen.findByRole('radio', { name: 'Service' }))
+    // An earlier page link of the same page stays a plain page link.
+    expect(screen.getByText('Wiki W0004', { selector: '[data-share-scope]' })).toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: 'Service' })).not.toBeInTheDocument()
+
     await userEvent.click(
-      screen.getByRole('button', { name: 'Create link for Service · Wiki W0004' }),
+      await screen.findByRole('button', { name: 'Create link for Service · Wiki W0004' }),
     )
     await waitFor(() => expect(posted).toHaveLength(1))
     expect(posted[0]).toMatchObject({ scope: { kind: 'wiki', id: 'W0004' }, service: true })
+    expect(document.querySelector('[data-service-warning]')).not.toBeNull()
+
+    await userEvent.click(screen.getByRole('radio', { name: 'Whole project' }))
+    expect(document.querySelector('[data-service-warning]')).toBeNull()
+    expect(document.querySelector('[data-service-excluded]')).not.toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Create link for Whole project' }))
+    await waitFor(() => expect(posted).toHaveLength(2))
+    expect(posted[1]).toMatchObject({ scope: { kind: 'project' } })
+    expect(posted[1]).not.toHaveProperty('service')
+  })
+
+  it('holds a page link until the presentation of the page is known', async () => {
+    pathname.mockReturnValue('/host-a/project-x/w/4')
+    let release: (value: Response) => void = () => {}
+    const pending = new Promise<Response>((resolve) => {
+      release = resolve
+    })
+    const inner = vi.mocked(fetch).getMockImplementation()!
+    vi.mocked(fetch).mockImplementation(async (url, init) =>
+      /^\/api\/wiki\/W\d{4}/.test(String(url)) ? pending : inner(url, init),
+    )
+    renderWithQuery(<ManageSharesDialog project={PROJECT} />)
+    await userEvent.click(screen.getByRole('button', { name: /Share/ }))
+    const create = await screen.findByRole('button', { name: 'Create link for Wiki W0004' })
+    expect(create).toBeDisabled()
+    await userEvent.click(screen.getByRole('radio', { name: 'Whole project' }))
+    expect(screen.getByRole('button', { name: 'Create link for Whole project' })).toBeEnabled()
+    await userEvent.click(screen.getByRole('radio', { name: /This page only/ }))
+
+    release(Response.json({ id: 'W0004', presentation: 'service' }))
+    const service = await screen.findByRole('button', {
+      name: 'Create link for Service · Wiki W0004',
+    })
+    expect(service).toBeEnabled()
   })
 })
 
