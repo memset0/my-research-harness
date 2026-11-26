@@ -10,6 +10,7 @@ import { type ProjectRef, ProjectRefSchema } from '@memon/core'
 import { headers } from 'next/headers'
 import type { NextRequest } from 'next/server'
 import { z } from 'zod'
+import { type AccountLevel, type Capability, levelCan } from './capabilities'
 
 export type IdentityRole = 'owner' | 'viewer' | 'anon'
 
@@ -29,9 +30,57 @@ export interface RequestIdentity {
   scopeDocuments?: DocumentScope[]
   /** This request's Project is visible only through a document grant. */
   documentOnly?: boolean
+  /** The signed-in account, when there is one. */
+  account?: RequestAccount | null
 }
 
 const ROLE_HEADER = 'x-memon-role'
+/** base64url JSON `{id, username, level}` of the signed-in account, or empty. */
+export const ACCOUNT_HEADER = 'x-memon-account'
+
+export interface RequestAccount {
+  id: number
+  username: string
+  level: AccountLevel
+}
+
+const AccountSchema = z
+  .object({
+    id: z.number().int().positive(),
+    username: z.string().min(1).max(64),
+    level: z.enum(['super_admin', 'admin', 'user', 'guest']),
+  })
+  .strict()
+
+export function encodeAccountHeader(account: RequestAccount | null): string {
+  if (!account) return ''
+  return Buffer.from(JSON.stringify(AccountSchema.parse(account)), 'utf8').toString('base64url')
+}
+
+export function parseAccountHeader(value: string | null | undefined): RequestAccount | null {
+  if (!value || value.length > 1024 || !/^[A-Za-z0-9_-]+$/.test(value)) return null
+  try {
+    const parsed = AccountSchema.safeParse(
+      JSON.parse(Buffer.from(value, 'base64url').toString('utf8')),
+    )
+    return parsed.success ? parsed.data : null
+  } catch {
+    return null
+  }
+}
+
+/** Defense in depth for handlers: the request's account holds `capability`. */
+export function requestCan(req: NextRequest | Request, capability: Capability): boolean {
+  return levelCan(parseAccountHeader(req.headers.get(ACCOUNT_HEADER))?.level, capability)
+}
+
+export function readAccountFromRequest(req: NextRequest | Request): RequestAccount | null {
+  return parseAccountHeader(req.headers.get(ACCOUNT_HEADER))
+}
+
+export async function readAccountFromHeaders(): Promise<RequestAccount | null> {
+  return parseAccountHeader((await headers()).get(ACCOUNT_HEADER))
+}
 const SCOPE_HEADER = 'x-memon-scope'
 export const HOST_SCOPE_HEADER = 'x-memon-host-scope'
 export const DOCUMENT_SCOPE_HEADER = 'x-memon-doc-scope'
@@ -93,6 +142,7 @@ function parseIdentity(
   hostScopeRaw: string | null | undefined,
   documentScopeRaw?: string | null,
   documentOnlyRaw?: string | null,
+  accountRaw?: string | null,
 ): RequestIdentity {
   const r: IdentityRole = role === 'owner' || role === 'viewer' || role === 'anon' ? role : 'anon'
   const scopeProjects = new Set<string>()
@@ -108,6 +158,7 @@ function parseIdentity(
     scopeProjectRefs: parseHostScopeHeader(hostScopeRaw),
     scopeDocuments: r === 'viewer' ? parseDocumentScopeHeader(documentScopeRaw) : [],
     documentOnly: r === 'viewer' && documentOnlyRaw === '1',
+    account: parseAccountHeader(accountRaw) ?? undefined,
   }
 }
 
@@ -121,6 +172,7 @@ export function readIdentityFromRequest(req: NextRequest | Request): RequestIden
     h.get(HOST_SCOPE_HEADER),
     h.get(DOCUMENT_SCOPE_HEADER),
     h.get(DOCUMENT_ONLY_HEADER),
+    h.get(ACCOUNT_HEADER),
   )
 }
 
@@ -133,5 +185,6 @@ export async function readIdentityFromHeaders(): Promise<RequestIdentity> {
     h.get(HOST_SCOPE_HEADER),
     h.get(DOCUMENT_SCOPE_HEADER),
     h.get(DOCUMENT_ONLY_HEADER),
+    h.get(ACCOUNT_HEADER),
   )
 }

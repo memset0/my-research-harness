@@ -41,8 +41,13 @@ export default async function LoginPage(props: PageProps) {
   const cookieStore = await cookies()
   const sessionValue = cookieStore.get(SESSION_COOKIE_NAME)?.value ?? null
   if (sessionValue && runtime.auth.sessionSecret) {
-    const ok = verifySessionCookie(sessionValue, runtime.auth.sessionSecret)
-    if (ok) redirect(safeNext)
+    const session = verifySessionCookie(sessionValue, runtime.auth.sessionSecret)
+    // A disabled or deleted account must stay here, or middleware would bounce it back.
+    const live =
+      session &&
+      (session.uid === 1 ||
+        (await runtime.auth.accounts?.byId(session.uid).catch(() => null))?.disabled === false)
+    if (live) redirect(safeNext)
   }
 
   return (
@@ -50,9 +55,7 @@ export default async function LoginPage(props: PageProps) {
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>Sign in to memon</CardTitle>
-          <CardDescription>
-            Owner credentials live in <code className="text-xs">config.yml</code>.
-          </CardDescription>
+          <CardDescription>Sign in with your memon account.</CardDescription>
         </CardHeader>
         <CardContent>
           <form method="post" action="/api/auth/login" className="space-y-4">

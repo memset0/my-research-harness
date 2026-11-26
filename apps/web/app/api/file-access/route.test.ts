@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { NextRequest } from 'next/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { encodeAccountHeader } from '@/lib/server/auth/request-context'
 
 const METRICS_SNAPSHOT = { epoch: 'epoch-1', windowMs: 300_000, overall: { samples: 3 } }
 
@@ -58,14 +59,29 @@ function mockRuntime(config: Record<string, unknown>): void {
 
 function request(
   method: 'GET' | 'PUT' | 'POST',
-  options: { role?: 'owner' | 'viewer' | 'anon'; body?: unknown; query?: string } = {},
+  options: {
+    role?: 'owner' | 'viewer' | 'anon'
+    level?: 'super_admin' | 'admin'
+    body?: unknown
+    query?: string
+  } = {},
 ): NextRequest {
   const role = options.role ?? 'owner'
+  const level = options.level ?? 'super_admin'
   const url = `http://localhost/api/file-access${options.query ?? ''}`
   return new NextRequest(url, {
     method,
     headers: {
       'x-memon-role': role,
+      ...(role === 'owner'
+        ? {
+            'x-memon-account': encodeAccountHeader({
+              id: level === 'super_admin' ? 1 : 2,
+              username: 'u',
+              level,
+            }),
+          }
+        : {}),
       ...(options.body === undefined ? {} : { 'content-type': 'application/json' }),
     },
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
@@ -92,6 +108,11 @@ describe('GET /api/file-access', () => {
     const response = await GET(request('GET', { role: 'viewer' }))
     expect(response.status).toBe(403)
     expect(await response.json()).toMatchObject({ error: { code: 'FORBIDDEN' } })
+  })
+
+  it('rejects an admin account without configure_instance', async () => {
+    const response = await GET(request('GET', { level: 'admin' }))
+    expect(response.status).toBe(403)
   })
 
   it('returns effective, pending, revision and metrics verbatim for the owner', async () => {

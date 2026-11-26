@@ -18,7 +18,7 @@
 import { getFileOperationMetrics, projectSourceGroup } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { readIdentityFromRequest } from '@/lib/server/auth/request-context'
+import { readIdentityFromRequest, requestCan } from '@/lib/server/auth/request-context'
 import {
   FileAccessSettingsError,
   type FileAccessSettingsErrorCode,
@@ -86,7 +86,7 @@ function settingsError(error: FileAccessSettingsError): NextResponse {
 }
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  if (readIdentityFromRequest(req).role !== 'owner') {
+  if (readIdentityFromRequest(req).role !== 'owner' || !requestCan(req, 'configure_instance')) {
     return errorResponse(
       403,
       'FORBIDDEN',
@@ -121,7 +121,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function PUT(req: NextRequest): Promise<NextResponse> {
-  if (readIdentityFromRequest(req).role !== 'owner') {
+  if (readIdentityFromRequest(req).role !== 'owner' || !requestCan(req, 'configure_instance')) {
     return errorResponse(
       403,
       'FORBIDDEN',

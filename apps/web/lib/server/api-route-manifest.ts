@@ -70,6 +70,10 @@ export const API_ROUTE_MANIFEST = {
   'translations/status/route.ts': central(['GET'], 'shell'),
   'translations/body/route.ts': central(['GET', 'POST'], 'shell'),
   'anomalies/route.ts': backend(['GET'], 'project-query', 'read'),
+  'admin/accounts/[id]/grants/route.ts': central(['PUT'], 'mutating'),
+  'admin/accounts/[id]/route.ts': central(['PATCH'], 'mutating'),
+  'admin/accounts/route.ts': central(['GET', 'POST'], 'mutating'),
+  'admin/project-admins/route.ts': central(['DELETE', 'GET', 'POST'], 'mutating'),
   'auth/check/route.ts': central(['GET'], 'anon'),
   'auth/login/route.ts': central(['POST'], 'anon'),
   'auth/logout/route.ts': central(['POST'], 'mutating'),
@@ -114,6 +118,7 @@ export const API_ROUTE_MANIFEST = {
   'log-files/route.ts': backend(['GET'], 'project-query', 'read'),
   'log/route.ts': backend(['GET'], 'resource', 'read', 'bytes'),
   'log/stream/route.ts': backend(['GET'], 'resource', 'read', 'sse'),
+  'project-access/route.ts': central(['DELETE', 'GET', 'POST'], 'mutating'),
   'projects/[project]/commit-marks/[sha]/route.ts': backend(
     ['PUT', 'DELETE'],
     'project-path',
@@ -214,6 +219,7 @@ export const DIRECT_RUNTIME_SURFACES = {
   },
   'app/page.tsx': { owner: 'composed', scope: 'global', purpose: 'project-data' },
   'lib/server/share-api.ts': { owner: 'central', scope: 'global', purpose: 'auth' },
+  'lib/server/admin-accounts-route.ts': { owner: 'central', scope: 'global', purpose: 'auth' },
   'app/s/[token]/route.ts': { owner: 'central', scope: 'global', purpose: 'share-landing' },
   'components/runtime-config-bootstrap.tsx': {
     owner: 'composed',

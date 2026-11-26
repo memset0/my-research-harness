@@ -9,6 +9,16 @@ import type {
   Run,
   WarningRecord,
 } from '@memon/core'
+import type {
+  AccountListResponse,
+  AccountResponse,
+  CreateAccountRequest,
+  ProjectAccessChange,
+  ProjectAccessResponse,
+  ReplaceGrantsRequest,
+  UpdateAccountRequest,
+} from './dto/accounts'
+import type { ScopedSharesResponse } from './dto/shares'
 import { type ProjectTarget, projectHost, projectName } from './project-target'
 
 export type {
@@ -305,6 +315,66 @@ export function isNotRefreshed(error: unknown): boolean {
 
 export async function fetchProjects(): Promise<ProjectsResponse> {
   return jsonFetch('/api/projects')
+}
+
+export async function fetchAdminAccounts(): Promise<AccountListResponse> {
+  return jsonFetch('/api/admin/accounts', undefined, false)
+}
+
+function accountWrite<T>(
+  url: string,
+  method: 'POST' | 'PATCH' | 'PUT' | 'DELETE',
+  body: unknown,
+): Promise<T> {
+  return jsonFetch(
+    url,
+    { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) },
+    false,
+  )
+}
+
+export function createAdminAccount(body: CreateAccountRequest): Promise<AccountResponse> {
+  return accountWrite('/api/admin/accounts', 'POST', body)
+}
+
+export function updateAdminAccount(
+  id: number,
+  body: UpdateAccountRequest,
+): Promise<AccountResponse> {
+  return accountWrite(`/api/admin/accounts/${id}`, 'PATCH', body)
+}
+
+export async function fetchAdminShares(): Promise<ScopedSharesResponse> {
+  return jsonFetch('/api/shares', undefined, false)
+}
+
+export function revokeAdminShare(id: string): Promise<{ revoked: string }> {
+  return jsonFetch(`/api/shares/${encodeURIComponent(id)}`, { method: 'DELETE' }, false)
+}
+
+export async function fetchProjectAccess(): Promise<ProjectAccessResponse> {
+  return jsonFetch('/api/project-access', undefined, false)
+}
+
+export function changeProjectAccess(
+  action: 'add' | 'remove',
+  body: ProjectAccessChange,
+): Promise<{ ok: true }> {
+  return accountWrite('/api/project-access', action === 'add' ? 'POST' : 'DELETE', body)
+}
+
+export function changeProjectAdmin(
+  action: 'add' | 'remove',
+  body: { host: string; project: string; username: string },
+): Promise<{ ok: true }> {
+  return accountWrite('/api/admin/project-admins', action === 'add' ? 'POST' : 'DELETE', body)
+}
+
+export function replaceAdminGrants(
+  id: number,
+  body: ReplaceGrantsRequest,
+): Promise<AccountResponse> {
+  return accountWrite(`/api/admin/accounts/${id}/grants`, 'PUT', body)
 }
 
 export async function fetchHosts(): Promise<HostsResponse> {

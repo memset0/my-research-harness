@@ -183,7 +183,10 @@ async function copyToClipboard(text: string): Promise<void> {
 }
 
 export function ManageSharesDialog({ project }: Props) {
-  const { role } = useSession()
+  const { role, account } = useSession()
+  // The super admin, or an admin on a Project granted to it (the only ones it can open).
+  const canManage =
+    role === 'owner' || account?.capabilities.includes('manage_project_grants') === true
   const pathname = usePathname() ?? ''
   const pageRef = pageDocument(pathname)
   const [open, setOpen] = useState(false)
@@ -196,7 +199,7 @@ export function ManageSharesDialog({ project }: Props) {
   const { data: shares, isLoading } = useQuery({
     queryKey: queryKeys.projectShares(project),
     queryFn: () => fetchShares(project),
-    enabled: open && role === 'owner',
+    enabled: open && canManage,
     staleTime: 5_000,
   })
 
@@ -204,7 +207,7 @@ export function ManageSharesDialog({ project }: Props) {
   const { data: experiments } = useQuery({
     queryKey: queryKeys.experimentsInventory(project),
     queryFn: () => fetchExperimentsInventory(project),
-    enabled: open && role === 'owner' && pageRef !== null && !('id' in pageRef),
+    enabled: open && canManage && pageRef !== null && !('id' in pageRef),
   })
   const pageDoc = resolvedPageDocument(
     pageRef,
@@ -222,7 +225,7 @@ export function ManageSharesDialog({ project }: Props) {
       publishable?.kind === 'wiki'
         ? fetchWikiPage(project, publishable.id)
         : fetchReport(project, publishable!.id),
-    enabled: open && role === 'owner' && publishable !== null,
+    enabled: open && canManage && publishable !== null,
   })
   const serviceDoc =
     publishable && (pageDetail as { presentation?: string } | undefined)?.presentation === 'service'
@@ -290,7 +293,7 @@ export function ManageSharesDialog({ project }: Props) {
     onError: (err) => toast.error(`Could not revoke: ${(err as Error).message}`),
   })
 
-  if (role !== 'owner') return null
+  if (!canManage) return null
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

@@ -9,6 +9,7 @@
 // Rate-limit: consume one token; refund on success only.
 
 import { type NextRequest, NextResponse } from 'next/server'
+import { getAccountStore } from '@/lib/server/account-store'
 import { verifyBasic } from '@/lib/server/auth/basic-auth'
 import {
   buildSetCookieHeader,
@@ -96,14 +97,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     })
   }
 
-  const ok = await verifyBasic(
+  // `config.yml` credentials are account #1; any other name is a stored account.
+  const owner = await verifyBasic(
     { username, password },
     {
       username: runtime.auth.username,
       password: runtime.auth.password,
     },
   )
-  if (!ok) {
+  const stored =
+    owner || username === runtime.auth.username || !runtime.configPath
+      ? null
+      : await getAccountStore(runtime.configPath, runtime.auth.username)
+          .then((store) => store.verify(username, password))
+          .catch(() => null)
+  if (!owner && !stored) {
     if (wantsJson(req)) {
       return new NextResponse(JSON.stringify({ ok: false }), {
         status: 401,
@@ -117,13 +125,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   refund(ip)
   const nowSeconds = Math.floor(Date.now() / 1000)
+  const exp = nowSeconds + OWNER_SESSION_TTL_SECONDS
   const cookieValue = signSessionCookie(
-    {
-      v: 1,
-      role: 'owner',
-      iat: nowSeconds,
-      exp: nowSeconds + OWNER_SESSION_TTL_SECONDS,
-    },
+    stored
+      ? { v: 2, uid: stored.id, iat: nowSeconds, exp }
+      : { v: 1, role: 'owner', iat: nowSeconds, exp },
     runtime.auth.sessionSecret,
   )
 

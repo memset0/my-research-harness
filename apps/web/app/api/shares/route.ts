@@ -11,15 +11,17 @@
 //      Document scope must name a published document; the landing path is
 //      derived on the server (see share-registry.ts). 201 { share }.
 //
-// Middleware classifies the path as owner-only; the handler re-checks the role.
+// The super admin manages every share; an admin creates shares only on the
+// Projects granted to it and lists only its own. Middleware gates the path by
+// `manage_project_grants`; the handler scopes it.
 
 import { type NextRequest, NextResponse } from 'next/server'
 import type { ScopedShareCreatedResponse, ScopedSharesResponse } from '@/lib/dto/shares'
-import { readIdentityFromRequest } from '@/lib/server/auth/request-context'
 import { getRuntime } from '@/lib/server/runtime'
 import {
   configuredShareProject,
   sharedDocument,
+  shareManager,
   shareRegistry,
   shareRow,
 } from '@/lib/server/share-api'
@@ -44,8 +46,9 @@ const bad = (message: string, status = 400) =>
   )
 
 export async function GET(req: NextRequest): Promise<Response> {
-  if (readIdentityFromRequest(req).role !== 'owner') return forbidden()
   const runtime = await getRuntime()
+  const manager = await shareManager(req, runtime)
+  if (!manager) return forbidden()
   const search = req.nextUrl.searchParams
   const project = search.get('project') ?? undefined
   const host = search.get('host')
@@ -54,8 +57,12 @@ export async function GET(req: NextRequest): Promise<Response> {
       ...(project === undefined ? {} : { project }),
       ...(host === null ? {} : { host }),
     })
+    const visible =
+      manager.kind === 'super'
+        ? records
+        : records.filter((record) => record.created_by === manager.username)
     return NextResponse.json({
-      shares: records.map((record) => shareRow(req, record)),
+      shares: visible.map((record) => shareRow(req, record, runtime.auth.username)),
     } satisfies ScopedSharesResponse)
   } catch {
     return bad('share registry is unavailable', 503)
@@ -63,8 +70,9 @@ export async function GET(req: NextRequest): Promise<Response> {
 }
 
 async function scopedPOST(req: NextRequest): Promise<Response> {
-  if (readIdentityFromRequest(req).role !== 'owner') return forbidden()
   const runtime = await getRuntime()
+  const manager = await shareManager(req, runtime)
+  if (!manager) return forbidden()
   let body: Record<string, unknown>
   try {
     body = (await req.json()) as Record<string, unknown>
@@ -78,6 +86,11 @@ async function scopedPOST(req: NextRequest): Promise<Response> {
     body.project,
   )
   if (!target) return bad('project is not configured', 404)
+  if (
+    manager.kind === 'admin' &&
+    !manager.projects.some((p) => p.host === target.host && p.project === target.project)
+  )
+    return bad('project is not configured', 404)
   const scope = ShareScopeSchema.safeParse(body.scope)
   if (!scope.success) return bad('invalid share scope')
   const service = body.service === true
@@ -111,9 +124,10 @@ async function scopedPOST(req: NextRequest): Promise<Response> {
       currentPath: typeof body.currentPath === 'string' ? body.currentPath : null,
       ...(body.public === true ? { public: true } : {}),
       ...(service ? { service: true } : {}),
+      createdBy: manager.username,
     })
     return NextResponse.json(
-      { share: shareRow(req, record) } satisfies ScopedShareCreatedResponse,
+      { share: shareRow(req, record, runtime.auth.username) } satisfies ScopedShareCreatedResponse,
       {
         status: 201,
       },

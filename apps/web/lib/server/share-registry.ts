@@ -59,6 +59,8 @@ const ShareRegistryRecordSchema = z
     public: z.literal(true).optional(),
     /** A service link: its token also reaches this Report/Wiki page's service. */
     service: z.literal(true).optional(),
+    /** Username of the account that created it; absent on records that predate accounts. */
+    created_by: z.string().min(1).max(64).optional(),
   })
   .strict()
 export type ShareRegistryRecord = z.infer<typeof ShareRegistryRecordSchema>
@@ -221,6 +223,8 @@ export interface CreateShareInput {
   public?: boolean
   /** Issue a service link: the token also reaches the page's service. */
   service?: boolean
+  /** Username of the creating account. */
+  createdBy?: string
 }
 
 export class ShareRegistry {
@@ -284,6 +288,7 @@ export class ShareRegistry {
       scope: scope.data,
       path: shareLandingPath(input.host, input.project, scope.data, input.currentPath),
       created_at: formatIsoLocal(now),
+      ...(input.createdBy ? { created_by: input.createdBy } : {}),
       expires_at: durationMs === null ? null : formatIsoLocal(new Date(now.getTime() + durationMs)),
       ...(input.public ? { public: true as const } : {}),
       ...(input.service ? { service: true as const } : {}),

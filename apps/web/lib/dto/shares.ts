@@ -47,6 +47,10 @@ export interface ScopedShareRow {
   service?: true
   /** Page URL with `share=<token>`, or the plain page URL for a public page. */
   share_url: string
+  /** Creating account; records older than accounts read as the super admin. */
+  created_by: string
+  /** The record predates creator tracking and was attributed to the super admin. */
+  legacy?: true
 }
 
 export interface ScopedSharesResponse {

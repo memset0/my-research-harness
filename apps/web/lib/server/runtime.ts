@@ -39,7 +39,9 @@ import {
   RunIndex,
 } from '@memon/core'
 import { basename, dirname, join } from '@memon/file-protocol/paths'
+import { createAccountLookup } from './account-store'
 import { ensureAuthInitialised } from './auth/first-run'
+import type { AccountLookup } from './auth/identity'
 import { DirCache } from './runtime/dir-cache'
 import { FileCache } from './runtime/file-cache'
 import { WikiCache } from './runtime/wiki-cache'
@@ -107,7 +109,7 @@ export class Runtime {
     public readonly reportsCache: DirCache<ReportSummary>,
     public readonly codeReviewsCache: DirCache<CodeReviewSummary>,
     public readonly wikiCache: WikiCache,
-    public readonly auth: AuthConfig,
+    public readonly auth: AuthConfig & { accounts?: AccountLookup },
     /**
      * v3 experiment-doc index, keyed by `E<NNNN>-<slug>`. Shared by reference
      * with the poller closure so poll-driven mutations and API reads see the
@@ -242,7 +244,11 @@ async function init(): Promise<Runtime> {
   // First-run init: if config.yml has no auth.password_hash, generate one,
   // write the hash back, print the plaintext once. Idempotent on subsequent
   // boots.
-  const auth = await ensureAuthInitialised(configPath, config)
+  const initialised = await ensureAuthInitialised(configPath, config)
+  const auth = {
+    ...initialised,
+    accounts: createAccountLookup(configPath, initialised.username),
+  }
 
   // Slurm capability probe. When the user opts in via `slurm.total_nodes`,
   // we MUST be able to run `squeue --me` — refuse to start otherwise so the

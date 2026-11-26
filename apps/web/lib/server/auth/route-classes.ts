@@ -277,6 +277,20 @@ const RULES: Rule[] = [
     projectFor: projectGlobal(),
   },
 
+  // Account and access management: owner-class routes; middleware admits the
+  // accounts holding the path's capability and handlers scope them further.
+  {
+    match: exact('/api/project-access'),
+    class: 'mutating',
+    projectFor: projectGlobal(),
+  },
+  {
+    match: ((_m: string, p: string) =>
+      p === '/api/admin' || p.startsWith('/api/admin/')) as Rule['match'],
+    class: 'mutating',
+    projectFor: projectGlobal(),
+  },
+
   // ===== owner-only management (project shares CRUD — even GET) =====
   // Listed BEFORE the generic read rule so the GET doesn't fall through.
   {

@@ -81,7 +81,25 @@ describe('signSessionCookie / verifySessionCookie', () => {
     const now = 1700000000
     const cookie = signSessionCookie({ v: 1, role: 'owner', iat: now, exp: now + 3600 }, SECRET)
     const payload = verifySessionCookie(cookie, SECRET, now)
-    expect(payload).toEqual({ v: 1, role: 'owner', iat: now, exp: now + 3600 })
+    expect(payload).toEqual({ v: 1, uid: 1, iat: now, exp: now + 3600 })
+  })
+
+  it('round-trips an account session', () => {
+    const now = 1700000000
+    const cookie = signSessionCookie({ v: 2, uid: 7, iat: now, exp: now + 3600 }, SECRET)
+    expect(verifySessionCookie(cookie, SECRET, now)).toEqual({
+      v: 2,
+      uid: 7,
+      iat: now,
+      exp: now + 3600,
+    })
+  })
+
+  it('rejects a v2 session without a valid account id', () => {
+    for (const uid of [0, -1, 1.5, '7']) {
+      const cookie = signCookie({ v: 2, uid, iat: 100, exp: 9_000_000_000 }, SECRET)
+      expect(verifySessionCookie(cookie, SECRET, 1000)).toBeNull()
+    }
   })
 
   it('returns null on expired session', () => {
@@ -95,7 +113,7 @@ describe('signSessionCookie / verifySessionCookie', () => {
   })
 
   it('rejects unknown version', () => {
-    const cookie = signCookie({ v: 2, role: 'owner', iat: 100, exp: 9_000_000_000 }, SECRET)
+    const cookie = signCookie({ v: 3, role: 'owner', iat: 100, exp: 9_000_000_000 }, SECRET)
     expect(verifySessionCookie(cookie, SECRET, 1000)).toBeNull()
   })
 })

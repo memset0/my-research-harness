@@ -24,6 +24,8 @@ vi.mock('@/lib/server/central/direct-runtime', () => ({
   }),
 }))
 
+import { closeAccountStores, getAccountStore } from '@/lib/server/account-store'
+import { encodeAccountHeader } from '@/lib/server/auth/request-context'
 import { getRuntime } from '@/lib/server/runtime'
 import { DELETE } from './[id]/route'
 import { GET, POST } from './route'
@@ -36,6 +38,7 @@ beforeEach(async () => {
   getWiki.mockResolvedValue({ id: 'W0004' })
   vi.mocked(getRuntime).mockResolvedValue({
     configPath: join(directory, 'config.yml'),
+    auth: { username: 'owner', password: 'pw' },
     config: {
       central: { hosts: [] },
       projects: [{ name: 'project-x', host: 'host-a', root: directory }],
@@ -43,6 +46,7 @@ beforeEach(async () => {
   } as never)
 })
 afterEach(async () => {
+  await closeAccountStores()
   await fs.rm(directory, { recursive: true, force: true })
 })
 
@@ -168,5 +172,56 @@ describe('/api/shares', () => {
     expect(share.share_url).toBe(
       `https://memon.example.test/host-a/project-x/w/4?share=${share.token}`,
     )
+  })
+
+  it('scopes admins to their own shares on granted Projects and names creators for the super admin', async () => {
+    const store = await getAccountStore(join(directory, 'config.yml'), 'owner')
+    const ada = await store.create({ username: 'ada', password: 'password1', level: 'admin' })
+    const ADA = {
+      ...OWNER,
+      'x-memon-role': 'viewer',
+      'x-memon-account': encodeAccountHeader({ id: ada.id, username: 'ada', level: 'admin' }),
+    }
+    const body = { host: 'host-a', project: 'project-x', scope: { kind: 'project' } }
+    expect((await create(body, ADA)).status).toBe(404)
+
+    const legacy = await (await create({ ...body, label: 'before' })).json()
+    // A record written before creator tracking existed.
+    const registryFile = join(directory, 'shares.json')
+    const file = JSON.parse(await fs.readFile(registryFile, 'utf8'))
+    for (const record of file.shares) delete record.created_by
+    await fs.writeFile(registryFile, JSON.stringify(file))
+    await store.changeProjectAdmin('add', 'host-a', 'project-x', 'ada')
+    const own = await create({ ...body, label: 'mine' }, ADA)
+    expect(own.status).toBe(201)
+    expect((await own.json()).share).toMatchObject({ created_by: 'ada' })
+
+    const list = (headers: Record<string, string>) =>
+      GET(new NextRequest('http://central.internal/api/shares', { headers })).then((r) => r.json())
+    const adaRows = (await list(ADA)).shares
+    expect(adaRows.map((row: { label: string }) => row.label)).toEqual(['mine'])
+
+    const allRows = (await list(OWNER)).shares
+    expect(
+      allRows.map((row: { label: string; created_by: string; legacy?: true }) => [
+        row.label,
+        row.created_by,
+        row.legacy ?? false,
+      ]),
+    ).toEqual([
+      ['before', 'owner', true],
+      ['mine', 'ada', false],
+    ])
+
+    const revoke = (id: string, headers: Record<string, string>) =>
+      DELETE(
+        new NextRequest(`http://central.internal/api/shares/${id}`, { method: 'DELETE', headers }),
+        {
+          params: Promise.resolve({ id }),
+        },
+      )
+    expect((await revoke(legacy.share.id, ADA)).status).toBe(404)
+    expect((await revoke(adaRows[0].id, ADA)).status).toBe(200)
+    expect((await revoke(legacy.share.id, OWNER)).status).toBe(200)
   })
 })

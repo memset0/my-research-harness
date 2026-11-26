@@ -5,9 +5,9 @@ import { useQuery } from '@tanstack/react-query'
 import {
   BookOpen,
   ChevronRight,
+  Cpu,
   FileText,
   FlaskConical,
-  Gauge,
   GitPullRequest,
   Loader2,
   MessagesSquare,
@@ -45,6 +45,7 @@ import { GitDiffDialog } from './git-diff-dialog'
 import { GitStatusPill } from './git-status-pill'
 import { HOST_STATUS_PRESENTATION } from './host-status-badge'
 import { useIsDocumentOnlyViewer, useSession } from './session-provider'
+import { SidebarAccount } from './sidebar-account'
 import { SidebarResizeHandle } from './sidebar-resize-handle'
 import { SlurmStatusWidget } from './slurm-status-widget'
 import { ThemeToggle } from './theme-toggle'
@@ -198,7 +199,8 @@ export function moveProject(order: readonly string[], dragged: string, target: s
 }
 
 export function AppSidebar() {
-  const { role, scopeProjects, scopeProjectRefs } = useSession()
+  const { role, scopeProjects, scopeProjectRefs, account } = useSession()
+  const canSeeClusters = account?.capabilities.includes('access_clusters') === true
   const documentOnly = useIsDocumentOnlyViewer()
   const [diffDialogProject, setDiffDialogProject] = useState<ProjectTarget | null>(null)
   const pathname = usePathname() ?? ''
@@ -312,16 +314,17 @@ export function AppSidebar() {
       <SidebarFooter className="border-t border-sidebar-border">
         <SidebarMenu>
           {role !== 'viewer' && hostsData === undefined && <SlurmStatusWidget />}
-          {role === 'owner' && (
+          {canSeeClusters && (
             <SidebarMenuItem>
-              <SidebarMenuButton asChild size="sm" isActive={pathname === '/manage/file-access'}>
-                <Link href="/manage/file-access">
-                  <Gauge className="size-4" />
-                  <span>File access</span>
+              <SidebarMenuButton asChild size="sm" isActive={pathname === '/manage/clusters'}>
+                <Link href="/manage/clusters">
+                  <Cpu className="size-4" />
+                  <span>Clusters</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
           )}
+          <SidebarAccount />
         </SidebarMenu>
       </SidebarFooter>
       <SidebarResizeHandle />

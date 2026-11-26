@@ -954,16 +954,33 @@ describe('AppSidebar', () => {
     expect(screen.queryByText('shared-project')).toBeNull()
   })
 
-  it('owner: lists every central project and the File access link', async () => {
+  it('owner: lists every central project and shows the account entry instead of File access', async () => {
     currentPathname = '/'
     vi.mocked(fetchProjects).mockResolvedValue({
       projects: [centralProject('host-a', 'project-a'), centralProject('host-b', 'project-b')],
     })
-    const { container } = setup()
+    const { container } = setup({
+      role: 'owner',
+      scopeProjects: [],
+      account: {
+        username: 'owner',
+        level: 'super_admin',
+        capabilities: ['manage_accounts', 'configure_instance', 'access_clusters'],
+        adminArea: true,
+      },
+    })
     await waitFor(() => expect(projectOrder(container)).toEqual([ID_A, 'h:host-b/p:project-b']))
-    expect(screen.getByRole('link', { name: 'File access' })).toHaveAttribute(
-      'href',
-      '/manage/file-access',
-    )
+    expect(screen.queryByRole('link', { name: 'File access' })).toBeNull()
+    const entry = container.querySelector('[data-slot="sidebar-account"]')
+    expect(entry?.textContent).toContain('owner')
+    expect(entry?.textContent).toContain('Super admin')
+  })
+
+  it('share viewer without an account: no account entry', async () => {
+    currentPathname = '/'
+    vi.mocked(fetchProjects).mockResolvedValue({ projects: [] })
+    const { container } = setup({ role: 'viewer', scopeProjects: [] })
+    await waitFor(() => expect(fetchProjects).toHaveBeenCalled())
+    expect(container.querySelector('[data-slot="sidebar-account"]')).toBeNull()
   })
 })

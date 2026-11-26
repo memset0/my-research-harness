@@ -6,7 +6,9 @@ import 'server-only'
 import { toHttpError } from '@memon/backend'
 import type { NextRequest } from 'next/server'
 import type { ScopedShareRow } from '@/lib/dto/shares'
+import { getAccountStore } from './account-store'
 import { publicOrigin } from './auth/public-url'
+import { readAccountFromRequest, readIdentityFromRequest } from './auth/request-context'
 import { directCentralRuntime } from './central/direct-runtime'
 import { getRuntime, type Runtime } from './runtime'
 import { canonicalLandingPath, type ShareRegistryRecord, shareRegistryFor } from './share-registry'
@@ -118,10 +120,39 @@ export function shareUrl(origin: string, record: ShareRegistryRecord): string | 
   return `${page}${path.includes('?') ? '&' : '?'}share=${encodeURIComponent(record.token)}`
 }
 
-export function shareRow(req: NextRequest, record: ShareRegistryRecord): ScopedShareRow {
+export function shareRow(
+  req: NextRequest,
+  record: ShareRegistryRecord,
+  superAdminUsername: string,
+): ScopedShareRow {
   return {
     ...record,
     path: canonicalLandingPath(record) ?? record.path,
     share_url: shareUrl(publicOrigin(req), record) ?? '',
+    created_by: record.created_by ?? superAdminUsername,
+    ...(record.created_by ? {} : { legacy: true as const }),
   }
+}
+
+/**
+ * Who may manage shares on this request: the super admin (every share) or an
+ * admin (its own shares, created only on Projects granted to it).
+ */
+export async function shareManager(
+  req: NextRequest,
+  runtime: Runtime,
+): Promise<
+  | { kind: 'super'; username: string }
+  | { kind: 'admin'; username: string; projects: Array<{ host: string; project: string }> }
+  | null
+> {
+  const account = readAccountFromRequest(req)
+  if (readIdentityFromRequest(req).role === 'owner')
+    return { kind: 'super', username: account?.username ?? runtime.auth.username }
+  if (account?.level !== 'admin' || !runtime.configPath) return null
+  const stored = await (await getAccountStore(runtime.configPath, runtime.auth.username)).byId(
+    account.id,
+  )
+  if (!stored || stored.disabled || stored.level !== 'admin') return null
+  return { kind: 'admin', username: stored.username, projects: stored.adminProjects }
 }

@@ -12,7 +12,7 @@
 // produced, so the browser learns the outcome before the process goes away.
 
 import { type NextRequest, NextResponse } from 'next/server'
-import { readIdentityFromRequest } from '@/lib/server/auth/request-context'
+import { readIdentityFromRequest, requestCan } from '@/lib/server/auth/request-context'
 import { resolveRestartAdapter, scheduleFileAccessRestart } from '@/lib/server/file-access-settings'
 import { getRuntime, type Runtime } from '@/lib/server/runtime'
 
@@ -21,7 +21,7 @@ export const dynamic = 'force-dynamic'
 const RESPONSE_HEADERS = { 'Cache-Control': 'no-store' }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  if (readIdentityFromRequest(req).role !== 'owner') {
+  if (readIdentityFromRequest(req).role !== 'owner' || !requestCan(req, 'configure_instance')) {
     return NextResponse.json(
       {
         error: {

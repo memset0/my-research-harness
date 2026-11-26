@@ -28,6 +28,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { canonicalFromLegacy, canonicalNumberRedirect, projectOfPath } from './lib/project-routes'
 import { TOO_MANY_HEADERS, UNAUTHORIZED_HEADERS } from './lib/server/auth/basic-auth'
+import { levelMayReach, requiredCapabilities } from './lib/server/auth/capabilities'
 import {
   buildClearCookieHeader,
   buildSetCookieHeader,
@@ -51,8 +52,10 @@ import { makeProjectResolver, resolveRequestProject } from './lib/server/auth/pr
 import { isHttps, publicOrigin } from './lib/server/auth/public-url'
 import { clientIpFromHeaders, consume, refund } from './lib/server/auth/rate-limit'
 import {
+  ACCOUNT_HEADER,
   DOCUMENT_ONLY_HEADER,
   DOCUMENT_SCOPE_HEADER,
+  encodeAccountHeader,
   encodeDocumentScopeHeader,
   encodeHostScopeHeader,
   HOST_SCOPE_HEADER,
@@ -125,6 +128,10 @@ function isViewerVisibleMutation(method: string, pathname: string): boolean {
   if (method === 'POST' && pathname === '/api/experiment-results-views') return true
   if (method !== 'PATCH' && method !== 'DELETE') return false
   return /^\/api\/experiment-results-views\/[^/]+$/.test(pathname)
+}
+
+function isLogout(req: NextRequest): boolean {
+  return req.method === 'POST' && req.nextUrl.pathname === '/api/auth/logout'
 }
 
 /** Query parameters of the retired side Report/wiki workspace. */
@@ -236,10 +243,22 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   )
 
   if (identity.refundToken) refund(ip)
+  let response: NextResponse
+
+  // Capability-gated surfaces (admin area, account management, instance
+  // configuration, clusters / GPU pool) are denied on the route, not hidden.
+  const gated = requiredCapabilities(pathname) !== null
+  if (gated && !levelMayReach(identity.account?.level, pathname)) {
+    response =
+      identity.role === 'anon' && !identity.account
+        ? denyAnon(req)
+        : denyForbidden('Your account cannot open this page')
+    attachCookieRefreshes(response.headers, identity, isHttps(req))
+    return response
+  }
 
   // Build the response we'll return — either a deny or a passthrough with
   // request-context headers + refreshed cookies.
-  let response: NextResponse
   /** The Project admitted for this request only through a document grant. */
   let documentProject: { host: string | null; project: string } | null = null
   /** Public-page grants that admitted this request (anonymous or uncovered viewer). */
@@ -247,8 +266,12 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
 
   if (identity.role === 'owner') {
     // Owner may pass every route class.
+  } else if (gated) {
+    // An account holding the path's capability (checked above); handlers scope it further.
+  } else if (identity.role === 'viewer' && identity.account && isLogout(req)) {
+    // Every signed-in account may end its own session.
   } else if (identity.role === 'viewer') {
-    if (viewerVisibleMutation) {
+    if (viewerVisibleMutation || routeClass !== 'read') {
       response = denyForbidden('Share viewers cannot perform this action')
       attachCookieRefreshes(response.headers, identity, isHttps(req))
       return response
@@ -325,6 +348,7 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
       } as (typeof scopeProjectRefs)[number])
   }
   requestHeaders.set('x-memon-role', publicGrants ? 'viewer' : identity.role)
+  requestHeaders.set(ACCOUNT_HEADER, encodeAccountHeader(identity.account))
   requestHeaders.set('x-memon-scope', Array.from(scopeProjects).join(','))
   requestHeaders.set(HOST_SCOPE_HEADER, encodeHostScopeHeader(scopeProjectRefs))
   requestHeaders.set(

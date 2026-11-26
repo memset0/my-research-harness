@@ -4,11 +4,14 @@
 
 import { dehydrate, HydrationBoundary } from '@tanstack/react-query'
 import { cookies } from 'next/headers'
+import { AdminNav } from '../../components/admin-nav'
 import { AppSidebar } from '../../components/app-sidebar'
 import { ResizableSidebarProvider } from '../../components/resizable-sidebar-provider'
 import { SidebarInset, SidebarTrigger } from '../../components/ui/sidebar'
 import { getQueryClient } from '../../lib/get-query-client'
 import { queryKeys } from '../../lib/query-keys'
+import { adminSectionsFor } from '../../lib/server/auth/capabilities'
+import { readAccountFromHeaders } from '../../lib/server/auth/request-context'
 import { getProjectsData } from '../../lib/server/data'
 
 export default async function ManageLayout({ children }: { children: React.ReactNode }) {
@@ -22,6 +25,12 @@ export default async function ManageLayout({ children }: { children: React.React
   const cookieStore = await cookies()
   const sidebarStateCookie = cookieStore.get('sidebar_state')?.value
   const defaultOpen = sidebarStateCookie !== 'false'
+  const account = await readAccountFromHeaders()
+  const sections = adminSectionsFor(account?.level).map(({ key, label, href }) => ({
+    key,
+    label,
+    href,
+  }))
 
   return (
     <HydrationBoundary state={dehydrate(queryClient)}>
@@ -36,6 +45,8 @@ export default async function ManageLayout({ children }: { children: React.React
               work via shadcn's SidebarProvider. */}
           <header className="flex h-12 items-center gap-2 border-b border-border bg-background px-3">
             <SidebarTrigger />
+            <span className="text-xs font-medium text-muted-foreground">Admin</span>
+            <AdminNav sections={sections} />
           </header>
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto">
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>

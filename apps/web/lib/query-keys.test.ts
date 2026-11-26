@@ -27,7 +27,10 @@ describe('queryKeys', () => {
   it('has a shape lock for every constructor', () => {
     expect(Object.keys(queryKeys).sort()).toMatchInlineSnapshot(`
       [
+        "adminAccounts",
+        "adminShares",
         "allRuns",
+        "clusters",
         "codePreview",
         "codeReview",
         "codeReviews",
@@ -54,6 +57,7 @@ describe('queryKeys', () => {
         "journalCount",
         "journalHistory",
         "logFiles",
+        "projectAccess",
         "projectShares",
         "projects",
         "report",
@@ -93,6 +97,38 @@ describe('queryKeys', () => {
     expect(queryKeys.slurmStatus()).toMatchInlineSnapshot(`
       [
         "slurm-status",
+      ]
+    `)
+  })
+
+  it('clusters', () => {
+    expect(queryKeys.clusters()).toMatchInlineSnapshot(`
+      [
+        "clusters",
+      ]
+    `)
+  })
+
+  it('adminAccounts', () => {
+    expect(queryKeys.adminAccounts()).toMatchInlineSnapshot(`
+      [
+        "admin-accounts",
+      ]
+    `)
+  })
+
+  it('adminShares', () => {
+    expect(queryKeys.adminShares()).toMatchInlineSnapshot(`
+      [
+        "admin-shares",
+      ]
+    `)
+  })
+
+  it('projectAccess', () => {
+    expect(queryKeys.projectAccess()).toMatchInlineSnapshot(`
+      [
+        "project-access",
       ]
     `)
   })

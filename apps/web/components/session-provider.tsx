@@ -19,8 +19,17 @@ export interface SessionDocumentScope {
   id: string
 }
 
+export interface SessionAccount {
+  username: string
+  level: 'super_admin' | 'admin' | 'user' | 'guest'
+  capabilities: string[]
+  /** The account may open the admin area (`/manage`). */
+  adminArea: boolean
+}
+
 export interface SessionInfo {
   role: SessionRole
+  account?: SessionAccount | null
   scopeProjects: string[]
   scopeProjectRefs?: ProjectRef[]
   /** Document-scoped share grants of a viewer. */
@@ -55,8 +64,10 @@ export function SessionProvider({ value, children }: ProviderProps) {
       scopeProjectRefs: value.scopeProjectRefs ?? [],
       scopeDocuments: value.scopeDocuments ?? [],
       documentOnly: value.documentOnly === true,
+      account: value.account ?? null,
     }),
     [
+      value.account,
       value.role,
       value.scopeProjects,
       value.scopeProjectRefs,
@@ -79,6 +90,10 @@ export function useSession(): SessionInfo {
 export function useIsDocumentOnlyViewer(): boolean {
   const session = useSession()
   return session.role === 'viewer' && session.documentOnly === true
+}
+
+export function useAccount(): SessionAccount | null {
+  return useSession().account ?? null
 }
 
 export function useIsViewer(): boolean {

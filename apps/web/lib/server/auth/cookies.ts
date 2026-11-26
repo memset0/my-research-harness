@@ -111,7 +111,8 @@ export function verifyCookie<T = unknown>(
 
 // ----- High-level helpers per cookie type -----
 
-export interface SessionPayload {
+/** Legacy owner session: means account #1 (the `config.yml` super admin). */
+export interface LegacySessionPayload {
   v: 1
   role: 'owner'
   /** Issued at, seconds since epoch */
@@ -120,22 +121,39 @@ export interface SessionPayload {
   exp: number
 }
 
+/** Account session: names the account; its level is looked up per request. */
+export interface AccountSessionPayload {
+  v: 2
+  uid: number
+  iat: number
+  exp: number
+}
+
+export type SessionPayload = LegacySessionPayload | AccountSessionPayload
+
 export function signSessionCookie(payload: SessionPayload, secret: string): string {
   return signCookie(payload, secret)
 }
 
+/** Verify a session cookie; a v1 cookie reads as account #1. */
 export function verifySessionCookie(
   cookieValue: string | undefined | null,
   secret: string,
   nowSeconds: number = Math.floor(Date.now() / 1000),
-): SessionPayload | null {
+): { uid: number; iat: number; exp: number; v: 1 | 2 } | null {
   const payload = verifyCookie<SessionPayload>(cookieValue, secret)
   if (!payload) return null
-  if (payload.v !== 1) return null
-  if (payload.role !== 'owner') return null
   if (typeof payload.iat !== 'number' || typeof payload.exp !== 'number') return null
   if (payload.exp <= nowSeconds) return null
-  return payload
+  if (payload.v === 1) {
+    if (payload.role !== 'owner') return null
+    return { uid: 1, iat: payload.iat, exp: payload.exp, v: 1 }
+  }
+  if (payload.v === 2) {
+    if (!Number.isInteger(payload.uid) || payload.uid < 1) return null
+    return { uid: payload.uid, iat: payload.iat, exp: payload.exp, v: 2 }
+  }
+  return null
 }
 
 export interface LegacyShareEntry {

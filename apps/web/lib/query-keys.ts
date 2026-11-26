@@ -34,6 +34,10 @@ export const queryKeys = {
   hosts: () => ['hosts'] as const,
   slurmStatus: () => ['slurm-status'] as const,
   fileAccess: (windowMs: number) => ['file-access', windowMs] as const,
+  adminAccounts: () => ['admin-accounts'] as const,
+  projectAccess: () => ['project-access'] as const,
+  adminShares: () => ['admin-shares'] as const,
+  clusters: () => ['clusters'] as const,
 
   // Runs. `project` is optional where the caller may act outside a Project
   // scope; the key then omits the Project segment.
