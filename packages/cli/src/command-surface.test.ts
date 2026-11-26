@@ -44,6 +44,7 @@ it('keeps the complete command surface in one memon tree without duplicate group
     'journal read',
     'mock seed',
     'serve',
+    'ssh',
     'update',
     'wiki create',
     'wiki move',

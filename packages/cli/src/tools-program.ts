@@ -3,6 +3,7 @@ import { runComponentsRun } from './commands/components.js'
 import { runJournalRead } from './commands/journal.js'
 import { runMockSeed } from './commands/mock.js'
 import { runServe } from './commands/serve.js'
+import { runSsh } from './commands/ssh.js'
 import { runUpdate, updateFailed } from './commands/update.js'
 import { runWikiCreate, runWikiDelete, runWikiMove } from './commands/wiki.js'
 import { emitErrorAndExit } from './lib/emit-error.js'
@@ -100,6 +101,46 @@ export function registerToolsCommands(program: Command): void {
         if (updateFailed(result)) process.exitCode = EXIT.GENERIC
       },
     )
+
+  program
+    .command('ssh')
+    .description('run a command or open a shell on a registered compute node')
+    .argument('[node]', 'node id from the node registry')
+    .argument('[command...]', 'remote command, given after --')
+    .option('--list', 'list registered nodes (no connection details)', false)
+    .addHelpText(
+      'after',
+      `
+Nodes live in a machine-local, untracked YAML file: $MEMON_NODES_CONFIG, or
+~/.config/memon/nodes.yml. Each node declares exactly one transport:
+
+  schema_version: 1
+  nodes:
+    node-01:                         # ssh through a login node, into a held Slurm job
+      cluster: cluster-a
+      gpus: 4
+      available_until: 2026-12-20T09:00:00+08:00   # offset required
+      ssh: { target: user@login.example, options: [UserKnownHostsFile=~/.config/memon/known_hosts] }
+      enter: [srun, --jobid=12345, --overlap, -u, --chdir=/tmp, -N1, -n1]
+      enter_tty: [srun, --jobid=12345, --overlap, --pty, --chdir=/tmp, -N1, -n1]
+    node-02:                         # any command that carries a shell line and bytes
+      available_until: 2026-12-31T23:59:00Z
+      via: relay-client connect      # receives the remote line as its last argument
+      shell: relay-client shell      # optional; enables interactive sessions
+
+memon ssh <node> -- <command...>  runs the command (words joined by spaces, as ssh does)
+                                   and exits with its status.
+memon ssh <node>                   opens an interactive shell (needs a terminal).
+Expired nodes are refused (exit 13); unknown nodes exit 4; registry errors exit 2.`,
+    )
+    .action(async (node: string | undefined, command: string[], opts: { list?: boolean }) => {
+      process.exitCode = await runSsh({
+        node,
+        command,
+        list: opts.list === true,
+        isTty: process.stdin.isTTY === true && process.stdout.isTTY === true,
+      })
+    })
 
   const journal = program
     .command('journal')

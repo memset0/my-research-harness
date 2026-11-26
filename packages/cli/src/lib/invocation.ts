@@ -85,6 +85,7 @@ export const CLI_LEDGER_CLASSES: Readonly<Record<string, CliLedgerClass>> = {
   serve: 'host',
   update: 'host',
   'mock seed': 'host',
+  ssh: 'host',
   'journal read': 'readonly',
   'wiki create': 'project',
   'wiki move': 'project',
