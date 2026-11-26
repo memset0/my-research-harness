@@ -237,6 +237,19 @@ export async function authorizeCentralServerRequest(
   if (identity.role === 'owner') {
     return { ok: true, actor: { role: 'owner' }, headers: {}, setCookies }
   }
+  // An admin has full owner reach on a Project granted to it: the request must
+  // select exactly that Project (a service request, its own Host and Project).
+  const target = options.service
+    ? ({ host: options.service.host, project: options.service.project } as ProjectRef)
+    : selected
+  if (
+    target &&
+    identity.ownerProjectRefs.some(
+      (scope) => scope.host === target.host && scope.project === target.project,
+    )
+  ) {
+    return { ok: true, actor: { role: 'owner' }, headers: {}, setCookies }
+  }
   const service = options.service
   if (service) {
     const admitted = identity.scopeDocuments.some(

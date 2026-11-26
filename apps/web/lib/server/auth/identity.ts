@@ -67,6 +67,11 @@ export interface ResolvedIdentity {
   /** Central viewer scopes. Legacy standalone viewers keep this empty. */
   scopeProjectRefs: ProjectRef[]
   /**
+   * Admins: the Projects granted to them, where a request addressing exactly
+   * one of them gets full owner reach (including writes). Empty otherwise.
+   */
+  ownerProjectRefs: ProjectRef[]
+  /**
    * Document-scoped grants. Their Projects are NOT in `scopeProjects` /
    * `scopeProjectRefs`; middleware admits only requests targeting the document.
    */
@@ -236,6 +241,7 @@ export async function resolveIdentity(
           account: summary,
           scopeProjects: new Set(),
           scopeProjectRefs: [],
+          ownerProjectRefs: [],
           scopeDocuments: [],
           refundToken: true,
           refreshedSessionCookie: refreshed,
@@ -272,6 +278,12 @@ export async function resolveIdentity(
         account: summary,
         scopeProjects: new Set(shares?.projects ?? []),
         scopeProjectRefs: projectRefs,
+        ownerProjectRefs:
+          account.level === 'admin'
+            ? (account.adminProjects ?? []).map(
+                (granted) => ({ host: granted.host, project: granted.project }) as ProjectRef,
+              )
+            : [],
         scopeDocuments: documents,
         refundToken: true,
         refreshedSessionCookie: refreshed,
@@ -293,6 +305,7 @@ export async function resolveIdentity(
         account: superAdmin(runtimeAuth.username),
         scopeProjects: new Set(),
         scopeProjectRefs: [],
+        ownerProjectRefs: [],
         scopeDocuments: [],
         refundToken: true,
         refreshedSessionCookie: null,
@@ -311,6 +324,7 @@ export async function resolveIdentity(
         account: null,
         scopeProjects: shares.projects,
         scopeProjectRefs: shares.projectRefs,
+        ownerProjectRefs: [],
         scopeDocuments: shares.documents,
         refundToken: true,
         refreshedSessionCookie: null,
@@ -324,6 +338,7 @@ export async function resolveIdentity(
         account: null,
         scopeProjects: new Set(),
         scopeProjectRefs: [],
+        ownerProjectRefs: [],
         scopeDocuments: [],
         refundToken: false,
         refreshedSessionCookie: null,
@@ -339,6 +354,7 @@ export async function resolveIdentity(
     account: null,
     scopeProjects: new Set(),
     scopeProjectRefs: [],
+    ownerProjectRefs: [],
     scopeDocuments: [],
     refundToken: false,
     refreshedSessionCookie: null,

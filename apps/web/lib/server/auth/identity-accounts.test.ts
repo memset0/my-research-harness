@@ -93,6 +93,7 @@ describe('account sessions', () => {
     expect(identity.role).toBe('viewer')
     expect(identity.account).toEqual({ id: 2, username: 'ada', level: 'admin' })
     expect(identity.scopeProjectRefs).toEqual([{ host: 'host-a', project: 'project-a' }])
+    expect(identity.ownerProjectRefs).toEqual([{ host: 'host-a', project: 'project-a' }])
   })
 
   it('maps a user to a viewer scoped to its grants', async () => {
@@ -103,6 +104,7 @@ describe('account sessions', () => {
     expect(identity.scopeDocuments).toEqual([
       { host: 'host-a', project: 'project-b', kind: 'wiki', id: 'W0002' },
     ])
+    expect(identity.ownerProjectRefs).toEqual([])
   })
 
   it('gives a guest nothing but its share links', async () => {

@@ -264,7 +264,24 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   /** Public-page grants that admitted this request (anonymous or uncovered viewer). */
   let publicGrants: Awaited<ReturnType<typeof publicGrantsAdmitting>> = null
 
-  if (identity.role === 'owner') {
+  // An admin has full owner reach on a request addressing exactly one Project
+  // granted to it; every other request keeps its scoped-viewer evaluation.
+  let scopedOwner = false
+  if (identity.role === 'viewer' && identity.ownerProjectRefs.length > 0 && !gated) {
+    const target =
+      project ??
+      (routeClass === 'read'
+        ? await resolveRequestProject(runtime, req.method, pathname, search, new Set())
+        : null)
+    const host = hostFromRequest(pathname, search)
+    scopedOwner =
+      typeof target === 'string' &&
+      target !== 'multi' &&
+      target !== 'global' &&
+      identity.ownerProjectRefs.some((ref) => ref.host === host && ref.project === target)
+  }
+
+  if (identity.role === 'owner' || scopedOwner) {
     // Owner may pass every route class.
   } else if (gated) {
     // An account holding the path's capability (checked above); handlers scope it further.
@@ -347,7 +364,10 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
         project: documentProject.project,
       } as (typeof scopeProjectRefs)[number])
   }
-  requestHeaders.set('x-memon-role', publicGrants ? 'viewer' : identity.role)
+  requestHeaders.set(
+    'x-memon-role',
+    scopedOwner ? 'owner' : publicGrants ? 'viewer' : identity.role,
+  )
   requestHeaders.set(ACCOUNT_HEADER, encodeAccountHeader(identity.account))
   requestHeaders.set('x-memon-scope', Array.from(scopeProjects).join(','))
   requestHeaders.set(HOST_SCOPE_HEADER, encodeHostScopeHeader(scopeProjectRefs))

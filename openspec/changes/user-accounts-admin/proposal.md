@@ -14,7 +14,7 @@ memon has exactly one human identity: the owner whose plaintext credentials live
   - `access_clusters` (cluster monitoring and the GPU pool): admin and above.
   - `manage_project_grants`: the super admin on every Project; an admin only on the Projects the super admin granted to it.
   - Only the super admin keeps today's full owner reach.
-  - Admins, users and guests are read-only scoped identities. An admin sees its granted Projects, a user its granted Projects/Reports/Wikis, and a guest only what share links and public pages allow.
+  - Admins have full owner reach, edits included, on the Projects granted to them and see nothing else. Users read only their granted Projects/Reports/Wikis, and guests only what share links and public pages allow.
   - All of these are enforced on routes, not only hidden in navigation.
 - **Project grants to admins (super admin, scriptable).** `/api/admin/project-admins` accepts the owner's Basic auth, so the main agent or a script can grant and revoke Projects to admins. Projects start with none.
 - **Admins manage read grants on their Projects.** `/api/project-access` lets an admin grant users read access to a granted Project or to one Report/Wiki by exact username. There is no account directory, and probing for names reveals nothing.

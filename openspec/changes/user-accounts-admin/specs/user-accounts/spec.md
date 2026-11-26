@@ -52,15 +52,15 @@ The levels SHALL grant these capabilities, and route handlers and navigation SHA
 | `configure_instance` (file access and other instance settings) | yes | no | no | no |
 | `access_clusters` (cluster monitoring, GPU pool) | yes | yes | no | no |
 | `manage_project_grants` (user read grants) | all Projects | granted Projects only | no | no |
-| Project reach | full owner reach, all Projects | read-only, granted Projects | read-only, granted Projects/documents | share links and public pages only |
+| Project reach | full owner reach, all Projects | full owner reach (reads and writes) on granted Projects only | read-only, granted Projects/documents | share links and public pages only |
 
 #### Scenario: Admin lacks instance configuration
 - **GIVEN** an `admin` session
 - **WHEN** it requests the Users section or the file-access settings API
 - **THEN** the response is `403` (page or API alike) and no configuration is read or written
 
-### Requirement: Non-super-admin accounts are read-only scoped identities
-An `admin`, `user` or `guest` session SHALL be evaluated like a share viewer. Only `read`-class routes SHALL pass, scoped as follows: an admin to the Projects granted to it, a user to its read grants, and a guest to nothing; each scope is merged with any valid `memon-shares` entries. Every other `mutating`, `shell` or `global` route SHALL be refused with `403`, except routes admitted by a held capability.
+### Requirement: Non-super-admin accounts are scoped identities
+An `admin`, `user` or `guest` session SHALL be evaluated like a share viewer, scoped to an admin's granted Projects, a user's read grants, or nothing for a guest, each merged with valid `memon-shares` entries. Other `mutating`, `shell` or `global` routes SHALL be refused with `403` unless a held capability or the admin rule below admits them.
 
 #### Scenario: User reaches a granted Project only
 - **GIVEN** user `bob` with a Project grant for `{host: h1, project: project-a}`
@@ -72,8 +72,8 @@ An `admin`, `user` or `guest` session SHALL be evaluated like a share viewer. On
 - **WHEN** ada opens `/h1/project-b` or lists Projects
 - **THEN** the page is refused with `403` and the list contains only `project-a`
 
-#### Scenario: Scoped accounts cannot write
-- **WHEN** a `user` or `admin` session sends a mutating request for a Project it can read
+#### Scenario: User cannot write
+- **WHEN** a `user` session sends a mutating request for a Project it can read
 - **THEN** the response is `403` and nothing is written
 
 #### Scenario: Account signs out
@@ -84,6 +84,23 @@ An `admin`, `user` or `guest` session SHALL be evaluated like a share viewer. On
 - **GIVEN** a `guest` session with no grants and a valid share cookie for `{h1, project-a}`
 - **WHEN** it opens `/h1/project-a`
 - **THEN** the page renders read-only as for a share viewer
+
+### Requirement: Admins have owner reach on their granted Projects
+A request from an `admin` that addresses exactly one Project granted to it SHALL be authorized as the owner, writes included, still bounded by that Project's `read_only`/`allowed_edits`. Requests naming no single Project SHALL NOT be elevated.
+
+#### Scenario: Admin edits a granted Project
+- **GIVEN** admin `ada` granted `{h1, project-a}` only
+- **WHEN** ada saves a Wiki page in `project-a`, and then in `project-b`
+- **THEN** the first write succeeds as for the owner and the second is refused with `403`
+
+#### Scenario: Granted Project stays read-only when configured so
+- **GIVEN** `{h1, project-a}` is configured `read_only` and granted to admin `ada`
+- **WHEN** ada saves a Wiki page there
+- **THEN** it is refused exactly as the super admin's write would be
+
+#### Scenario: Admin keeps no instance-level writes
+- **WHEN** admin `ada` writes UI preferences, file-access settings, accounts or Project-admin grants
+- **THEN** each request is refused with `403`
 
 ### Requirement: The super admin grants Projects to admins
 `/api/admin/project-admins` SHALL require `manage_accounts` and SHALL list, add (`POST {host, project, username}`) and remove (`DELETE`, same body) admin grants of configured Projects, many-to-many. It SHALL accept the `config.yml` owner's HTTP Basic credentials so scripts and agents can call it. A grant SHALL name an existing `admin` account. Changing an account away from `admin` SHALL remove its Project grants. Projects start with no admin grants.

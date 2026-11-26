@@ -18,7 +18,14 @@ import { middleware } from './middleware'
 
 const SECRET = 'test-session-secret'
 const ACCOUNTS: LookedUpAccount[] = [
-  { id: 2, username: 'ada', level: 'admin', disabled: false, grants: [] },
+  {
+    id: 2,
+    username: 'ada',
+    level: 'admin',
+    disabled: false,
+    grants: [],
+    adminProjects: [{ host: 'host-a', project: 'project-a' }],
+  },
   {
     id: 3,
     username: 'bob',
@@ -121,5 +128,18 @@ describe('account levels in middleware', () => {
     expect(passes(res)).toBe(true)
     const forwarded = res.headers.get(`x-middleware-request-${ACCOUNT_HEADER}`)
     expect(parseAccountHeader(forwarded)).toEqual({ id: 2, username: 'ada', level: 'admin' })
+  })
+
+  it('elevates an admin to owner on reads of its granted Project and nowhere else', async () => {
+    const role = (res: Response) => res.headers.get('x-middleware-request-x-memon-role')
+    const granted = await call(2, '/api/wiki/W0001?host=host-a&project=project-a')
+    expect(passes(granted)).toBe(true)
+    expect(role(granted)).toBe('owner')
+    expect((await call(2, '/api/wiki/W0001?host=host-a&project=project-b')).status).toBe(403)
+    // Owner-only routes that name no Project stay super-admin only; host-qualified
+    // Project writes are authorized by the central gateway, not here.
+    expect((await call(2, '/api/ui-preferences', 'PUT')).status).toBe(403)
+    const user = await call(3, '/api/wiki/W0001?host=host-a&project=project-a')
+    expect(role(user)).not.toBe('owner')
   })
 })

@@ -18,7 +18,6 @@ export default async function ManageLayout({ children }: { children: React.React
   // SSR-prefetch the project list so the sidebar's project tree renders
   // in the initial HTML (no "No projects configured" flash on first paint).
   const queryClient = getQueryClient()
-  await queryClient.prefetchQuery({ queryKey: queryKeys.projects(), queryFn: getProjectsData })
 
   // Match `/[host]/[project]/layout.tsx`: read `sidebar_state` so the collapse
   // state survives navigation across the project / manage boundary.
@@ -26,6 +25,9 @@ export default async function ManageLayout({ children }: { children: React.React
   const sidebarStateCookie = cookieStore.get('sidebar_state')?.value
   const defaultOpen = sidebarStateCookie !== 'false'
   const account = await readAccountFromHeaders()
+  // The unfiltered list is the super admin's; other accounts fetch their scoped one.
+  if (account?.level === 'super_admin')
+    await queryClient.prefetchQuery({ queryKey: queryKeys.projects(), queryFn: getProjectsData })
   const sections = adminSectionsFor(account?.level).map(({ key, label, href }) => ({
     key,
     label,

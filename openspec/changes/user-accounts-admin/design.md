@@ -20,10 +20,13 @@ See proposal.md for motivation. Today `resolveIdentity` (lib/server/auth/identit
 
 1. **Level → route role mapping.**
    - `super_admin` resolves to route role `owner` and keeps today's full reach.
-   - `admin`, `user` and `guest` resolve to route role `viewer`, so every existing viewer rule applies unchanged: read-only, scope-checked, document grants, `global` routes refused.
+   - `admin`, `user` and `guest` resolve to route role `viewer`, so every existing viewer rule applies unchanged: scope-checked, document grants, `global` routes refused.
    - Scopes come from grants: an admin's Project-admin grants and a user's Project grants become `scopeProjectRefs`, and a user's document grants become `scopeDocuments`. A guest has no grants. Each scope is merged with the account's share cookie.
-   - The owner defined admins as "use GPUs and control who reads their Projects, nothing else", and said ungranted Projects must be invisible. A scoped viewer is exactly that, with capabilities adding cluster use and grant management.
-   - Alternative: add new route roles or a scoped owner. Rejected, because every route, list filter and test keyed on `role === 'owner'` would need re-auditing.
+   - **Scoped owner reach for admins.** An admin's granted Projects are also its `ownerProjectRefs`. A request that selects exactly one of them is authorized as `owner`, reads and writes alike, in two places:
+     - the central gateway, for host-qualified Backend routes, where every Project write lands; the target is the route's selected Host+Project, or the service's;
+     - middleware, for pages and reads whose rule resolves that Project, so the page renders with owner controls.
+   - Routes that name no single Project (`global`, `multi`, unresolved) are never elevated. Instance actions therefore stay super-admin-only. Each Project's `read_only`/`allowed_edits` is enforced by the services exactly as for the owner.
+   - Alternative: add new route roles. Rejected, because every route, list filter and test keyed on `role === 'owner'` would need re-auditing; per-request elevation reuses them unchanged.
 
 2. **Mutating and shell routes are refused for viewer-role sessions.** A share viewer never reached them before, because mode 3 was evaluated only on read routes. A user session resolves in mode 1, so middleware now denies `viewer` identities on non-`read` classes with `403` before any scope check.
 
@@ -57,7 +60,8 @@ See proposal.md for motivation. Today `resolveIdentity` (lib/server/auth/identit
 - Share label and expiry cannot be edited after creation: the share API has no edit operation, so the Shares section offers revoke only.
 - Shares made before creator tracking show the super admin as creator with a Legacy mark. `shares.json` is not rewritten.
 
-- An `admin` can read, but not write, the Projects granted to it. Writes such as Web edits, share-link creation and Slurm controls stay with the super admin.
+- (Confirmed by the owner) An `admin` edits the Projects granted to it like the owner, within each Project's `read_only`/`allowed_edits`.
+- The client session's role is taken when a page is loaded. After a client-side navigation between a granted Project and other pages, controls may show the previous role until the next full load; the server enforces access on every request.
 - Admins grant users by exact username, with no directory or autocomplete. A grant to an unknown, disabled or non-user name fails with one identical error. An admin sees only the usernames already granted on its own Projects.
 - `user` grants are read-only. `guest` holds no grants: its reach equals today's share links plus public pages.
 - Only account #1 is `super_admin`; the API cannot create or promote another one.

@@ -19,3 +19,7 @@
 
 - [x] 3.1 Run root typecheck, Biome on changed files, and the change test list; record results
 - [x] 3.2 Verify rendering per AGENTS §4.3 on a 3740 preview with a neutral config: super admin sees the account entry, navbar (Users, File access) and file-access inside admin; an admin account sees only Projects (its granted ones) and no Users/File access; a user account is refused `/manage`. Take desktop and 390 px screenshots with `scripts/verify-page.mjs`
+
+## 4. Admin edit reach (follow-up)
+
+- [x] 4.1 Give admins owner reach on requests selecting exactly one granted Project (identity `ownerProjectRefs`, central gateway and middleware elevation), keep instance actions super-admin-only, prefetch the unfiltered project list only for the super admin; verify `server-auth-accounts.test.ts` (admin writes granted, 403 ungranted, user read-only), `middleware-accounts.test.ts` and `identity-accounts.test.ts`
