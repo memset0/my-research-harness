@@ -3,6 +3,8 @@
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
 const MIN_SPAN = DAY
+/** Shortest span while tickets run, so short tickets stay readable. */
+const MIN_TICKET_SPAN = 30 * 60_000
 const MAX_SPAN = 60 * DAY
 
 export interface Horizon {
@@ -23,7 +25,8 @@ export function horizonFor(
 ): Horizon {
   const ends = tickets.length > 0 ? tickets.map((ticket) => ticket.endMs) : untilMs
   const latest = Math.max(nowMs, ...ends)
-  const span = Math.min(MAX_SPAN, Math.max(MIN_SPAN, latest - nowMs))
+  const floor = tickets.length > 0 ? MIN_TICKET_SPAN : MIN_SPAN
+  const span = Math.min(MAX_SPAN, Math.max(floor, latest - nowMs))
   const earliest = Math.min(nowMs, ...tickets.map((ticket) => ticket.startMs))
   return { start: nowMs - Math.min(nowMs - earliest, span / 4), end: nowMs + span }
 }
@@ -49,9 +52,10 @@ export function positionPct(horizon: Horizon, ms: number): number {
   return Math.min(100, Math.max(0, ratio * 100))
 }
 
-/** At most 6 evenly spaced ticks after `fromMs` (default: the start): whole days, or hours under 2 days. */
+/** At most 6 evenly spaced ticks after `fromMs` (default: the start), in days, hours or 5 minutes. */
 export function dayTicks(horizon: Horizon, fromMs = horizon.start): number[] {
-  const unit = horizon.end - fromMs >= 2 * DAY ? DAY : HOUR
+  const range = horizon.end - fromMs
+  const unit = range >= 2 * DAY ? DAY : range >= 2 * HOUR ? HOUR : 5 * 60_000
   const count = Math.floor((horizon.end - fromMs) / unit)
   const step = Math.max(1, Math.ceil(count / 6))
   const ticks: number[] = []

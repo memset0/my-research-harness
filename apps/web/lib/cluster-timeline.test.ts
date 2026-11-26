@@ -19,10 +19,10 @@ describe('cluster timeline geometry', () => {
     })
     expect(horizonFor(10 * DAY, [40 * DAY], [{ startMs: 0, endMs: 14 * DAY }]).start).toBe(9 * DAY)
     expect(
-      horizonFor(10 * DAY, [40 * DAY], [{ startMs: 10 * DAY, endMs: 10 * DAY + 3_600_000 }]),
+      horizonFor(10 * DAY, [40 * DAY], [{ startMs: 10 * DAY, endMs: 10 * DAY + 60_000 }]),
     ).toEqual({
       start: 10 * DAY,
-      end: 11 * DAY,
+      end: 10 * DAY + 30 * 60_000,
     })
   })
 
