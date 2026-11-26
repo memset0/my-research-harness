@@ -20,7 +20,10 @@ describe('GET /api/clusters', () => {
     })
     const response = await GET(request('owner', '?refresh=1'))
     expect(response.status).toBe(200)
-    expect(getClusterOverview).toHaveBeenCalledWith(true)
+    expect(getClusterOverview).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({ role: 'owner' }),
+    )
   })
 
   it('refuses viewers and anonymous requests without probing', async () => {

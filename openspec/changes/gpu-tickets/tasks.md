@@ -20,3 +20,9 @@
 
 - [x] 4.1 Run root typecheck, Biome on changed files and the change test list, and record results
 - [x] 4.2 On a real Slurm-held node with a connected memon herdr machine, verify grant → `run` with a `setsid` child → central herdr client restart (the task survives) → release (the step is cancelled, no process left, GPUs idle) without touching the hold job or the `herdr-core` step
+
+## 5. Dashboard follow-up
+
+- [x] 5.1 Implement the cluster-dashboard `listTasks()` source from the ticket store and herdr terminal names, filtered per viewer (super admin all; admin granted Projects in full, others anonymous), and verify `task-view.test.ts` and the clusters route test
+- [x] 5.2 Draw granted tickets as GPU-lane bars with elapsed shading on a horizon with a lead-in before now, list tickets in the Tasks tab (ended in the last 24 h collapsed) with stock shadcn components, and verify `cluster-timeline.test.ts` plus a rendered preview check
+- [x] 5.3 Create the store and its WAL/SHM files with mode 0600, and verify the store mode test in `broker.test.ts`

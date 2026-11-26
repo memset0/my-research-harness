@@ -73,6 +73,10 @@ class FakeHerdr implements Herdr {
     return this.terminalsByTicket.get(ticketId) ?? []
   }
 
+  async ticketTerminals() {
+    return new Map(this.terminalsByTicket)
+  }
+
   async kill(address: string) {
     this.calls.push(['kill', address])
     for (const list of this.terminalsByTicket.values())
@@ -200,5 +204,15 @@ describe('TicketBroker', () => {
     await request({ whole_node: true })
     await expect(broker.template('T0001')).rejects.toMatchObject({ code: 'CONFLICT' })
     await expect(broker.get('T0099')).rejects.toMatchObject({ code: 'NOT_FOUND' })
+  })
+})
+
+describe('TicketStore files', () => {
+  it('creates the database and its WAL files owner-only', async () => {
+    const { statSync, existsSync } = await import('node:fs')
+    await store.list()
+    for (const file of [store.path, `${store.path}-wal`, `${store.path}-shm`])
+      if (existsSync(file)) expect(statSync(file).mode & 0o777).toBe(0o600)
+    expect(statSync(store.path).mode & 0o777).toBe(0o600)
   })
 })

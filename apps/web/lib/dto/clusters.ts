@@ -35,15 +35,34 @@ export interface ClusterGroupDto {
   nodes: ClusterNodeDto[]
 }
 
-/** Contract for the ticket change's task source; no source exists yet. */
+export type ClusterTicketStatus = 'QUEUED' | 'GRANTED' | 'RELEASED' | 'EXPIRED' | 'FAILED'
+
+export interface ClusterTicketTaskDto {
+  name: string
+  state: string
+  exit_code: number | null
+}
+
+/**
+ * A GPU ticket as the dashboard shows it. `redacted` tickets belong to Projects
+ * the viewer may not see: only their node, GPUs and time window are kept.
+ */
 export interface ClusterTaskDto {
   id: string
-  state: 'QUEUED' | 'RUNNING'
+  state: 'QUEUED' | 'RUNNING' | 'ENDED'
+  status: ClusterTicketStatus
+  redacted: boolean
+  project: string | null
+  label: string | null
   node: string | null
   gpus: number[]
+  requested_at: string | null
   granted_at: string | null
+  expires_at: string | null
+  ended_at: string | null
   requested_duration_s: number
-  label?: string
+  reason: string | null
+  tasks: ClusterTicketTaskDto[]
 }
 
 export interface ClusterOverviewDto {

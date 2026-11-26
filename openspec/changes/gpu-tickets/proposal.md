@@ -21,6 +21,7 @@ Research agents now reach registered GPU nodes (`memon ssh`), but nothing decide
   - ends and removes the ticket's terminals;
   - re-checks the GPUs. GPUs still in use are marked dirty and withheld until they are clean.
   - Compute processes on pool GPUs that no ticket holds are reported.
+- **Dashboard.** The cluster overview lists tickets and draws granted ones on their GPU lanes, filtered to the Projects the viewer may see.
 - **API and CLI.**
   - Owner/admin-gated `/api/gpu-pool/tickets…` routes, under the existing `access_clusters` path gate.
   - `memon ticket request|list|show|release|exec|run|ps|logs|wait|kill|attach`, which talk to central over loopback HTTP with operator credentials and to the node through memon's own herdr client.
@@ -29,7 +30,6 @@ Research agents now reach registered GPU nodes (`memon ssh`), but nothing decide
   - a temporary Ray cluster per ticket (the next change);
   - priorities and preemption;
   - nodes without a connected memon herdr machine, including M2 until the relay shell service is deployed;
-  - feeding the cluster dashboard's task view (done when that change is committed).
 
 ## Capabilities
 

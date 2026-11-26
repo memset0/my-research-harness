@@ -118,6 +118,10 @@ export class TicketBroker {
     return this.deps.store.dirty()
   }
 
+  ticketTerminals() {
+    return this.deps.herdr.ticketTerminals()
+  }
+
   async get(id: string): Promise<Ticket> {
     const ticket = await this.deps.store.get(id)
     if (!ticket) throw new TicketError('NOT_FOUND', `ticket ${id} does not exist`)

@@ -13,7 +13,8 @@ export const dynamic = 'force-dynamic'
 const HEADERS = { 'Cache-Control': 'no-store' }
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  if (!canAccessClusters(readIdentityFromRequest(req))) {
+  const identity = readIdentityFromRequest(req)
+  if (!canAccessClusters(identity)) {
     return NextResponse.json(
       {
         error: {
@@ -26,7 +27,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
   try {
     const refresh = req.nextUrl.searchParams.get('refresh') === '1'
-    return NextResponse.json(await getClusterOverview(refresh), { headers: HEADERS })
+    return NextResponse.json(await getClusterOverview(refresh, identity), { headers: HEADERS })
   } catch (err) {
     if (err instanceof NodeAccessError) {
       return NextResponse.json(

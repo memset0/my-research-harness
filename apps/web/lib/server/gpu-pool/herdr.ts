@@ -32,6 +32,8 @@ export interface Herdr {
     options: { name: string; labels: Record<string, string> },
   ): Promise<string>
   terminals(ticketId: string): Promise<HerdrTerminal[]>
+  /** Every terminal of every ticket, grouped by ticket id (from the `t<NNNN>-<task>` names). */
+  ticketTerminals(): Promise<Map<string, HerdrTerminal[]>>
   kill(address: string): Promise<void>
   remove(address: string): Promise<void>
 }
@@ -104,6 +106,28 @@ export function createHerdr(hc = hcPath()): Herdr {
         state: String(t.state),
         exitCode: typeof t.exit_code === 'number' ? t.exit_code : null,
       }))
+    },
+    async ticketTerminals() {
+      const out = json<{ terminals: Array<Record<string, unknown>> }>(
+        await runHc(['ls', '--all', '--json'], hc, 30_000),
+        'ls',
+      )
+      const grouped = new Map<string, HerdrTerminal[]>()
+      for (const t of out.terminals) {
+        const name = typeof t.name === 'string' ? t.name : null
+        const id = ticketOfTerminal(name)
+        if (!id) continue
+        grouped.set(id, [
+          ...(grouped.get(id) ?? []),
+          {
+            address: String(t.address),
+            name,
+            state: String(t.state),
+            exitCode: typeof t.exit_code === 'number' ? t.exit_code : null,
+          },
+        ])
+      }
+      return grouped
     },
     async kill(address) {
       const result = await runHc(['kill', address, '--json'], hc)
@@ -179,6 +203,12 @@ export function launchTemplate(
     run: hold ? [...env, ...taskSrun(node.enter as string[], ticket.id)] : env,
     holdJob: hold,
   }
+}
+
+/** The ticket id a terminal name belongs to, or null for terminals outside tickets. */
+export function ticketOfTerminal(name: string | null): string | null {
+  const match = name ? /^t(\d{4,})-./.exec(name) : null
+  return match ? `T${match[1]}` : null
 }
 
 /** Terminal name for a task: unique per ticket, within herdr's 1–32 `[a-z0-9_-]`. */

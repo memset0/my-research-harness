@@ -225,6 +225,7 @@ export const DIRECT_RUNTIME_SURFACES = {
   'lib/server/share-api.ts': { owner: 'central', scope: 'global', purpose: 'auth' },
   'lib/server/admin-accounts-route.ts': { owner: 'central', scope: 'global', purpose: 'auth' },
   'lib/server/gpu-pool/http.ts': { owner: 'central', scope: 'global', purpose: 'shell' },
+  'lib/server/cluster/tasks.ts': { owner: 'central', scope: 'global', purpose: 'shell' },
   'app/s/[token]/route.ts': { owner: 'central', scope: 'global', purpose: 'share-landing' },
   'components/runtime-config-bootstrap.tsx': {
     owner: 'composed',

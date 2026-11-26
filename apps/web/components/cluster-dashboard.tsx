@@ -9,6 +9,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronRight, ListTodo, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 import {
+  barGeometry,
   dayTicks,
   formatSpan,
   type Horizon,
@@ -30,7 +31,7 @@ import { Alert, AlertDescription } from './ui/alert'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
 import { Card } from './ui/card'
-import { Collapsible, CollapsibleTrigger } from './ui/collapsible'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from './ui/empty'
 import { Progress } from './ui/progress'
 import { Skeleton } from './ui/skeleton'
@@ -53,21 +54,35 @@ function Segment({
   className,
   tip,
   slot,
+  elapsed,
+  elapsedClassName,
 }: {
   left: number
   width: number
   className: string
   tip: string
   slot?: string
+  /** Part of `width` already used, drawn with `elapsedClassName`. */
+  elapsed?: number
+  elapsedClassName?: string
 }) {
+  const shown = Math.max(0.6, width)
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <div
           data-slot={slot}
-          className={cn('absolute inset-y-0 rounded-sm', className)}
-          style={{ left: `${left}%`, width: `${Math.max(0.6, width)}%` }}
-        />
+          className={cn('absolute inset-y-0 overflow-hidden rounded-sm', className)}
+          style={{ left: `${left}%`, width: `${shown}%` }}
+        >
+          {elapsed !== undefined && elapsed > 0 && (
+            <div
+              data-slot="task-elapsed"
+              className={cn('h-full', elapsedClassName)}
+              style={{ width: `${Math.min(100, (elapsed / shown) * 100)}%` }}
+            />
+          )}
+        </div>
       </TooltipTrigger>
       <TooltipContent>{tip}</TooltipContent>
     </Tooltip>
@@ -92,7 +107,7 @@ function Lane({
       <Segment
         left={0}
         width={positionPct(time.horizon, until)}
-        className={gpu.allocatable ? 'bg-primary/60' : 'bg-muted-foreground/30'}
+        className={gpu.allocatable ? 'bg-primary/20' : 'bg-muted-foreground/20'}
         tip={`${gpu.allocatable ? 'Allocatable' : 'Reserved'} until ${node.available_until}`}
       />
       {tasks
@@ -101,23 +116,32 @@ function Lane({
         )
         .map((task) => {
           const start = Date.parse(task.granted_at as string)
-          const end = start + task.requested_duration_s * 1000
-          const left = positionPct(time.horizon, start)
+          const end = task.expires_at
+            ? Date.parse(task.expires_at)
+            : start + task.requested_duration_s * 1000
+          const bar = barGeometry(time.horizon, start, end, time.nowMs)
+          const left = `${formatSpan(end - time.nowMs)} left`
           return (
             <Segment
-              key={task.id}
-              slot="task-bar"
-              left={left}
-              width={positionPct(time.horizon, end) - left}
-              className="bg-primary"
-              tip={`${task.label ?? task.id}: ${formatSpan(end - time.nowMs)} left`}
+              key={`${task.id}-${task.granted_at}-${task.gpus.join(',')}`}
+              slot={task.redacted ? 'task-bar-occupied' : 'task-bar'}
+              left={bar.left}
+              width={bar.width}
+              elapsed={bar.elapsed}
+              className={task.redacted ? 'bg-muted-foreground/40' : 'bg-primary/50'}
+              elapsedClassName={task.redacted ? 'bg-muted-foreground/60' : 'bg-primary'}
+              tip={
+                task.redacted
+                  ? `Occupied by another project · ${left}`
+                  : `${task.id} · ${task.project}${task.label ? ` · ${task.label}` : ''} · ${left}`
+              }
             />
           )
         })}
       {busy && (
         <Segment
           slot="lane-busy"
-          left={0}
+          left={positionPct(time.horizon, time.nowMs)}
           width={2}
           className="bg-destructive"
           tip={`${gpu.processes} compute process${gpu.processes === 1 ? '' : 'es'} now`}
@@ -311,7 +335,7 @@ function NodeCard({
                 <TableHead>Allocatable</TableHead>
                 <TableHead>Now</TableHead>
                 <TableHead>
-                  <TimeAxis horizon={time.horizon} />
+                  <TimeAxis horizon={time.horizon} nowMs={time.nowMs} />
                 </TableHead>
               </TableRow>
             )}
@@ -338,17 +362,19 @@ function NodeCard({
   )
 }
 
-function TimeAxis({ horizon }: { horizon: Horizon }) {
+function TimeAxis({ horizon, nowMs }: { horizon: Horizon; nowMs: number }) {
   return (
     <div className="relative h-4 w-full font-normal" data-slot="time-axis">
-      <span className="absolute left-0">now</span>
-      {dayTicks(horizon).map((tick) => (
+      <span className="absolute" style={{ left: `${positionPct(horizon, nowMs)}%` }}>
+        now
+      </span>
+      {dayTicks(horizon, nowMs).map((tick) => (
         <span
           key={tick}
           className="absolute -translate-x-full"
           style={{ left: `${positionPct(horizon, tick)}%` }}
         >
-          +{formatSpan(tick - horizon.start)}
+          +{formatSpan(tick - nowMs)}
         </span>
       ))}
     </div>
@@ -390,55 +416,154 @@ function ClusterSection({
   )
 }
 
+const STATUS_VARIANT = {
+  GRANTED: 'default',
+  QUEUED: 'outline',
+  RELEASED: 'secondary',
+  EXPIRED: 'secondary',
+  FAILED: 'destructive',
+} as const
+
+function shortTime(iso: string | null): string {
+  if (!iso) return '—'
+  const date = new Date(iso)
+  return `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+}
+
+function TicketRow({ task, nowMs }: { task: ClusterTaskDto; nowMs: number }) {
+  const ends = task.expires_at ? Date.parse(task.expires_at) : null
+  return (
+    <TableRow data-slot="ticket-row" data-status={task.status}>
+      <TableCell className="font-mono">
+        {task.id}
+        {task.label && <span className="ml-1 font-sans text-muted-foreground">{task.label}</span>}
+      </TableCell>
+      <TableCell className="truncate">{task.project}</TableCell>
+      <TableCell>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Badge variant={STATUS_VARIANT[task.status]} className={BADGE}>
+              {task.status}
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent>{task.reason ?? `requested ${task.requested_at ?? '—'}`}</TooltipContent>
+        </Tooltip>
+      </TableCell>
+      <TableCell className="whitespace-nowrap">
+        {task.node ? `${task.node} · ${task.gpus.join(',')}` : '—'}
+      </TableCell>
+      <TableCell className="whitespace-nowrap tabular-nums text-muted-foreground">
+        {task.state === 'QUEUED'
+          ? `${shortTime(task.requested_at)} · ${formatSpan(task.requested_duration_s * 1000)}`
+          : `${shortTime(task.granted_at)} → ${shortTime(task.ended_at ?? task.expires_at)}`}
+        {task.state === 'RUNNING' && ends !== null && (
+          <span className="ml-1 text-foreground">({formatSpan(ends - nowMs)} left)</span>
+        )}
+      </TableCell>
+      <TableCell>
+        <div className="flex flex-wrap gap-1">
+          {task.tasks.length === 0
+            ? '—'
+            : task.tasks.map((run) => (
+                <Badge
+                  key={run.name}
+                  variant={run.state === 'live' ? 'secondary' : 'outline'}
+                  className={BADGE}
+                >
+                  {run.name}
+                  {run.exit_code !== null ? ` · ${run.exit_code}` : ''}
+                </Badge>
+              ))}
+        </div>
+      </TableCell>
+    </TableRow>
+  )
+}
+
+function TicketTable({ tasks, nowMs }: { tasks: ClusterTaskDto[]; nowMs: number }) {
+  return (
+    <Table className="table-fixed [&_td]:px-1.5 [&_td]:py-1 [&_th]:h-7 [&_th]:px-1.5">
+      <colgroup>
+        <col className="w-40" />
+        <col className="w-36" />
+        <col className="w-24" />
+        <col className="w-32" />
+        <col className="w-64" />
+        <col />
+      </colgroup>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Ticket</TableHead>
+          <TableHead>Project</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>Node · GPUs</TableHead>
+          <TableHead>Time</TableHead>
+          <TableHead>Tasks</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {tasks.map((task) => (
+          <TicketRow key={task.id} task={task} nowMs={nowMs} />
+        ))}
+      </TableBody>
+    </Table>
+  )
+}
+
 function TasksPanel({ data }: { data: ClusterOverviewDto }) {
-  if (!data.tasks.available || data.tasks.items.length === 0)
+  const [endedOpen, setEndedOpen] = useState(false)
+  const mine = data.tasks.items.filter((task) => !task.redacted)
+  const open = mine.filter((task) => task.state !== 'ENDED')
+  const ended = mine.filter((task) => task.state === 'ENDED')
+  const nowMs = Date.parse(data.now)
+  if (!data.tasks.available || mine.length === 0)
     return (
       <Empty data-slot="tasks-unavailable" className="border p-6">
         <EmptyHeader>
           <EmptyMedia variant="icon">
             <ListTodo />
           </EmptyMedia>
-          <EmptyTitle>{data.tasks.available ? 'No tasks' : 'No ticket tasks yet'}</EmptyTitle>
+          <EmptyTitle>{data.tasks.available ? 'No tickets' : 'No ticket source'}</EmptyTitle>
           <EmptyDescription>
             {data.tasks.available
-              ? 'Nothing is running or queued.'
-              : 'Running and queued tasks appear here once GPU tickets are enabled.'}
+              ? 'Nothing is running or queued. Request GPUs with memon ticket request.'
+              : 'GPU tickets are not available on this server.'}
           </EmptyDescription>
         </EmptyHeader>
       </Empty>
     )
-  const nowMs = Date.parse(data.now)
   return (
-    <Card size="sm" className="gap-0 py-0">
-      <Table className="[&_td]:px-1.5 [&_td]:py-1 [&_th]:h-7 [&_th]:px-1.5">
-        <TableHeader>
-          <TableRow>
-            <TableHead>Task</TableHead>
-            <TableHead>State</TableHead>
-            <TableHead>Node · GPUs</TableHead>
-            <TableHead>Time</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {data.tasks.items.map((task) => (
-            <TableRow key={task.id}>
-              <TableCell className="font-mono">{task.label ?? task.id}</TableCell>
-              <TableCell>
-                <Badge variant={task.state === 'RUNNING' ? 'default' : 'outline'} className={BADGE}>
-                  {task.state}
-                </Badge>
-              </TableCell>
-              <TableCell>{task.node ? `${task.node} · ${task.gpus.join(',')}` : '—'}</TableCell>
-              <TableCell className="tabular-nums">
-                {task.granted_at
-                  ? `${formatSpan(Date.parse(task.granted_at) + task.requested_duration_s * 1000 - nowMs)} left`
-                  : `${formatSpan(task.requested_duration_s * 1000)} requested`}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </Card>
+    <div className="flex flex-col gap-1.5" data-slot="tickets">
+      <Card size="sm" className="gap-0 py-0">
+        {open.length > 0 ? (
+          <TicketTable tasks={open} nowMs={nowMs} />
+        ) : (
+          <p className="px-2 py-1.5 text-xs text-muted-foreground">Nothing running or queued.</p>
+        )}
+      </Card>
+      {ended.length > 0 && (
+        <Collapsible open={endedOpen} onOpenChange={setEndedOpen}>
+          <CollapsibleTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 gap-0.5 px-1 text-xs"
+              data-slot="ended-toggle"
+            >
+              <ChevronRight
+                className={cn('size-3 transition-transform', endedOpen && 'rotate-90')}
+              />
+              Ended in the last 24 h · {ended.length}
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <Card size="sm" className="gap-0 py-0">
+              <TicketTable tasks={ended} nowMs={nowMs} />
+            </Card>
+          </CollapsibleContent>
+        </Collapsible>
+      )}
+    </div>
   )
 }
 
@@ -467,6 +592,9 @@ export function ClusterDashboard() {
   const nodes = data?.clusters.flatMap((group) => group.nodes) ?? []
   const gpus = nodes.flatMap((node) => node.gpu_rows)
   const issues = nodes.filter((node) => node.state !== 'ok')
+  const openTickets = (data?.tasks.items ?? []).filter(
+    (task) => !task.redacted && task.state !== 'ENDED',
+  ).length
   const isOpen = (node: ClusterNodeDto) => openOverride[node.id] ?? node.state === 'ok'
   const issuesOpen = issues.length > 0 && issues.every(isOpen)
   const setNodeOpen = (id: string, open: boolean) =>
@@ -482,6 +610,17 @@ export function ClusterDashboard() {
     horizon: horizonFor(
       nowMs,
       nodes.filter((node) => !node.expired).map((node) => Date.parse(node.available_until)),
+      (data?.tasks.items ?? [])
+        .filter((task) => task.state === 'RUNNING' && task.granted_at)
+        .map((task) => {
+          const startMs = Date.parse(task.granted_at as string)
+          return {
+            startMs,
+            endMs: task.expires_at
+              ? Date.parse(task.expires_at)
+              : startMs + task.requested_duration_s * 1000,
+          }
+        }),
     ),
   }
 
@@ -492,7 +631,14 @@ export function ClusterDashboard() {
           <h1 className="text-sm font-semibold">Clusters</h1>
           <TabsList>
             <TabsTrigger value="nodes">Nodes</TabsTrigger>
-            <TabsTrigger value="tasks">Tasks</TabsTrigger>
+            <TabsTrigger value="tasks" data-slot="tasks-tab">
+              Tasks
+              {openTickets > 0 && (
+                <Badge variant="secondary" className={BADGE}>
+                  {openTickets}
+                </Badge>
+              )}
+            </TabsTrigger>
           </TabsList>
           {data && (
             <span className="text-xs text-muted-foreground" data-slot="cluster-summary">

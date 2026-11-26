@@ -1,3 +1,4 @@
+import { chmodSync, closeSync, existsSync, openSync } from 'node:fs'
 import { formatIsoLocal } from '@memon/core'
 import { dirname, join } from '@memon/file-protocol/paths'
 import sqlite3 from 'sqlite3'
@@ -61,6 +62,8 @@ export class TicketStore {
   private readonly ready: Promise<void>
 
   constructor(public readonly path: string) {
+    // SQLite gives -wal/-shm the main file's mode, so create it owner-only first.
+    closeSync(openSync(path, 'a', 0o600))
     this.database = new sqlite3.Database(path)
     this.database.configure('busyTimeout', 5000)
     this.ready = this.exec(`
@@ -93,7 +96,10 @@ export class TicketStore {
         reason TEXT NOT NULL,
         PRIMARY KEY (node, gpu)
       ) WITHOUT ROWID;
-    `)
+    `).then(() => {
+      for (const file of [path, `${path}-wal`, `${path}-shm`])
+        if (existsSync(file)) chmodSync(file, 0o600)
+    })
   }
 
   async create(request: TicketRequest, now: Date): Promise<Ticket> {

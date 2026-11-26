@@ -68,7 +68,11 @@ See proposal.md for motivation. Current state this builds on:
 
 7. **Statuses and times.** Ticket states are `QUEUED`, `GRANTED`, `RELEASED`, `EXPIRED` and `FAILED`. Dirty is per GPU, not a ticket state. All stored times use `formatIsoLocal`, and comparisons use epoch milliseconds.
 
-8. **Dashboard feed (deferred).** Once `cluster-dashboard` is committed, its `listTasks()` maps `QUEUED`/`GRANTED` tickets to `ClusterTaskDto`, with `RUNNING` for granted ones. Until then this change does not edit that change's files.
+8. **Dashboard feed.**
+   - `lib/server/cluster/tasks.ts` implements the cluster-dashboard `listTasks()` source. It maps tickets to `ClusterTaskDto`, extended with status, Project, times and tasks; ticket tasks are read from herdr terminal names `t<NNNN>-<task>`, cached for 15 s.
+   - Visibility is decided per request: the super admin and owner Basic auth see every ticket. An admin sees full details only for Projects granted to them (looked up in the account store). Others' granted tickets are reduced to anonymous `occupied` bars, and their other tickets are omitted.
+   - While tickets run, the timeline horizon covers their ends, plus a lead-in before now so the elapsed part is visible; node expiries past it clamp to the edge. Under 2 days, ticks are hours.
+   - The store pre-creates its database file with mode 0600, so SQLite gives `-wal`/`-shm` the same mode, and existing files are re-chmodded on open.
 
 9. **Supersedes `run-scheduler`.** A queued ticket with a start command is the background task that change designed. Its per-project CLI daemon, command files and preemption are not adopted. The owner decides when to archive or abandon it.
 

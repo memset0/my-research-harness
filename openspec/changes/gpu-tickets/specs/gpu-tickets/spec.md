@@ -96,3 +96,26 @@ The CLI SHALL provide `memon ticket request|list|show|release` against central, 
 #### Scenario: Unknown ticket
 - **WHEN** the user runs `memon ticket show T9999`
 - **THEN** the command exits 4 with `NOT_FOUND`
+
+### Requirement: Tickets appear on the cluster dashboard
+The cluster overview SHALL list queued and granted tickets, plus tickets that ended within the last 24 hours, with id, Project, label, status, node, GPUs, request/grant/expiry times and the ticket's tasks. Each granted ticket SHALL draw a bar on the lanes of its GPUs from `granted_at` to `expires_at`, with the elapsed part distinguished. Ended tickets SHALL be collapsed by default.
+
+#### Scenario: Granted ticket on the timeline
+- **GIVEN** ticket `T0001` holds GPUs 0–3 of `node-01` and was granted 10 minutes ago for 1 hour
+- **WHEN** the super admin opens the cluster overview
+- **THEN** each of the four GPU lanes shows a T0001 bar whose first sixth is shaded as elapsed, and the Tasks tab lists T0001 as `GRANTED` with its tasks
+
+### Requirement: Ticket details are limited to the viewer's Projects
+The super admin (including owner Basic auth) SHALL see every ticket in full. An admin SHALL see full details only for tickets on Projects granted to them. Other granted tickets SHALL appear only as anonymous occupied bars, with no id, Project, label, reason or tasks; other queued or ended tickets SHALL not appear. Users, guests and viewers SHALL get no ticket data.
+
+#### Scenario: Admin sees another project's ticket anonymously
+- **GIVEN** an admin granted only `project-a`, and a granted ticket for `project-b` labelled `secret`
+- **WHEN** the admin opens the cluster overview
+- **THEN** the `project-b` ticket appears only as an occupied bar, and the response contains neither `project-b` nor `secret`
+
+### Requirement: Ticket store files are owner-only
+The ticket store and its write-ahead and shared-memory files SHALL be created with mode `0600`.
+
+#### Scenario: New store
+- **WHEN** the broker opens a new ticket store
+- **THEN** the database file and any `-wal`/`-shm` files have mode `0600`

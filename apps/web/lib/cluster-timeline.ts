@@ -10,10 +10,37 @@ export interface Horizon {
   end: number
 }
 
-export function horizonFor(nowMs: number, untilMs: number[]): Horizon {
-  const latest = Math.max(nowMs, ...untilMs)
+/**
+ * From now to the latest expiry (1–60 days). While tickets run, the span covers
+ * their ends instead (node expiries past it clamp to the edge), so bars stay
+ * readable. Past starts add a lead-in before now of at most a quarter of the
+ * span, so elapsed time shows.
+ */
+export function horizonFor(
+  nowMs: number,
+  untilMs: number[],
+  tickets: Array<{ startMs: number; endMs: number }> = [],
+): Horizon {
+  const ends = tickets.length > 0 ? tickets.map((ticket) => ticket.endMs) : untilMs
+  const latest = Math.max(nowMs, ...ends)
   const span = Math.min(MAX_SPAN, Math.max(MIN_SPAN, latest - nowMs))
-  return { start: nowMs, end: nowMs + span }
+  const earliest = Math.min(nowMs, ...tickets.map((ticket) => ticket.startMs))
+  return { start: nowMs - Math.min(nowMs - earliest, span / 4), end: nowMs + span }
+}
+
+export interface Bar {
+  left: number
+  width: number
+  /** Width of the elapsed part, measured from `left`. */
+  elapsed: number
+}
+
+/** A ticket bar from `startMs` to `endMs`, with the part before `nowMs` as elapsed. */
+export function barGeometry(horizon: Horizon, startMs: number, endMs: number, nowMs: number): Bar {
+  const left = positionPct(horizon, startMs)
+  const right = positionPct(horizon, endMs)
+  const now = positionPct(horizon, Math.min(Math.max(nowMs, startMs), endMs))
+  return { left, width: right - left, elapsed: now - left }
 }
 
 /** Position of `ms` on the horizon in percent, clamped to [0, 100]. */
@@ -22,12 +49,13 @@ export function positionPct(horizon: Horizon, ms: number): number {
   return Math.min(100, Math.max(0, ratio * 100))
 }
 
-/** Evenly spaced whole-day ticks (at most 6), excluding the start. */
-export function dayTicks(horizon: Horizon): number[] {
-  const days = Math.floor((horizon.end - horizon.start) / DAY)
-  const step = Math.max(1, Math.ceil(days / 6))
+/** At most 6 evenly spaced ticks after `fromMs` (default: the start): whole days, or hours under 2 days. */
+export function dayTicks(horizon: Horizon, fromMs = horizon.start): number[] {
+  const unit = horizon.end - fromMs >= 2 * DAY ? DAY : HOUR
+  const count = Math.floor((horizon.end - fromMs) / unit)
+  const step = Math.max(1, Math.ceil(count / 6))
   const ticks: number[] = []
-  for (let day = step; day <= days; day += step) ticks.push(horizon.start + day * DAY)
+  for (let n = step; n <= count; n += step) ticks.push(fromMs + n * unit)
   return ticks
 }
 
@@ -37,5 +65,6 @@ export function formatSpan(ms: number): string {
   const hours = Math.floor((ms % DAY) / HOUR)
   if (days > 0) return hours > 0 ? `${days}d ${hours}h` : `${days}d`
   const minutes = Math.floor((ms % HOUR) / 60_000)
-  return hours > 0 ? `${hours}h ${minutes}m` : `${Math.max(1, minutes)}m`
+  if (hours > 0) return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`
+  return `${Math.max(1, minutes)}m`
 }
