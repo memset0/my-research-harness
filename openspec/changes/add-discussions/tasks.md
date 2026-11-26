@@ -33,6 +33,7 @@ Implementation authorized by the owner on 2026-11-08. Track verified completion 
 - [x] 5.3 Add typed owner response forms, comments/history and REVISED comparison with honest fallback notices; verify form tests cover all four types, conflicts and read-only viewers.
 - [x] 5.4 Persist last-displayed discussion state in localStorage and animate fetched changes; verify changed/new content and reload comparison, identical/failed fetches, storage failure fallback, reduced motion and preservation of scroll, expansion and unsent input.
 - [x] 5.5 Give Discussions a distinct paired-message icon in the sidebar and list heading; verify existing sidebar behavior, typecheck and rendered desktop/mobile output.
+- [x] 5.6 Recompose the list and discussion pages into a compact layout from CLI-added shadcn primitives (Tabs, Item, ToggleGroup, Alert, RadioGroup, Empty, Card); verify existing discussion component tests, typecheck and rendered desktop/390px output.
 
 ## 6. Convention and integration verification
 

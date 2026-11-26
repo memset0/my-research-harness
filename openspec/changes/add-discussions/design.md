@@ -72,6 +72,10 @@ Provide a standalone handoff prompt for project agents that the owner asks to mo
 
 Use the proposed handoff defaults in proposal.md, subject to owner review. Extend bundled CLI guidance so research agents know how to create question fences, inspect pending feedback, resolve and reply. The handoff requests FS12, but treating an additive feature as a new convention needs an explicit policy exception: old content remains readable; the guide refreshes ignored catalogs and changes only the tracked version marker after verification. A File Agent upgrade is independent and required only for scoped append support.
 
+### Compact shadcn layout (2026-11-25 follow-up)
+
+Owner feedback after production use: the first browser layout was too loose. The views now prefer compact, native shadcn composition: Tabs for list views, an Item list inside one bordered group instead of one Card per discussion, ToggleGroup filters, Alert for closed/revised/diagnostic notices, RadioGroup for choice/confirm answers, Empty for empty states, and tighter Card spacing with metadata and title on one header row. Primitives come from the shadcn CLI (`radio-group`, `alert`, `item`, `empty`); none is forked. Behavior, anchors, persistence and authorization are unchanged.
+
 ## Risks / Trade-offs
 
 - Large question sections cannot fit in a bounded response → keep the hash, bounded original and truncation marker; Git can recover full committed originals.

@@ -2,18 +2,22 @@
 import type { DiscussionQuestion, QuestionMetadata } from '@memon/core'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  AlertTriangle,
   ArrowLeft,
   Check,
-  ChevronDown,
   ChevronRight,
+  CircleDot,
+  GitCompare,
+  Lock,
   MessageSquare,
   MessagesSquare,
   RefreshCw,
+  Sparkles,
 } from 'lucide-react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useTheme } from 'next-themes'
-import { useEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { fetchDiscussion, fetchDiscussions, mutateDiscussion } from '@/lib/api'
 import {
@@ -35,14 +39,29 @@ import { handleFragmentClick, scrollFragmentIntoSurface } from '@/lib/scroll-to-
 import { cn } from '@/lib/utils'
 import { Markdown } from './markdown'
 import { useIsOwner, useSession } from './session-provider'
+import { Alert, AlertAction, AlertDescription, AlertTitle } from './ui/alert'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
-import { Card, CardContent, CardHeader } from './ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Checkbox } from './ui/checkbox'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from './ui/empty'
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemSeparator,
+  ItemTitle,
+} from './ui/item'
 import { Label } from './ui/label'
+import { RadioGroup, RadioGroupItem } from './ui/radio-group'
+import { Separator } from './ui/separator'
+import { Tabs, TabsList, TabsTrigger } from './ui/tabs'
 import { Textarea } from './ui/textarea'
+import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
 
 const DiffViewer = dynamic(() => import('react-diff-viewer-continued').then((m) => m.default), {
   ssr: false,
@@ -106,6 +125,22 @@ export function DiscussionsView({ project, id }: { project: ProjectTarget; id?: 
     <DiscussionList project={project} />
   )
 }
+const VIEWS = [
+  ['OPEN', 'Open'],
+  ['waiting', 'Waiting for you'],
+  ['decisions', 'Decisions'],
+  ['CLOSED', 'Closed'],
+] as const
+type DiscussionSummary = Awaited<ReturnType<typeof fetchDiscussions>>['discussions'][number]
+const waitingQuestion = (q: DiscussionSummary['questions'][number]) =>
+  q.displayStatus === 'OPEN' || q.displayStatus === 'REVISED'
+function inView(d: DiscussionSummary, mode: string) {
+  return mode === 'CLOSED'
+    ? d.status === 'CLOSED'
+    : mode === 'decisions'
+      ? d.questions.some((q) => q.status === 'DECIDED')
+      : d.status === 'OPEN' && (mode !== 'waiting' || d.questions.some(waitingQuestion))
+}
 function DiscussionList({ project }: { project: ProjectTarget }) {
   const { data, isLoading, error } = useQuery({
     queryKey: queryKeys.discussions(project),
@@ -113,124 +148,115 @@ function DiscussionList({ project }: { project: ProjectTarget }) {
   })
   const [mode, setMode] = useState('OPEN')
   const discussions = data?.discussions ?? []
+  const visible = discussions.filter((d) => inView(d, mode))
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-6 p-4 md:p-8" data-discussion-list>
-      <header>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <MessagesSquare className="size-6 shrink-0" aria-hidden="true" />
+    <div className="mx-auto w-full max-w-4xl space-y-4 p-4 md:px-6" data-discussion-list>
+      <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <h1 className="flex items-center gap-2 text-lg font-semibold tracking-tight">
+          <MessagesSquare className="size-5 shrink-0" aria-hidden="true" />
           Discussions
         </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           Questions, feedback and decisions with your agents.
         </p>
       </header>
-      <nav className="flex flex-wrap gap-2" aria-label="Discussion views">
-        {[
-          ['OPEN', 'Open'],
-          ['waiting', 'Waiting for you'],
-          ['decisions', 'Decisions'],
-          ['CLOSED', 'Closed'],
-        ].map(([value, label]) => (
-          <Button
-            key={value}
-            variant={mode === value ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setMode(value!)}
-          >
-            {label}
-          </Button>
-        ))}
-      </nav>
-      {isLoading && <p className="text-muted-foreground">Loading discussions…</p>}
+      <Tabs value={mode} onValueChange={setMode}>
+        <TabsList aria-label="Discussion views">
+          {VIEWS.map(([value, label]) => {
+            const count = discussions.filter((d) => inView(d, value)).length
+            return (
+              <TabsTrigger key={value} value={value}>
+                {label}
+                {count > 0 && (
+                  <Badge variant="secondary" className="h-4 min-w-4 px-1 tabular-nums">
+                    {count}
+                  </Badge>
+                )}
+              </TabsTrigger>
+            )
+          })}
+        </TabsList>
+      </Tabs>
+      {isLoading && <p className="text-xs text-muted-foreground">Loading discussions…</p>}
       {error && (
-        <p role="alert" className="text-destructive">
-          {error.message}
-        </p>
+        <Alert variant="destructive">
+          <AlertTriangle />
+          <AlertDescription>{error.message}</AlertDescription>
+        </Alert>
       )}
-      {discussions
-        .filter((d) =>
-          mode === 'CLOSED'
-            ? d.status === 'CLOSED'
-            : mode === 'decisions'
-              ? d.questions.some((q) => q.status === 'DECIDED')
-              : d.status === 'OPEN' &&
-                (mode !== 'waiting' ||
-                  d.questions.some(
-                    (q) => q.displayStatus === 'OPEN' || q.displayStatus === 'REVISED',
-                  )),
-        )
-        .map((d) => {
-          const href = projectPagePath(projectRouteTarget(project), {
-            kind: 'discussion',
-            number: Number(d.id.slice(1)),
-          })
-          const questions =
-            mode === 'waiting'
-              ? d.questions.filter(
-                  (q) => q.displayStatus === 'OPEN' || q.displayStatus === 'REVISED',
-                )
-              : mode === 'decisions'
-                ? d.questions.filter((q) => q.status === 'DECIDED')
-                : []
-          return (
-            <Card key={d.id}>
-              <CardHeader className="gap-2">
-                <div className="flex items-center justify-between gap-3">
-                  <Link href={href} className="font-medium hover:underline">
-                    {d.title}
-                  </Link>
-                  <Badge variant="outline">{d.status}</Badge>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {d.id} · {d.questions.length} questions ·{' '}
-                  {
-                    d.questions.filter(
-                      (q) => q.displayStatus === 'OPEN' || q.displayStatus === 'REVISED',
-                    ).length
-                  }{' '}
-                  {d.status === 'CLOSED' ? 'unresolved' : 'waiting for you'}
-                </p>
-              </CardHeader>
-              {questions.length > 0 && (
-                <CardContent className="space-y-3">
-                  {questions.map((q) => (
-                    <div key={q.id ?? q.line}>
-                      <Link
-                        href={`${href}#${q.id}`}
-                        className="text-sm font-medium hover:underline"
-                      >
-                        {q.title}
+      {visible.length > 0 && (
+        <ItemGroup className="rounded-lg border bg-card">
+          {visible.map((d, index) => {
+            const href = projectPagePath(projectRouteTarget(project), {
+              kind: 'discussion',
+              number: Number(d.id.slice(1)),
+            })
+            const waiting = d.questions.filter(waitingQuestion)
+            const decided = d.questions.filter((q) => q.status === 'DECIDED')
+            const questions = mode === 'waiting' ? waiting : mode === 'decisions' ? decided : []
+            return (
+              <div key={d.id}>
+                {index > 0 && <ItemSeparator className="my-0" />}
+                <Item size="sm" className="rounded-none">
+                  <ItemContent className="min-w-0">
+                    <ItemTitle className="w-full">
+                      <Link href={href} className="truncate hover:underline">
+                        {d.title}
                       </Link>
-                      {mode === 'decisions' && (
-                        <p className="text-sm text-muted-foreground">
-                          {formatDecision(q.decision)}
-                          {q.rationale ? ` · ${q.rationale}` : ''}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </CardContent>
-              )}
-            </Card>
-          )
-        })}
-      {!isLoading &&
-        !error &&
-        discussions.filter((d) =>
-          mode === 'CLOSED'
-            ? d.status === 'CLOSED'
-            : mode === 'decisions'
-              ? d.questions.some((q) => q.status === 'DECIDED')
-              : d.status === 'OPEN' &&
-                (mode !== 'waiting' ||
-                  d.questions.some((q) => ['OPEN', 'REVISED'].includes(q.displayStatus))),
-        ).length === 0 && (
-          <p className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
-            {mode === 'waiting'
-              ? 'Nothing is waiting for your answer.'
-              : 'No discussions in this view.'}
-          </p>
-        )}
+                    </ItemTitle>
+                    <ItemDescription className="font-mono">
+                      {d.id} · {d.questions.length} questions · {decided.length} decided
+                    </ItemDescription>
+                  </ItemContent>
+                  <ItemActions>
+                    {waiting.length > 0 && (
+                      <Badge>
+                        {waiting.length} {d.status === 'CLOSED' ? 'unresolved' : 'waiting'}
+                      </Badge>
+                    )}
+                    <Badge variant="outline">{d.status}</Badge>
+                  </ItemActions>
+                  {questions.length > 0 && (
+                    <ul className="basis-full space-y-1 border-l pl-3">
+                      {questions.map((q) => (
+                        <li key={q.id ?? q.line} className="text-xs">
+                          <Link href={`${href}#${q.id}`} className="font-medium hover:underline">
+                            {q.title}
+                          </Link>
+                          {mode === 'decisions' && (
+                            <span className="text-muted-foreground">
+                              {' '}
+                              → {formatDecision(q.decision)}
+                              {q.rationale ? ` · ${q.rationale}` : ''}
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </Item>
+              </div>
+            )
+          })}
+        </ItemGroup>
+      )}
+      {!isLoading && !error && visible.length === 0 && (
+        <Empty className="border border-dashed py-8">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <MessagesSquare />
+            </EmptyMedia>
+            <EmptyTitle>
+              {mode === 'waiting'
+                ? 'Nothing is waiting for your answer.'
+                : 'No discussions in this view.'}
+            </EmptyTitle>
+            <EmptyDescription>
+              Agents publish discussions here when they need your input.
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      )}
     </div>
   )
 }
@@ -300,12 +326,15 @@ function DiscussionPage({ project, id }: { project: ProjectTarget; id: string })
       setBusy(false)
     }
   }
-  if (isLoading) return <p className="p-8 text-muted-foreground">Loading discussion…</p>
+  if (isLoading) return <p className="p-6 text-xs text-muted-foreground">Loading discussion…</p>
   if (error || !doc)
     return (
-      <p role="alert" className="p-8 text-destructive">
-        {error?.message ?? 'Discussion unavailable'}
-      </p>
+      <div className="p-6">
+        <Alert variant="destructive">
+          <AlertTriangle />
+          <AlertDescription>{error?.message ?? 'Discussion unavailable'}</AlertDescription>
+        </Alert>
+      </div>
     )
   const categories = [
     ...new Set([
@@ -327,133 +356,142 @@ function DiscussionPage({ project, id }: { project: ProjectTarget; id: string })
     },
   }
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-6 p-4 pb-16 md:p-8" data-discussion-page>
-      <Link
-        href={projectPagePath(projectRouteTarget(project), { kind: 'discussions' })}
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="size-4" />
-        Discussions
-      </Link>
+    <div className="mx-auto w-full max-w-4xl space-y-4 p-4 pb-16 md:px-6" data-discussion-page>
       <header
         className={cn(
-          'space-y-3 rounded-lg',
+          'space-y-2 rounded-lg',
           changed.includes('@document') && 'discussion-updated',
         )}
       >
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="mb-1 text-xs text-muted-foreground">{doc.id}</p>
-            <h1 className="text-2xl font-semibold tracking-tight">{doc.title}</h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline">{doc.status}</Badge>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Refresh discussion"
-              onClick={() =>
-                void queryClient.invalidateQueries({ queryKey: queryKeys.discussion(project, id) })
-              }
-            >
-              <RefreshCw className="size-4" />
+        <Button variant="link" size="sm" className="h-auto px-0 text-muted-foreground" asChild>
+          <Link href={projectPagePath(projectRouteTarget(project), { kind: 'discussions' })}>
+            <ArrowLeft />
+            Discussions
+          </Link>
+        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="min-w-0 flex-1 text-lg font-semibold tracking-tight">
+            <span className="mr-2 font-mono text-xs font-normal text-muted-foreground">
+              {doc.id}
+            </span>
+            {doc.title}
+          </h1>
+          <Badge variant="outline">{doc.status}</Badge>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Refresh discussion"
+            onClick={() =>
+              void queryClient.invalidateQueries({ queryKey: queryKeys.discussion(project, id) })
+            }
+          >
+            <RefreshCw />
+          </Button>
+          {owner && (
+            <Button variant="outline" size="sm" disabled={busy} onClick={() => void updateStatus()}>
+              {doc.status === 'CLOSED' ? 'Reopen discussion' : 'Close discussion'}
             </Button>
-            {owner && (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={busy}
-                onClick={() => void updateStatus()}
-              >
-                {doc.status === 'CLOSED' ? 'Reopen discussion' : 'Close discussion'}
-              </Button>
-            )}
-          </div>
+          )}
         </div>
         {doc.status === 'CLOSED' && (
-          <p className="text-sm text-muted-foreground">
-            This discussion is closed. Unresolved questions and history are preserved.
-          </p>
+          <Alert>
+            <Lock />
+            <AlertDescription>
+              This discussion is closed. Unresolved questions and history are preserved.
+            </AlertDescription>
+          </Alert>
         )}
       </header>
       {(doc.diagnostics.length > 0 || doc.historyDiagnostics.length > 0) && (
-        <div role="alert" className="rounded-lg border border-destructive/40 p-4 text-sm">
-          {doc.diagnostics.map((d) => (
-            <p key={`source-${d.line}-${d.message}`}>
-              README line {d.line}: {d.message}
-            </p>
-          ))}
-          {doc.historyDiagnostics.map((d) => (
-            <p key={`history-${d.line}-${d.message}`}>
-              responses.jsonl line {d.line}: {d.message}
-            </p>
-          ))}
-        </div>
-      )}
-      <nav aria-label="Question overview" className="space-y-4 rounded-xl border bg-card p-4">
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant={category === 'all' ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => setCategory('all')}
-          >
-            All categories
-          </Button>
-          {categories.map((c) => (
-            <Button
-              key={c}
-              variant={category === c ? 'secondary' : 'ghost'}
-              size="sm"
-              onClick={() => setCategory(c)}
-            >
-              {c}
-            </Button>
-          ))}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant={status === 'all' ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => setStatus('all')}
-          >
-            All statuses
-          </Button>
-          {Object.entries(LABELS)
-            .filter(([s]) => doc.questions.some((q) => q.displayStatus === s))
-            .map(([s, label]) => (
-              <Button
-                key={s}
-                variant={status === s ? 'secondary' : 'ghost'}
-                size="sm"
-                onClick={() => setStatus(s)}
-              >
-                {label}
-              </Button>
+        <Alert variant="destructive">
+          <AlertTriangle />
+          <AlertTitle>Source diagnostics</AlertTitle>
+          <AlertDescription>
+            {doc.diagnostics.map((d) => (
+              <p key={`source-${d.line}-${d.message}`}>
+                README line {d.line}: {d.message}
+              </p>
             ))}
-        </div>
-        {categories
-          .filter((c) => category === 'all' || c === category)
-          .map((c) => (
-            <div key={c}>
-              <p className="mb-2 text-xs font-medium text-muted-foreground">{c}</p>
-              <div className="flex flex-wrap gap-2">
-                {doc.questions
-                  .filter((q) => (q.metadata?.category ?? 'Uncategorized') === c && matches(q))
-                  .map((q) => (
-                    <a
-                      key={q.metadata?.id ?? q.line}
-                      href={`#${q.metadata?.id ?? `invalid-${q.line}`}`}
-                      onClick={(event) =>
-                        handleFragmentClick(event, `#${q.metadata?.id ?? `invalid-${q.line}`}`)
-                      }
-                      className="rounded border px-2 py-1 text-sm hover:bg-accent"
-                    >
-                      {q.title}
-                    </a>
+            {doc.historyDiagnostics.map((d) => (
+              <p key={`history-${d.line}-${d.message}`}>
+                responses.jsonl line {d.line}: {d.message}
+              </p>
+            ))}
+          </AlertDescription>
+        </Alert>
+      )}
+      <nav aria-label="Question overview">
+        <Card size="sm">
+          <CardContent className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <ToggleGroup
+                type="single"
+                size="sm"
+                variant="outline"
+                value={category}
+                onValueChange={(value) => value && setCategory(value)}
+                aria-label="Filter by category"
+                className="flex-wrap"
+              >
+                <ToggleGroupItem value="all">All categories</ToggleGroupItem>
+                {categories.map((c) => (
+                  <ToggleGroupItem key={c} value={c}>
+                    {c}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+              <Separator orientation="vertical" className="h-4 data-vertical:self-center" />
+              <ToggleGroup
+                type="single"
+                size="sm"
+                variant="outline"
+                value={status}
+                onValueChange={(value) => value && setStatus(value)}
+                aria-label="Filter by status"
+                className="flex-wrap"
+              >
+                <ToggleGroupItem value="all">All statuses</ToggleGroupItem>
+                {Object.entries(LABELS)
+                  .filter(([s]) => doc.questions.some((q) => q.displayStatus === s))
+                  .map(([s, label]) => (
+                    <ToggleGroupItem key={s} value={s}>
+                      {label}
+                    </ToggleGroupItem>
                   ))}
-              </div>
+              </ToggleGroup>
             </div>
-          ))}
+            <Separator />
+            {categories
+              .filter((c) => category === 'all' || c === category)
+              .map((c) => {
+                const items = doc.questions.filter(
+                  (q) => (q.metadata?.category ?? 'Uncategorized') === c && matches(q),
+                )
+                if (items.length === 0) return null
+                return (
+                  <div key={c} className="flex flex-wrap items-center gap-1.5">
+                    <span className="mr-1 text-xs font-medium text-muted-foreground">{c}</span>
+                    {items.map((q) => {
+                      const anchor = `#${q.metadata?.id ?? `invalid-${q.line}`}`
+                      return (
+                        <Badge
+                          key={q.metadata?.id ?? q.line}
+                          variant={q.displayStatus === 'DECIDED' ? 'secondary' : 'outline'}
+                          className="h-auto max-w-full py-0.5 whitespace-normal"
+                          asChild
+                        >
+                          <a href={anchor} onClick={(event) => handleFragmentClick(event, anchor)}>
+                            <StatusIcon status={q.displayStatus} />
+                            {q.title}
+                          </a>
+                        </Badge>
+                      )
+                    })}
+                  </div>
+                )
+              })}
+          </CardContent>
+        </Card>
       </nav>
       {doc.parts.map((part) =>
         part.type === 'prose' ? (
@@ -481,6 +519,12 @@ function DiscussionPage({ project, id }: { project: ProjectTarget; id: string })
       )}
     </div>
   )
+}
+function StatusIcon({ status }: { status: string }) {
+  if (status === 'DECIDED') return <Check aria-hidden="true" />
+  if (status === 'INVALID') return <AlertTriangle aria-hidden="true" />
+  if (status === 'REVISED') return <GitCompare aria-hidden="true" />
+  return <CircleDot aria-hidden="true" />
 }
 type MarkdownProps = {
   project: ProjectTarget
@@ -515,103 +559,119 @@ export function QuestionCard({
   const comparison = metadata ? doc.comparisons?.[metadata.id] : undefined
   return (
     <Card
+      size="sm"
       id={metadata?.id ?? `invalid-${q.line}`}
-      className={cn('scroll-mt-20 overflow-hidden', changed && 'discussion-updated')}
+      className={cn('scroll-mt-20', changed && 'discussion-updated')}
       data-question-id={metadata?.id}
       data-question-status={q.displayStatus}
     >
-      <CardHeader className="gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">{LABELS[q.displayStatus]}</Badge>
+      <CardHeader>
+        <CardTitle className="text-sm font-semibold">
+          <h2>{q.title}</h2>
+        </CardTitle>
+        <div className="flex flex-wrap items-center gap-1.5 text-muted-foreground">
+          <Badge variant={q.displayStatus === 'DECIDED' ? 'secondary' : 'outline'}>
+            <StatusIcon status={q.displayStatus} />
+            {LABELS[q.displayStatus]}
+          </Badge>
           {metadata && (
             <>
-              <span className="text-xs text-muted-foreground">{metadata.id}</span>
               <Badge variant="secondary">{metadata.category}</Badge>
-              <span className="text-xs text-muted-foreground">{metadata.type}</span>
+              <span className="font-mono">{metadata.id}</span>
+              <span>· {metadata.type}</span>
             </>
           )}
           {changed && (
-            <span role="status" className="text-xs font-medium text-primary">
+            <Badge role="status">
+              <Sparkles />
               Updated
-            </span>
+            </Badge>
           )}
         </div>
-        <h2 className="text-lg font-semibold">{q.title}</h2>
       </CardHeader>
-      <CardContent className="space-y-5">
+      <CardContent className="space-y-3">
         {!metadata ? (
-          <p role="alert" className="whitespace-pre-wrap text-sm text-destructive">
-            {q.diagnostics.map((d) => `Line ${d.line}: ${d.message}`).join('\n')}
-          </p>
+          <Alert variant="destructive">
+            <AlertTriangle />
+            <AlertDescription className="whitespace-pre-wrap">
+              {q.diagnostics.map((d) => `Line ${d.line}: ${d.message}`).join('\n')}
+            </AlertDescription>
+          </Alert>
         ) : (
           <>
             {q.displayStatus === 'REVISED' && (
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">
-                <span>
+              <Alert>
+                <GitCompare />
+                <AlertDescription>
                   This question changed since your latest answer. Please review and confirm again.
-                </span>
-                <Dialog open={comparisonOpen} onOpenChange={setComparisonOpen}>
-                  <DialogTrigger asChild>
-                    <Button variant="outline" size="sm">
-                      View changes
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
-                    <DialogHeader>
-                      <DialogTitle>Question changes</DialogTitle>
-                    </DialogHeader>
-                    <Comparison comparison={comparison} />
-                  </DialogContent>
-                </Dialog>
-              </div>
+                </AlertDescription>
+                <AlertAction>
+                  <Dialog open={comparisonOpen} onOpenChange={setComparisonOpen}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" size="xs">
+                        View changes
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+                      <DialogHeader>
+                        <DialogTitle>Question changes</DialogTitle>
+                      </DialogHeader>
+                      <Comparison comparison={comparison} />
+                    </DialogContent>
+                  </Dialog>
+                </AlertAction>
+              </Alert>
             )}
             {metadata.prefer &&
               (!owner || doc.status !== 'OPEN') &&
               q.displayStatus !== 'DECIDED' && (
-                <div className="rounded-lg bg-muted/50 p-3 text-sm">
-                  <p className="font-medium">
+                <Alert>
+                  <Sparkles />
+                  <AlertTitle>
                     Agent preference: {formatDecision(metadata.prefer.option)}
-                  </p>
+                  </AlertTitle>
                   {metadata.prefer.reason && (
-                    <Markdown {...markdownProps}>{metadata.prefer.reason}</Markdown>
+                    <AlertDescription>
+                      <Markdown {...markdownProps}>{metadata.prefer.reason}</Markdown>
+                    </AlertDescription>
                   )}
-                </div>
+                </Alert>
               )}
+            {q.displayStatus === 'DECIDED' && (
+              <Alert className="bg-muted/50">
+                <Check />
+                <AlertTitle>Decided: {formatDecision(metadata.decision)}</AlertTitle>
+                {metadata.rationale && (
+                  <AlertDescription>
+                    <Markdown {...markdownProps} className="text-xs">
+                      {metadata.rationale}
+                    </Markdown>
+                  </AlertDescription>
+                )}
+                {owner && doc.status === 'OPEN' && !followup && (
+                  <AlertAction>
+                    <Button variant="ghost" size="xs" onClick={() => setFollowup(true)}>
+                      Add follow-up
+                    </Button>
+                  </AlertAction>
+                )}
+              </Alert>
+            )}
             <Collapsible open={expanded} onOpenChange={setExpanded}>
               <CollapsibleTrigger asChild>
-                <Button variant="ghost" size="sm" className="-ml-2 text-muted-foreground">
-                  {expanded ? (
-                    <ChevronDown className="size-4" />
-                  ) : (
-                    <ChevronRight className="size-4" />
-                  )}
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  className="-ml-2 text-muted-foreground [&[data-state=open]>svg]:rotate-90"
+                >
+                  <ChevronRight className="transition-transform" />
                   Background and evidence
                 </Button>
               </CollapsibleTrigger>
-              <CollapsibleContent className="pt-2">
+              <CollapsibleContent className="pt-1">
                 <Markdown {...markdownProps}>{q.body}</Markdown>
               </CollapsibleContent>
             </Collapsible>
-            {q.displayStatus === 'DECIDED' ? (
-              <div className="rounded-lg bg-muted/50 p-3">
-                <p className="text-sm font-medium">Decided: {formatDecision(metadata.decision)}</p>
-                {metadata.rationale && (
-                  <Markdown {...markdownProps} className="mt-2 text-sm">
-                    {metadata.rationale}
-                  </Markdown>
-                )}
-                {owner && doc.status === 'OPEN' && !followup && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="mt-2"
-                    onClick={() => setFollowup(true)}
-                  >
-                    Add follow-up
-                  </Button>
-                )}
-              </div>
-            ) : null}
             {doc.status === 'OPEN' && owner && (q.displayStatus !== 'DECIDED' || followup) ? (
               <AnswerForm
                 key={metadata.id}
@@ -623,55 +683,70 @@ export function QuestionCard({
                 onUpdated={onUpdated}
               />
             ) : q.displayStatus !== 'DECIDED' && metadata.options?.length ? (
-              <div className="space-y-2">
+              <ItemGroup className="gap-1.5">
                 {metadata.options.map((o) => (
-                  <div key={o.id} className="rounded-lg border p-3 text-sm">
-                    <p className="font-medium">
-                      {o.label}
-                      {JSON.stringify(metadata.prefer?.option) === JSON.stringify(o.id)
-                        ? ' · Agent preference'
-                        : ''}
-                    </p>
-                    {o.detail && <Markdown {...markdownProps}>{o.detail}</Markdown>}
-                  </div>
+                  <Item key={o.id} variant="outline" size="xs">
+                    <ItemContent>
+                      <ItemTitle>{o.label}</ItemTitle>
+                      {o.detail && (
+                        <div className="text-muted-foreground">
+                          <Markdown {...markdownProps}>{o.detail}</Markdown>
+                        </div>
+                      )}
+                    </ItemContent>
+                    {JSON.stringify(metadata.prefer?.option) === JSON.stringify(o.id) && (
+                      <ItemActions>
+                        <Badge variant="secondary">Agent preference</Badge>
+                      </ItemActions>
+                    )}
+                  </Item>
                 ))}
-              </div>
+              </ItemGroup>
             ) : null}
             {q.history.length > 0 && (
-              <div className="space-y-3 border-t pt-4">
-                <h3 className="flex items-center gap-2 text-sm font-medium">
-                  <MessageSquare className="size-4" />
-                  History
-                </h3>
-                {q.history.map((event) => (
-                  <div key={event.id ?? JSON.stringify(event)} className="border-l-2 pl-3 text-sm">
-                    <p className="mb-1 text-xs text-muted-foreground">
-                      {event.by === 'owner' ? 'You' : 'Agent'} · {event.at}
-                    </p>
-                    {event.type === 'response' ? (
-                      <>
-                        <p className="font-medium">
-                          {formatDecision(
-                            event.choice ??
-                              event.choices ??
-                              event.confirm ??
-                              event.text ??
-                              'Comment',
-                          )}
-                        </p>
-                        {event.comment && <Markdown {...markdownProps}>{event.comment}</Markdown>}
-                      </>
-                    ) : event.type === 'reply' ? (
-                      <Markdown {...markdownProps}>{event.text}</Markdown>
-                    ) : (
+              <>
+                <Separator />
+                <div className="space-y-2">
+                  <h3 className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                    <MessageSquare className="size-3.5" />
+                    History
+                  </h3>
+                  {q.history.map((event) => (
+                    <div
+                      key={event.id ?? JSON.stringify(event)}
+                      className="border-l-2 pl-3 text-xs"
+                    >
                       <p className="text-muted-foreground">
-                        <Check className="mr-1 inline size-3.5" />
-                        {event.note ?? 'Feedback acknowledged'}
+                        <span className="font-medium text-foreground">
+                          {event.by === 'owner' ? 'You' : 'Agent'}
+                        </span>{' '}
+                        · {event.at}
                       </p>
-                    )}
-                  </div>
-                ))}
-              </div>
+                      {event.type === 'response' ? (
+                        <>
+                          <p className="font-medium">
+                            {formatDecision(
+                              event.choice ??
+                                event.choices ??
+                                event.confirm ??
+                                event.text ??
+                                'Comment',
+                            )}
+                          </p>
+                          {event.comment && <Markdown {...markdownProps}>{event.comment}</Markdown>}
+                        </>
+                      ) : event.type === 'reply' ? (
+                        <Markdown {...markdownProps}>{event.text}</Markdown>
+                      ) : (
+                        <p className="text-muted-foreground">
+                          <Check className="mr-1 inline size-3" />
+                          {event.note ?? 'Feedback acknowledged'}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
           </>
         )}
@@ -780,77 +855,102 @@ export function AnswerForm({
           { id: 'false', label: 'Disagree' },
         ]
       : (question.options ?? [])
+  const optionItem = (
+    option: { id: string; label: string; detail?: string },
+    control: ReactNode,
+  ) => (
+    <Item
+      key={option.id}
+      variant="outline"
+      size="xs"
+      className="items-start has-data-[state=checked]:border-primary has-data-[state=checked]:bg-primary/5"
+    >
+      {control}
+      <ItemContent>
+        <Label htmlFor={`${question.id}-${option.id}`} className="text-xs font-medium">
+          {option.label}
+        </Label>
+        {option.detail && (
+          <div className="text-muted-foreground">
+            <Markdown {...markdownProps} className="text-xs">
+              {option.detail}
+            </Markdown>
+          </div>
+        )}
+      </ItemContent>
+      {JSON.stringify(question.prefer?.option) === JSON.stringify(option.id) && (
+        <ItemActions>
+          <Badge variant="secondary">Agent preference</Badge>
+        </ItemActions>
+      )}
+    </Item>
+  )
   return (
     <form
-      className="space-y-4"
+      className="space-y-3"
       onSubmit={(event) => {
         event.preventDefault()
         void send()
       }}
     >
       {question.prefer && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/50 p-3 text-sm">
-          <div>
-            <p className="font-medium">
-              Agent preference: {formatDecision(question.prefer.option)}
-            </p>
-            {question.prefer.reason && (
+        <Alert>
+          <Sparkles />
+          <AlertTitle>Agent preference: {formatDecision(question.prefer.option)}</AlertTitle>
+          {question.prefer.reason && (
+            <AlertDescription>
               <Markdown {...markdownProps}>{question.prefer.reason}</Markdown>
+            </AlertDescription>
+          )}
+          <AlertAction>
+            <Button type="button" variant="outline" size="xs" onClick={adopt}>
+              Adopt preference
+            </Button>
+          </AlertAction>
+        </Alert>
+      )}
+      {options.length > 0 &&
+        (question.type === 'multi' ? (
+          <fieldset className="grid gap-1.5" aria-label={`Answer ${question.id}`}>
+            {options.map((option) =>
+              optionItem(
+                option,
+                <Checkbox
+                  id={`${question.id}-${option.id}`}
+                  className="mt-0.5"
+                  checked={selected.includes(option.id)}
+                  onCheckedChange={(checked) =>
+                    setSelected((previous) =>
+                      checked
+                        ? [...previous, option.id]
+                        : previous.filter((id) => id !== option.id),
+                    )
+                  }
+                />,
+              ),
             )}
-          </div>
-          <Button type="button" variant="outline" size="sm" onClick={adopt}>
-            Adopt preference
-          </Button>
-        </div>
-      )}
-      {options.length > 0 && (
-        <fieldset className="space-y-2" aria-label={`Answer ${question.id}`}>
-          {options.map((option) => (
-            <div
-              key={option.id}
-              className={cn(
-                'rounded-lg border p-3',
-                selected.includes(option.id) && 'border-primary bg-primary/5',
-              )}
-            >
-              {question.type === 'multi' ? (
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id={`${question.id}-${option.id}`}
-                    checked={selected.includes(option.id)}
-                    onCheckedChange={(checked) =>
-                      setSelected((previous) =>
-                        checked
-                          ? [...previous, option.id]
-                          : previous.filter((id) => id !== option.id),
-                      )
-                    }
-                  />
-                  <Label htmlFor={`${question.id}-${option.id}`}>{option.label}</Label>
-                </div>
-              ) : (
-                <Button
-                  type="button"
-                  role="radio"
-                  aria-checked={selected.includes(option.id)}
-                  variant="ghost"
-                  className="h-auto w-full justify-start whitespace-normal px-0 text-left"
-                  onClick={() => setSelected([option.id])}
-                >
-                  {option.label}
-                </Button>
-              )}
-              {'detail' in option && typeof option.detail === 'string' && (
-                <Markdown {...markdownProps} className="mt-2 text-sm">
-                  {option.detail}
-                </Markdown>
-              )}
-            </div>
-          ))}
-        </fieldset>
-      )}
+          </fieldset>
+        ) : (
+          <RadioGroup
+            className="gap-1.5"
+            aria-label={`Answer ${question.id}`}
+            value={selected[0] ?? ''}
+            onValueChange={(value) => setSelected([value])}
+          >
+            {options.map((option) =>
+              optionItem(
+                option,
+                <RadioGroupItem
+                  id={`${question.id}-${option.id}`}
+                  value={option.id}
+                  className="mt-0.5"
+                />,
+              ),
+            )}
+          </RadioGroup>
+        ))}
       {question.type === 'text' && (
-        <div className="space-y-2">
+        <div className="grid gap-1.5">
           <Label htmlFor={`${question.id}-text`}>Your answer</Label>
           <Textarea
             id={`${question.id}-text`}
@@ -860,7 +960,7 @@ export function AnswerForm({
           />
         </div>
       )}
-      <div className="space-y-2">
+      <div className="grid gap-1.5">
         <Label htmlFor={`${question.id}-comment`}>Comment</Label>
         <Textarea
           id={`${question.id}-comment`}
@@ -871,24 +971,36 @@ export function AnswerForm({
         />
       </div>
       {stale && (
-        <div role="alert" className="rounded border p-3 text-sm">
-          The question changed while you were answering.
-          <Button type="button" variant="link" onClick={() => setSnapshot(q.snapshot)}>
-            I have reviewed the current version
-          </Button>
-        </div>
+        <Alert>
+          <GitCompare />
+          <AlertDescription>The question changed while you were answering.</AlertDescription>
+          <AlertAction>
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              onClick={() => setSnapshot(q.snapshot)}
+            >
+              I have reviewed the current version
+            </Button>
+          </AlertAction>
+        </Alert>
       )}
       {error && (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
+        <Alert variant="destructive">
+          <AlertTriangle />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
-      <Button
-        type="submit"
-        disabled={busy || stale || (!selected.length && !text.trim() && !comment.trim())}
-      >
-        {busy ? 'Saving…' : 'Send answer'}
-      </Button>
+      <div className="flex justify-end">
+        <Button
+          type="submit"
+          size="sm"
+          disabled={busy || stale || (!selected.length && !text.trim() && !comment.trim())}
+        >
+          {busy ? 'Saving…' : 'Send answer'}
+        </Button>
+      </div>
     </form>
   )
 }

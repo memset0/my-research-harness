@@ -95,3 +95,20 @@ at release time; this document does not claim an unexecuted production cutover.
 - The follow-up is a central-only 12.0.1 patch; release-transition validation
   passed from 12.0.0/FS12 with the central surface. CLI reinstall and content or
   filesystem migration are not part of the icon release.
+
+## Compact shadcn layout follow-up
+
+- Added `radio-group`, `alert`, `item` and `empty` through the shadcn CLI; the
+  existing `separator` was kept, and no primitive was edited.
+- The list uses Tabs with counts and one Item group; the page uses a compact
+  header, ToggleGroup filters, status-icon Badge links, Alert notices, small Cards,
+  RadioGroup/Checkbox option Items and an Empty state.
+- Selected Web tests: `components/discussions-view.test.tsx`,
+  `components/app-sidebar.test.tsx`, `lib/server/layering.test.ts`: 39 passed.
+  Web typecheck and Biome on the touched component passed.
+- A production build served a neutral fixture with all four question types.
+  Desktop and the narrowest Chrome viewport rendered without page exceptions or
+  horizontal overflow; adopting the preference selected its radio item, and
+  sending appended an owner response and showed ANSWERED. Loaded CSS exposed
+  oklch background/foreground/card/muted/primary tokens. The pre-existing
+  favicon 404 and the fixture's git-status 409 were also observed.

@@ -118,6 +118,10 @@ Each question SHALL render one card in source order containing metadata, rich Ma
 - **WHEN** a question includes a table, image and datatable or embed component
 - **THEN** they render within its description using the discussion README's asset context
 
+#### Scenario: Compact layout composes shadcn primitives
+- **WHEN** a reader opens the Discussions list or a discussion page on desktop or a 390px viewport
+- **THEN** list views, filters, notices, choice controls and question cards use the existing shadcn primitives (Tabs, ToggleGroup, Item, Alert, RadioGroup, Card, Collapsible, Empty) with compact spacing, without forked primitives or hand-rolled radio, chip or banner markup
+
 ### Requirement: Overview and project views expose actionable questions
 A discussion overview SHALL group questions by free-form category, filter by question status and jump to stable anchors while updating the URL. Project browsing SHALL default to OPEN discussions and provide CLOSED history filtering. Waiting-for-you SHALL include only OPEN and REVISED questions whose discussion is OPEN. A decision log SHALL retain published DECIDED questions and rationale.
 
