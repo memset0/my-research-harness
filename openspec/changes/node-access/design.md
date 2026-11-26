@@ -40,7 +40,11 @@ See proposal.md for motivation. Constraints that shape the approach:
 
 6. **Ledger class `host`.** `memon ssh` is not project-scoped and must not file project receipts.
 
-7. **YAML parsing** uses the `yaml` package already used by `@memon/core`, added as a direct CLI dependency at the same version range.
+7. **YAML parsing** uses the `yaml` package of `@memon/core`; since the registry moved to core (decision 8), the CLI no longer depends on `yaml` directly.
+
+8. **The registry module lives in `@memon/core`.** Central services (the cluster dashboard) must read exactly the registry the CLI validates and reuse its invocation builder, so parsing, expiry and argv construction move to core. Core errors carry only a string code; the CLI maps codes to its exit-code table.
+
+9. **Allocation granularity is declarative.** `allocation: node | gpus` plus `allocatable_gpus` describe what a future allocator may hand out. Nothing in this change allocates; the dashboard only displays it. Holding a node whose other GPUs serve something else is the common case `allocatable_gpus` exists for.
 
 ## Risks / Trade-offs
 

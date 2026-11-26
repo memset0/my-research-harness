@@ -476,6 +476,12 @@ const RULES: Rule[] = [
     class: 'read',
     projectFor: projectGlobal(),
   },
+  // Cluster overview probes registered compute nodes; `access_clusters` (admin+) gates it.
+  {
+    match: methodIs(['GET'], exact('/api/clusters')),
+    class: 'read',
+    projectFor: projectGlobal(),
+  },
 
   // ===== read: page-level GETs =====
   { match: methodIs(['GET'], exact('/')), class: 'read', projectFor: projectGlobal() },

@@ -415,6 +415,27 @@ export {
   type VerifyResultsMigrationResult,
   verifyResultsMigration,
 } from './migrations/v8-to-v9.js'
+export type {
+  NodeAllocation,
+  NodeDefinition,
+  NodeInvocation,
+  NodeTransport,
+} from './nodes.js'
+export {
+  allocatableGpuIndices,
+  commandInvocation as nodeCommandInvocation,
+  interactiveInvocation as nodeInteractiveInvocation,
+  isExpired as isNodeExpired,
+  isInteractive as isNodeInteractive,
+  listEntry as nodeListEntry,
+  loadNodes,
+  NodeAccessError,
+  nodesConfigPath,
+  parseNodes,
+  remoteLine as nodeRemoteLine,
+  selectNode,
+  shellQuote,
+} from './nodes.js'
 export * from './project-catalogs.js'
 export * from './project-declaration/index.js'
 export { prepareProjectFileAccess } from './project-file-store/agent-adapters.js'

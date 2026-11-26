@@ -32,6 +32,24 @@ Every node SHALL declare exactly one of `ssh` (an object with a non-empty `targe
 - **WHEN** the registry is loaded
 - **THEN** loading fails with `NODES_CONFIG_INVALID` naming the key
 
+### Requirement: Nodes declare allocation granularity
+A node MAY declare `allocation` as `node` (allocatable only as a whole) or `gpus` (individual GPUs; the default). A `gpus` node MAY declare `allocatable_gpus`, a non-empty list of distinct GPU indices that requires `gpus` and stays below it; without it every GPU is allocatable. A `node` node SHALL NOT declare `allocatable_gpus`. Violations SHALL make the registry invalid.
+
+#### Scenario: Partial GPUs allocatable
+- **GIVEN** a node declares `gpus: 8` and `allocatable_gpus: [5, 6, 7]`
+- **WHEN** the registry is loaded
+- **THEN** the node reports allocation `gpus` with allocatable GPUs 5, 6 and 7
+
+#### Scenario: Whole-node allocation rejects a GPU subset
+- **GIVEN** a node declares `allocation: node` and `allocatable_gpus: [0]`
+- **WHEN** the registry is loaded
+- **THEN** loading fails with `NODES_CONFIG_INVALID` naming the node
+
+#### Scenario: Index out of range
+- **GIVEN** a node declares `gpus: 4` and `allocatable_gpus: [4]`
+- **WHEN** the registry is loaded
+- **THEN** loading fails with `NODES_CONFIG_INVALID` stating the index range
+
 ### Requirement: Availability carries an explicit timezone
 Every node SHALL declare `available_until` as an ISO 8601 date-time with seconds-or-minutes precision and an explicit offset (`Z` or `±HH:MM`). Values without an offset or date-only values SHALL make the registry invalid. Comparison SHALL use absolute time.
 
@@ -102,7 +120,7 @@ Without a command, `memon ssh <node>` SHALL open an interactive session only whe
 - **THEN** memon exits 2 with `BAD_REQUEST` asking for `-- <command>`
 
 ### Requirement: Listing reports registry state without secrets
-`memon ssh --list` SHALL print JSON `{"nodes":[…]}` with, per node, `id`, `cluster`, `gpus`, `gpu_type`, `available_until`, `expired`, `transport` (`ssh` or `via`) and `interactive` (whether an interactive session is possible), ordered by id. It SHALL NOT print via lines, SSH targets, options or enter prefixes.
+`memon ssh --list` SHALL print JSON `{"nodes":[…]}` with, per node, `id`, `cluster`, `gpus`, `gpu_type`, `allocation`, `allocatable_gpus` (index list, or `null` when unknown because `gpus` is not declared), `available_until`, `expired`, `transport` (`ssh` or `via`) and `interactive` (whether an interactive session is possible), ordered by id. It SHALL NOT print via lines, SSH targets, options or enter prefixes.
 
 #### Scenario: List omits connection details
 - **GIVEN** a registry with one `ssh` node and one `via` node without `shell`

@@ -285,6 +285,12 @@ describe('classifyAndExtract — project extraction', () => {
     expect(r).toEqual({ class: 'read', project: 'global' })
   })
 
+  it('returns "global" for /api/clusters (owner-only cluster overview)', () => {
+    const r = classifyAndExtract('GET', '/api/clusters', emptySearch(), stubCtx())
+    expect(r).toEqual({ class: 'read', project: 'global' })
+    expect(classify('GET', '/manage/clusters')).not.toBe('read')
+  })
+
   it('share-landing extracts project from URL segment', () => {
     const r = classifyAndExtract('GET', '/share/project-a/some-token', emptySearch(), stubCtx())
     expect(r).toEqual({ class: 'anon', project: 'project-a' })

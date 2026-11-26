@@ -77,6 +77,7 @@ export const API_ROUTE_MANIFEST = {
   'auth/check/route.ts': central(['GET'], 'anon'),
   'auth/login/route.ts': central(['POST'], 'anon'),
   'auth/logout/route.ts': central(['POST'], 'mutating'),
+  'clusters/route.ts': central(['GET'], 'read'),
   'code-preview/route.ts': backend(['GET'], 'project-query', 'read', 'none', 'git'),
   'code-reviews/[...id]/route.ts': backend(['GET', 'PATCH'], 'resource', 'mixed'),
   'code-reviews/route.ts': backend(['GET'], 'project-query', 'read'),

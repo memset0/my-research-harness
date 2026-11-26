@@ -9,6 +9,7 @@ import {
   listEntry,
   loadNodes,
   NodeAccessError,
+  nodeErrorExitCode,
   nodesConfigPath,
   selectNode,
 } from '../lib/nodes.js'
@@ -22,7 +23,7 @@ export interface SshOptions {
 
 function fail(err: unknown): never {
   if (err instanceof NodeAccessError)
-    emitErrorAndExit(err.code, err.message, undefined, err.exitCode)
+    emitErrorAndExit(err.code, err.message, undefined, nodeErrorExitCode(err))
   throw err
 }
 

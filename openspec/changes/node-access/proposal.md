@@ -10,6 +10,7 @@ Research agents need to run commands on GPU nodes spread over clusters that are 
 - **Two transports with one contract.** `ssh` (memon builds a non-interactive, batch-mode OpenSSH invocation from a target and extra options) and `via` (an owner-written shell command line that receives the remote shell line as its last argument and passes bytes through, the usual "use this command instead of ssh" contract). An optional `enter` argv prefix (for example a Slurm `srun --jobid … --overlap` step) wraps the remote line for either transport, so held Slurm allocations are reachable without memon talking to Slurm.
 - **`memon ssh <node> [-- <command…>]`.** With a command, it runs it on the node, streams stdio and exits with the remote command's exit status. Without a command, it opens an interactive shell (an SSH TTY, or the node's optional `shell` command for `via` nodes). `memon ssh --list` reports configured nodes and whether they are expired. Unknown, expired and misconfigured nodes fail before anything is spawned, with structured errors.
 - **Expiry is enforced.** A node past its `available_until` is refused; timestamps without an explicit offset are rejected at load time.
+- **Allocation granularity.** A node optionally declares `allocation: node` (only allocatable as a whole) or `allocation: gpus` (default; individual GPUs), and, for `gpus`, an optional `allocatable_gpus` index list (default: every GPU). The registry parser moves to `@memon/core` so central services read the same validated registry as the CLI.
 - Not in this change: GPU tickets and allocation, port forwarding, Web UI, central-hosted projects, and any change to `run-scheduler`.
 
 ## Capabilities
@@ -22,6 +23,7 @@ Research agents need to run commands on GPU nodes spread over clusters that are 
 
 ## Impact
 
-- **CLI** (`packages/cli`): new `ssh` command, node registry loader/validator, command-surface and ledger classification updates, `yaml` dependency.
+- **CLI** (`packages/cli`): new `ssh` command, command-surface and ledger classification updates, `yaml` dependency.
+- **Core** (`packages/core`): the node registry loader/validator and transport invocation builder, shared by the CLI and central services.
 - **Release:** distributed CLI artifact changes → MINOR bump; no filesystem convention change, no central Web change, no skills change.
 - **Deployment data:** real node entries live only in the operator's local `nodes.yml` (plus any known-hosts file it references); tracked code, tests and docs use neutral placeholders.
