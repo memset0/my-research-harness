@@ -4,6 +4,7 @@ import { runJournalRead } from './commands/journal.js'
 import { runMockSeed } from './commands/mock.js'
 import { runServe } from './commands/serve.js'
 import { runSsh } from './commands/ssh.js'
+import { registerTicketCommands } from './commands/ticket.js'
 import { runUpdate, updateFailed } from './commands/update.js'
 import { runWikiCreate, runWikiDelete, runWikiMove } from './commands/wiki.js'
 import { emitErrorAndExit } from './lib/emit-error.js'
@@ -141,6 +142,8 @@ Expired nodes are refused (exit 13); unknown nodes exit 4; registry errors exit 
         isTty: process.stdin.isTTY === true && process.stdout.isTTY === true,
       })
     })
+
+  registerTicketCommands(program)
 
   const journal = program
     .command('journal')

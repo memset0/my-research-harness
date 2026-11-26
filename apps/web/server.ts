@@ -97,6 +97,11 @@ if (runtime.config.central) {
             return false
           }
 }
+// GPU tickets: expiry and reclaim must run without request traffic.
+if (runtime.config.central && process.env.MEMON_GPU_POOL !== 'off') {
+  const { getTicketBroker } = await import('./lib/server/gpu-pool/broker')
+  getTicketBroker(runtime.configPath).start()
+}
 const contentGateway = createContentServiceGateway(runtime.config, runtime.auth, {
   configPath: runtime.configPath,
 })

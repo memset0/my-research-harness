@@ -290,6 +290,13 @@ const RULES: Rule[] = [
     class: 'mutating',
     projectFor: projectGlobal(),
   },
+  // GPU tickets: gated by `access_clusters` on the /api/gpu-pool path.
+  {
+    match: ((_m: string, p: string) =>
+      p === '/api/gpu-pool/tickets' || p.startsWith('/api/gpu-pool/tickets/')) as Rule['match'],
+    class: 'mutating',
+    projectFor: projectGlobal(),
+  },
 
   // ===== owner-only management (project shares CRUD — even GET) =====
   // Listed BEFORE the generic read rule so the GET doesn't fall through.

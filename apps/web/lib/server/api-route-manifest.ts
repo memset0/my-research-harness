@@ -113,6 +113,9 @@ export const API_ROUTE_MANIFEST = {
   'experiments/route.ts': backend(['GET', 'POST'], 'project-query', 'mixed'),
   'file-access/restart/route.ts': central(['POST'], 'shell'),
   'file-access/route.ts': central(['GET', 'PUT'], 'mutating'),
+  'gpu-pool/tickets/[id]/release/route.ts': central(['POST'], 'mutating'),
+  'gpu-pool/tickets/[id]/route.ts': central(['GET'], 'mutating'),
+  'gpu-pool/tickets/route.ts': central(['GET', 'POST'], 'mutating'),
   'hosts/route.ts': central(['GET'], 'read'),
   'journal/history/route.ts': backend(['GET'], 'project-query', 'shell'),
   'journal/route.ts': backend(['GET'], 'project-query', 'read'),
@@ -221,6 +224,7 @@ export const DIRECT_RUNTIME_SURFACES = {
   'app/page.tsx': { owner: 'composed', scope: 'global', purpose: 'project-data' },
   'lib/server/share-api.ts': { owner: 'central', scope: 'global', purpose: 'auth' },
   'lib/server/admin-accounts-route.ts': { owner: 'central', scope: 'global', purpose: 'auth' },
+  'lib/server/gpu-pool/http.ts': { owner: 'central', scope: 'global', purpose: 'shell' },
   'app/s/[token]/route.ts': { owner: 'central', scope: 'global', purpose: 'share-landing' },
   'components/runtime-config-bootstrap.tsx': {
     owner: 'composed',

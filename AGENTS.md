@@ -36,7 +36,7 @@ repository-specific requirements at the end of this file supplement it.
 - **Storage.** No external database service. Embedded SQLite files are allowed
   as central-side local state: `apps/web/lib/server/ui-preferences-store.ts`,
   `apps/web/lib/server/experiment-results-views-store.ts`,
-  `apps/web/lib/server/translation/cache.ts`. Research data stays in project files.
+  `apps/web/lib/server/translation/cache.ts`, `apps/web/lib/server/gpu-pool/store.ts`. Research data stays in project files.
 - **Operator data stays out of Git** (see §1.1).
 - **Skills** (`packages/skills/memon-*/SKILL.md`) are written in **English**;
   conversation with the user is in **Chinese**. Bundled skills live only in
