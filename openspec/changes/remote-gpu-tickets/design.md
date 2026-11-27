@@ -62,13 +62,22 @@
 8. **Push selects Run directories by `run.json`, never by `git status`.**
    - After reclaim, the broker runs one shell script through `hc exec` on the node that does the following:
      - finds `run.json` files under the Project's Run roots (`run_dirs` from the checkout's `.memon/project.yml`, default `logs/`);
-     - keeps the files whose `scheduler.system` is `memon-ticket` and whose `job_id` is the ticket id;
-     - runs `git add -- <those dirs>` (which applies `.gitignore`);
+     - keeps those whose `resources` list an entry with this ticket;
+     - reports changed Run directories without any `resources` as unrecorded;
+     - runs `git add -- <kept dirs>` (which applies `.gitignore`);
      - commits with `chore(runs): record <ticket id>` if anything is staged;
      - pushes, retrying `pull --no-rebase` and push up to three times.
-   - The script prints a JSON result that the broker stores (`push_state`, commit, output).
+   - The script prints a JSON result that the broker stores (`push_state`, commit, unrecorded dirs, output).
    - Selecting by `git status` was rejected because it would commit Runs of other tickets sharing the checkout.
    - The Run merge driver from the central-hosted Project layout handles concurrent `run.json` edits.
+
+8a. **Run resources are an additive `run.json` field, not a convention change.**
+   - `resources: [{ticket, cluster, node, gpus?}]` is optional, and `RunMetadataSchema` already passes unknown keys through, so older CLIs and central read such Runs unchanged. This ships as a CLI/skills MINOR without an FS bump.
+   - A list (rather than one `scheduler` value) covers both a ticket that serves several Runs and a Run resumed under later tickets.
+   - Whole-node grants omit `gpus` so the record does not depend on the node's GPU count.
+   - The ticket environment gains `MEMON_CLUSTER` and `MEMON_NODE` (node id from the registry) next to `MEMON_TICKET`/`CUDA_VISIBLE_DEVICES`, so the CLI can fill the entry without asking central.
+
+8b. **Missing cluster checkouts are cloned from the Project's `origin`.** The URL is read from the Project's own checkout (`git remote get-url origin`) at grant time and the clone runs on the node like the pull. A clone failure is reported as `PULL_FAILED`, with the same hold and `ticket sync` path.
 
 9. **Central's own checkout is fast-forwarded only for `host: central` Projects, with `git pull --ff-only`.** A failure is recorded on the ticket and never forced, because central's checkout may hold an agent's work in progress.
 
