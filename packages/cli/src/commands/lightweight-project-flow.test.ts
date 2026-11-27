@@ -1,4 +1,5 @@
 import { promises as fs } from 'node:fs'
+import { FS_CONVENTION_VERSION } from '@memon/core'
 import { createTempProject, removeTempDirs } from '@memon/test-utils'
 import { afterEach, expect, it, vi } from 'vitest'
 import { resetCliInvocationForTest } from '../lib/invocation.js'
@@ -35,7 +36,7 @@ it('creates fresh research and publishes prepared parameters and native measurem
     0,
   )
   const marker = JSON.parse(await fs.readFile(project.path('.memon/version.json'), 'utf8'))
-  expect(marker.fs_convention_version).toBe(11)
+  expect(marker.fs_convention_version).toBe(FS_CONVENTION_VERSION)
   expect(marker.installed_at).toMatch(/[+-]\d{2}:\d{2}$/)
   expect((await fs.readdir(project.path('docs/experiments', id))).sort()).toEqual([
     'README.md',
