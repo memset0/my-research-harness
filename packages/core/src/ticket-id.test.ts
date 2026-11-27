@@ -10,9 +10,8 @@ it('issues distinct random ids that fit herdr terminal names', () => {
   }
 })
 
-it('accepts random and legacy sequential ids only', () => {
+it('accepts random ids only', () => {
   expect(isTicketId('tk_7h3q9m2xw4ra')).toBe(true)
-  expect(isTicketId('T0003')).toBe(true)
-  for (const id of ['tk_7h3q9m2xw4r', 'tk_7h3q9m2xw4rl', 'TK_7H3Q9M2XW4RA', 'T12', '3'])
+  for (const id of ['T0003', 'tk_7h3q9m2xw4r', 'tk_7h3q9m2xw4rl', 'TK_7H3Q9M2XW4RA', 'T12', '3'])
     expect(isTicketId(id)).toBe(false)
 })

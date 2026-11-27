@@ -532,7 +532,6 @@ export {
 export * from './status.js'
 export {
   isTicketId,
-  LEGACY_TICKET_ID_PATTERN,
   newTicketId,
   TICKET_ID_PATTERN,
 } from './ticket-id.js'

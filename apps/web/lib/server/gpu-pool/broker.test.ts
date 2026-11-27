@@ -224,7 +224,7 @@ describe('TicketStore files', () => {
     expect(statSync(store.path).mode & 0o777).toBe(0o600)
   })
 
-  it('keeps sequential ids of tickets stored before random ids, and issues random ids after', async () => {
+  it('replaces sequential ids of tickets stored before random ids', async () => {
     const sqlite3 = (await import('sqlite3')).default
     const path = join(dir, 'legacy.sqlite3')
     const legacy = new sqlite3.Database(path)
@@ -245,15 +245,15 @@ describe('TicketStore files', () => {
 
     const upgraded = new TicketStore(path)
     try {
-      expect(await upgraded.get('T0001')).toMatchObject({ id: 'T0001', status: 'RELEASED' })
+      const [migrated] = await upgraded.list()
+      expect(migrated).toMatchObject({ project: 'project-a', status: 'RELEASED' })
+      expect(migrated?.id).toMatch(TICKET_ID_PATTERN)
+      expect(await upgraded.get('T0001')).toBeNull()
       const fresh = await upgraded.create(
         { project: 'project-a', wholeNode: true, durationS: 60 },
         new Date(),
       )
-      expect(fresh.id).toMatch(TICKET_ID_PATTERN)
-      // The new row's sequence number never doubles as an id.
-      expect(await upgraded.get('T0002')).toBeNull()
-      expect((await upgraded.list()).map((ticket) => ticket.id)).toEqual(['T0001', fresh.id])
+      expect((await upgraded.list()).map((ticket) => ticket.id)).toEqual([migrated?.id, fresh.id])
     } finally {
       await upgraded.close()
     }

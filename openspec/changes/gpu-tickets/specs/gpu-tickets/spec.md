@@ -17,13 +17,25 @@ A request SHALL name a project and a duration (1 minute to 30 days). It SHALL na
 - **WHEN** a request names both `gpus: 2` and `whole_node: true`
 - **THEN** it is refused with `BAD_REQUEST` and nothing is stored
 
+### Requirement: Ticket state lives only on central
+Tickets, their grants and dirty GPUs SHALL be stored only in central's embedded SQLite store beside `config.yml`. The `memon ticket` CLI SHALL keep no ticket state on the machine it runs on: it reads its central credentials and the herdr client location, and every ticket read or change goes through central's API. Research projects and cluster checkouts SHALL hold no ticket state; a Run MAY record the ticket id as an execution fact.
+
+#### Scenario: CLI on a cluster checkout
+- **WHEN** an agent runs `memon ticket request` and `memon ticket release` from a cluster checkout
+- **THEN** both calls are answered by central and nothing is written in the checkout or the CLI's machine
+
 ### Requirement: Ticket ids are random
-A new ticket's id SHALL be `tk_` followed by 12 random lowercase Crockford base32 characters, so that no ticket id can be derived from another. Tickets stored before random ids SHALL keep their sequential `T<NNNN>` id, and a sequential id SHALL NOT resolve to a ticket that carries a random id. The CLI SHALL refuse an argument matching neither form with `BAD_REQUEST` before contacting central.
+Every ticket's id SHALL be `tk_` followed by 12 random lowercase Crockford base32 characters, so that no ticket id can be derived from another. When the store opens, it SHALL give a random id to every stored ticket that has none; sequential `T<NNNN>` ids SHALL NOT resolve to any ticket. The CLI SHALL refuse any other argument with `BAD_REQUEST` before contacting central.
 
 #### Scenario: Ids cannot be counted
 - **GIVEN** a ticket `tk_7h3q9m2xw4ra` was just issued
 - **WHEN** another caller asks for `T0002`, or for any id it did not receive
 - **THEN** no ticket is found
+
+#### Scenario: Store written before random ids
+- **GIVEN** a store whose tickets carry only sequential numbers
+- **WHEN** central opens it
+- **THEN** each of those tickets has a random `tk_…` id and `T0001` finds nothing
 
 #### Scenario: Malformed id
 - **WHEN** `memon ticket show T1` runs

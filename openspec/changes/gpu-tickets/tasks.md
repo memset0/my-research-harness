@@ -30,3 +30,4 @@
 ## 6. Random ticket ids
 
 - [x] 6.1 Issue `tk_` + 12 random Crockford base32 ids from `@memon/core`, add a `token` column (legacy rows keep `T<NNNN>`, which never resolves a random-id row), accept both forms in the CLI and terminal-name parser, and verify `ticket-id.test.ts`, `broker.test.ts`, `task-view.test.ts`, `herdr.test.ts`, the tickets route test and the CLI `ticket.test.ts`
+- [x] 6.2 Give every stored ticket without a random id one when the store opens, drop sequential-id lookups from the store, CLI and terminal parser, and verify the upgrade case in `broker.test.ts` plus `ticket-id.test.ts`, `task-view.test.ts` and the CLI `ticket.test.ts`

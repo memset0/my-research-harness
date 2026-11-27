@@ -212,10 +212,7 @@ const TERMINAL_OF_TICKET = new RegExp(`^(${TICKET_ID_PATTERN.source.slice(1, -1)
 
 export function ticketOfTerminal(name: string | null): string | null {
   if (!name) return null
-  const random = TERMINAL_OF_TICKET.exec(name)
-  if (random) return random[1] as string
-  const legacy = /^t(\d{4,})-./.exec(name)
-  return legacy ? `T${legacy[1]}` : null
+  return TERMINAL_OF_TICKET.exec(name)?.[1] ?? null
 }
 
 /** Terminal name for a task: unique per ticket, within herdr's 1–32 `[a-z0-9_-]`. */

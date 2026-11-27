@@ -76,9 +76,9 @@ describe('memon ticket', () => {
   it('maps central errors to the exit-code table', async () => {
     const { d } = deps({
       status: 404,
-      body: { error: { code: 'NOT_FOUND', message: 'ticket T0099 does not exist' } },
+      body: { error: { code: 'NOT_FOUND', message: 'ticket tk_0000000000zz does not exist' } },
     })
-    const result = await captureCli(() => runTicket('show', ['T0099'], {}, d))
+    const result = await captureCli(() => runTicket('show', ['tk_0000000000zz'], {}, d))
     expect(result.exitCode).toBe(4)
     expect(result.error?.code).toBe('NOT_FOUND')
   })

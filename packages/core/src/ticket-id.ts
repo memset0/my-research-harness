@@ -10,8 +10,6 @@ const ALPHABET = '0123456789abcdefghjkmnpqrstvwxyz'
 const TOKEN_LENGTH = 12
 
 export const TICKET_ID_PATTERN = /^tk_[0-9abcdefghjkmnpqrstvwxyz]{12}$/
-/** Sequential ids issued before random ids; still accepted to read history. */
-export const LEGACY_TICKET_ID_PATTERN = /^T\d{4,}$/
 
 export function newTicketId(): string {
   // 256 is a multiple of 32, so masking 5 bits keeps every character uniform.
@@ -22,5 +20,5 @@ export function newTicketId(): string {
 }
 
 export function isTicketId(id: string): boolean {
-  return TICKET_ID_PATTERN.test(id) || LEGACY_TICKET_ID_PATTERN.test(id)
+  return TICKET_ID_PATTERN.test(id)
 }

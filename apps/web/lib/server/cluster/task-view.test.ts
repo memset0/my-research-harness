@@ -103,7 +103,7 @@ describe('mapTasks', () => {
 describe('ticketOfTerminal', () => {
   it('reads the ticket id from terminal names', () => {
     expect(ticketOfTerminal('tk_7h3q9m2xw4ra-main')).toBe('tk_7h3q9m2xw4ra')
-    expect(ticketOfTerminal('t0012-main')).toBe('T0012')
+    expect(ticketOfTerminal('t0012-main')).toBeNull()
     expect(ticketOfTerminal('tk_short-main')).toBeNull()
     expect(ticketOfTerminal('memon-probe')).toBeNull()
     expect(ticketOfTerminal(null)).toBeNull()

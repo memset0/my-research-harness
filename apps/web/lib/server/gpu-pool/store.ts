@@ -1,10 +1,5 @@
 import { chmodSync, closeSync, existsSync, openSync } from 'node:fs'
-import {
-  formatIsoLocal,
-  LEGACY_TICKET_ID_PATTERN,
-  newTicketId,
-  TICKET_ID_PATTERN,
-} from '@memon/core'
+import { formatIsoLocal, newTicketId, TICKET_ID_PATTERN } from '@memon/core'
 import { dirname, join } from '@memon/file-protocol/paths'
 import sqlite3 from 'sqlite3'
 import type { DirtyGpu, Ticket, TicketRequest, TicketStatus } from './types'
@@ -13,8 +8,8 @@ export const GPU_POOL_DB_FILENAME = 'memon-gpu-pool.sqlite3'
 
 interface TicketRow {
   seq: number
-  /** Random ticket id; null only on rows written before random ids. */
-  token: string | null
+  /** The ticket id. `seq` only orders rows and is never exposed. */
+  token: string
   project: string
   gpus: number | null
   whole_node: number
@@ -34,12 +29,9 @@ interface TicketRow {
   reason: string | null
 }
 
-/** The sequential id a row had before tickets carried random ids. */
-const legacyTicketId = (seq: number) => `T${String(seq).padStart(4, '0')}`
-
 function toTicket(row: TicketRow): Ticket {
   return {
-    id: row.token ?? legacyTicketId(row.seq),
+    id: row.token,
     project: row.project,
     gpus: row.gpus,
     wholeNode: row.whole_node === 1,
@@ -106,6 +98,12 @@ export class TicketStore {
         if (!columns.some((column) => column.name === 'token'))
           await this.exec('ALTER TABLE tickets ADD COLUMN token TEXT')
         await this.exec('CREATE UNIQUE INDEX IF NOT EXISTS tickets_token ON tickets (token)')
+        // Rows from stores that predate random ids get one, so every ticket has a random id.
+        const unnamed = await this.all<{ seq: number }>(
+          'SELECT seq FROM tickets WHERE token IS NULL',
+        )
+        for (const { seq } of unnamed)
+          await this.run('UPDATE tickets SET token = ? WHERE seq = ?', [newTicketId(), seq])
       })
       .then(() => {
         for (const file of [path, `${path}-wal`, `${path}-shm`])
@@ -153,16 +151,10 @@ export class TicketStore {
     return row ? toTicket(row) : null
   }
 
-  /** Row of a random id, or of a legacy sequential id on a row that has no random id. */
   private async row(id: string): Promise<TicketRow | undefined> {
     await this.ready
-    if (TICKET_ID_PATTERN.test(id))
-      return this.one<TicketRow>('SELECT * FROM tickets WHERE token = ?', [id])
-    if (LEGACY_TICKET_ID_PATTERN.test(id))
-      return this.one<TicketRow>('SELECT * FROM tickets WHERE seq = ? AND token IS NULL', [
-        Number(id.slice(1)),
-      ])
-    return undefined
+    if (!TICKET_ID_PATTERN.test(id)) return undefined
+    return this.one<TicketRow>('SELECT * FROM tickets WHERE token = ?', [id])
   }
 
   private async seq(id: string): Promise<number> {
