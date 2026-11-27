@@ -25,7 +25,6 @@ import type {
   FullCodeReview,
   FullExperiment,
   FullReport,
-  ProjectSummary,
   WikiListItem,
   WikiPageDetail,
 } from '../api'
@@ -35,20 +34,6 @@ import { getRuntime } from './runtime'
 import { standaloneCodeReview, standaloneReport, standaloneRun } from './standalone-dto'
 import { standaloneServices } from './standalone-services'
 import { wikiComponentProjection } from './wiki-route'
-
-export async function getProjectsData(): Promise<{ projects: ProjectSummary[] }> {
-  const rt = await getRuntime()
-  return {
-    projects: rt.config.projects.map((p) => ({
-      mode: 'standalone' as const,
-      host: null,
-      project: p.name,
-      name: p.name,
-      root: p.root,
-      exclude: p.exclude,
-    })),
-  }
-}
 
 /**
  * Load a Run detail for SSR hydration. Returns null when the Run does not
