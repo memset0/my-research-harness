@@ -207,6 +207,35 @@ describe('memon ticket', () => {
     expect(output).toEqual(['prompt$ '])
   })
 
+  it('waits for a ticket to be ready, and stops at a failed pull with exit 9', async () => {
+    const view = (status: string, state: string | null) => ({
+      status: 200,
+      body: { ticket: { id: ID, status, sync: { state, output: 'conflict' } } },
+    })
+    const ready = central([
+      view('QUEUED', null),
+      view('GRANTED', 'PULLING'),
+      view('GRANTED', 'READY'),
+    ])
+    expect(await runTicket('wait', [ID], { timeout: '60' }, ready.d)).toBe(0)
+    expect(ready.fetchMock).toHaveBeenCalledTimes(3)
+
+    const failed = central([view('GRANTED', 'PULL_FAILED')])
+    expect(await runTicket('wait', [ID], {}, failed.d)).toBe(9)
+  })
+
+  it('syncs with or without starting the held command', async () => {
+    const reply = { status: 200, body: { ticket: { id: ID, sync: { state: 'READY' } } } }
+    const { d, sent } = central([reply, reply])
+    expect(await runTicket('sync', [ID], {}, d)).toBe(0)
+    expect(await runTicket('sync', [ID], { start: false }, d)).toBe(0)
+    expect(sent(0)).toMatchObject({
+      url: `https://central.test/api/gpu-pool/tickets/${ID}/sync`,
+      body: { start: true },
+    })
+    expect(sent(1).body).toEqual({ start: false })
+  })
+
   it('refuses attach without a terminal', async () => {
     const { d } = central([])
     const result = await captureCli(() => runTicket('attach', [ID], {}, d))

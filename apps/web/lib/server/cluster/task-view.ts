@@ -41,6 +41,16 @@ export function mapTasks(
       redacted: !full,
       project: full ? ticket.project : null,
       owner: full ? (ticket.owner?.username ?? null) : null,
+      sync:
+        full && ticket.syncState ? { state: ticket.syncState, output: ticket.syncOutput } : null,
+      push:
+        full && ticket.pushState
+          ? {
+              state: ticket.pushState,
+              output: ticket.pushOutput,
+              unrecorded_runs: ticket.unrecordedRuns,
+            }
+          : null,
       label: full ? ticket.label : null,
       node: ticket.node,
       gpus: ticket.grantedGpus,

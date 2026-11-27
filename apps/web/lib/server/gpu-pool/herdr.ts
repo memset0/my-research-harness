@@ -44,8 +44,21 @@ export interface Herdr {
 const MAX_OUTPUT = 1024 * 1024
 
 export function runHc(args: string[], hc = hcPath(), timeoutMs = 120_000): Promise<HcResult> {
+  return runCommand(hc, args, {}, timeoutMs)
+}
+
+/** Run a local program with captured output (bounded) and a hard timeout. */
+export function runCommand(
+  program: string,
+  args: string[],
+  env: Record<string, string> = {},
+  timeoutMs = 120_000,
+): Promise<HcResult> {
   return new Promise((resolve) => {
-    const child = spawn(hc, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(program, args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, ...env },
+    })
     let stdout = ''
     let stderr = ''
     const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs)
@@ -204,13 +217,17 @@ export interface LaunchTemplate {
 }
 
 export function launchTemplate(
-  ticket: { id: string; grantedGpus: number[] },
-  node: { id: string; enter?: string[] },
+  ticket: { id: string; grantedGpus: number[]; wholeNode?: boolean },
+  node: { id: string; cluster?: string; enter?: string[] },
 ): LaunchTemplate {
+  // What `memon run create/update` records as the Run's resources entry.
   const env = [
     'env',
     `CUDA_VISIBLE_DEVICES=${ticket.grantedGpus.join(',')}`,
     `MEMON_TICKET=${ticket.id}`,
+    `MEMON_NODE=${node.id}`,
+    ...(node.cluster ? [`MEMON_CLUSTER=${node.cluster}`] : []),
+    ...(ticket.wholeNode ? ['MEMON_WHOLE_NODE=1'] : []),
   ]
   const hold = holdJob(node.enter)
   return {

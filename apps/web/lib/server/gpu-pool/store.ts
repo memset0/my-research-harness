@@ -251,11 +251,17 @@ export class TicketStore {
   /** Mark the start command launched unless it already was; true when this call won. */
   async claimRunStart(id: string, now: Date): Promise<boolean> {
     const seq = await this.seq(id)
-    await this.run(
-      'UPDATE tickets SET run_started_at = ? WHERE seq = ? AND run_started_at IS NULL',
-      [formatIsoLocal(now), seq],
-    )
-    return (await this.require(id)).runStartedAt === formatIsoLocal(now)
+    const changed = await new Promise<number>((resolve, reject) => {
+      this.database.run(
+        'UPDATE tickets SET run_started_at = ? WHERE seq = ? AND run_started_at IS NULL',
+        [formatIsoLocal(now), seq],
+        function (this: sqlite3.RunResult, error) {
+          if (error) reject(error)
+          else resolve(this.changes)
+        },
+      )
+    })
+    return changed === 1
   }
 
   async get(id: string): Promise<Ticket | null> {

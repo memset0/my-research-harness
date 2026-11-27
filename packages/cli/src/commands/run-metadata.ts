@@ -6,6 +6,7 @@ import {
   createRunMetadata,
   formatIsoLocal,
   formatRunStamp,
+  isTicketId,
   lightweightRunIdentity,
   lightweightRunPath,
   nodeMutationFs,
@@ -101,6 +102,41 @@ export function metadataPatch(input: RunMetadataOptions): Partial<RunMetadata> {
   return patch as Partial<RunMetadata>
 }
 
+export interface RunResource {
+  ticket: string
+  cluster: string
+  node: string
+  gpus?: number[]
+}
+
+/**
+ * The resources entry of the GPU ticket this process runs under, read from the
+ * ticket environment (`MEMON_TICKET`, `MEMON_CLUSTER`, `MEMON_NODE`,
+ * `CUDA_VISIBLE_DEVICES`, `MEMON_WHOLE_NODE`), or null outside a ticket.
+ */
+export function ticketResource(env: NodeJS.ProcessEnv = process.env): RunResource | null {
+  const { MEMON_TICKET: ticket, MEMON_CLUSTER: cluster, MEMON_NODE: node } = env
+  if (!ticket || !isTicketId(ticket) || !cluster || !node) return null
+  if (env.MEMON_WHOLE_NODE === '1') return { ticket, cluster, node }
+  const gpus = (env.CUDA_VISIBLE_DEVICES ?? '')
+    .split(',')
+    .filter((part) => /^\d+$/.test(part.trim()))
+    .map(Number)
+  return gpus.length > 0 ? { ticket, cluster, node, gpus } : { ticket, cluster, node }
+}
+
+/** `existing` plus the current ticket's entry, or null when it is already recorded (or no ticket). */
+export function withTicketResource(
+  existing: unknown,
+  env: NodeJS.ProcessEnv = process.env,
+): RunResource[] | null {
+  const resource = ticketResource(env)
+  if (!resource) return null
+  const list = Array.isArray(existing) ? (existing as RunResource[]) : []
+  if (list.some((entry) => entry?.ticket === resource.ticket)) return null
+  return [...list, resource]
+}
+
 export function newRunMetadata(id: string, input: RunMetadataOptions): RunMetadata {
   const now = formatIsoLocal(new Date())
   const metadata = {
@@ -110,6 +146,8 @@ export function newRunMetadata(id: string, input: RunMetadataOptions): RunMetada
     created_at: now,
     ...metadataPatch(input),
   } as RunMetadata
+  const resources = withTicketResource(undefined)
+  if (resources) metadata.resources = resources as RunMetadata['resources']
   if (metadata.status === 'RUNNING') metadata.started_at ??= now
   try {
     serializeRunMetadata(metadata)
@@ -264,6 +302,10 @@ export async function runRunUpdate(
     const path = join(run.path, RUN_METADATA_FILE)
     const state = await readDocumentState(nodeMutationFs, path)
     const patch = metadataPatch(input)
+    // Inside a GPU ticket, the Run records the ticket's cluster, node and GPUs once.
+    const current = JSON.parse(await fs.readFile(path, 'utf8')) as { resources?: unknown }
+    const resources = withTicketResource(current.resources)
+    if (resources) patch.resources = resources as RunMetadata['resources']
     // Activation is serialized across peers and cannot accidentally create a second selection.
     const activate = patch.active === true || input.activate
     if (activate) delete patch.active

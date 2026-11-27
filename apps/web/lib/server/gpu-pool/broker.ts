@@ -1,18 +1,21 @@
 import { allocatableGpuIndices, formatIsoLocal, loadNodes, type NodeDefinition } from '@memon/core'
 import {
   createHerdr,
+  type HcResult,
   type Herdr,
   holdJob,
   type LaunchTemplate,
   launchTemplate,
   parseSnapshot,
   parseSteps,
+  runCommand,
   SNAPSHOT_LINE,
   stepsToCancel,
   terminalName,
 } from './herdr'
 import { isIdle, type PoolNode, planGrants } from './planner'
 import { gpuPoolDatabasePath, TicketStore } from './store'
+import { PULL_SCRIPT, PUSH_SCRIPT, parsePull, parsePush } from './sync'
 import type { GpuSnapshot, Ticket, TicketActor, TicketOwner, TicketRequest } from './types'
 
 export type TicketErrorCode =
@@ -56,10 +59,26 @@ export interface UnticketedUse {
   at: string
 }
 
+/** What the broker needs of a configured Project. */
+export interface PoolProject {
+  name: string
+  host?: string
+  /** The Project's own checkout on central's filesystem, when it has one. */
+  localCheckout?: string
+  gpuClusters?: Readonly<Record<string, { root: string }>>
+}
+
+/** Git sync steps may run this long on a node. */
+const SYNC_TIMEOUT_S = 600
+
 export interface BrokerDeps {
   store: TicketStore
   herdr: Herdr
   nodes: () => Promise<NodeDefinition[]>
+  /** Configured Projects; only those declaring `gpu_clusters` may hold tickets. */
+  projects: () => Promise<PoolProject[]>
+  /** Runs `git` on central (origin lookup, fast-forward of central's checkout). */
+  localGit?: (args: string[]) => Promise<HcResult>
   now?: () => Date
   log?: (message: string) => void
 }
@@ -114,6 +133,8 @@ export class TicketBroker {
   unticketed: UnticketedUse[] = []
   lastTick: { at: string; error: string | null } | null = null
   private chain: Promise<void> = Promise.resolve()
+  /** Background pulls started by grants; tests wait on them. */
+  private readonly syncs = new Set<Promise<void>>()
   private timer: NodeJS.Timeout | null = null
   private delay = BASE_DELAY_MS
   private readonly now: () => Date
@@ -124,8 +145,27 @@ export class TicketBroker {
     this.log = deps.log ?? ((message) => console.warn(`[gpu-pool] ${message}`))
   }
 
+  /** The configured Project a ticket names: by name, or as `host/name`. */
+  async project(name: string): Promise<PoolProject | null> {
+    const projects = await this.deps.projects()
+    return (
+      projects.find((p) => p.name === name) ??
+      projects.find((p) => p.host !== undefined && `${p.host}/${p.name}` === name) ??
+      null
+    )
+  }
+
   async request(body: unknown, owner: TicketOwner | null = null): Promise<Ticket> {
-    const ticket = await this.deps.store.create(parseTicketRequest(body), this.now(), owner)
+    const parsed = parseTicketRequest(body)
+    const project = await this.project(parsed.project)
+    if (!project)
+      throw new TicketError('BAD_REQUEST', `project ${parsed.project} is not configured`)
+    if (!project.gpuClusters || Object.keys(project.gpuClusters).length === 0)
+      throw new TicketError(
+        'BAD_REQUEST',
+        `project ${parsed.project} declares no gpu_clusters in central's config.yml, so it cannot use GPU tickets`,
+      )
+    const ticket = await this.deps.store.create(parsed, this.now(), owner)
     this.kick()
     return ticket
   }
@@ -273,6 +313,107 @@ export class TicketBroker {
     return this.task(ticket, task)
   }
 
+  /** Wait for every background pull started so far. */
+  async settled(): Promise<void> {
+    while (this.syncs.size > 0) await Promise.all([...this.syncs])
+  }
+
+  /** Pull again on the holder's request; on success start a held command once unless `start` is false. */
+  async sync(
+    id: string,
+    actor: TicketActor | null,
+    options: { start: boolean; force?: boolean },
+  ): Promise<Ticket> {
+    await this.usable(id, actor, options.force, 'sync')
+    await this.pullTicket(id, options.start)
+    return this.get(id)
+  }
+
+  /** The Project and cluster checkout a granted ticket syncs, or the reason there is none. */
+  private async checkout(
+    ticket: Ticket,
+  ): Promise<{ project: PoolProject; node: NodeDefinition; root: string } | string> {
+    const project = await this.project(ticket.project)
+    if (!project?.gpuClusters) return `project ${ticket.project} declares no gpu_clusters`
+    const node = await this.node(ticket)
+    const root = node.cluster ? project.gpuClusters[node.cluster]?.root : undefined
+    if (!root)
+      return `project ${ticket.project} has no checkout on cluster ${node.cluster ?? '(none)'}`
+    return { project, node, root }
+  }
+
+  private async pullTicket(id: string, start: boolean): Promise<void> {
+    const ticket = await this.get(id)
+    if (ticket.status !== 'GRANTED') return
+    const target = await this.checkout(ticket).catch((err: Error) => err.message)
+    if (typeof target === 'string') {
+      await this.deps.store.patch(id, { syncState: 'PULL_FAILED', syncOutput: target })
+      return
+    }
+    await this.deps.store.patch(id, { syncState: 'PULLING', syncOutput: null })
+    const origin = target.project.localCheckout
+      ? (
+          await this.git(['-C', target.project.localCheckout, 'remote', 'get-url', 'origin'])
+        ).stdout.trim()
+      : ''
+    const result = parsePull(
+      await this.deps.herdr.exec(
+        target.node.id,
+        ['bash', '-c', PULL_SCRIPT, 'memon-sync', target.root, origin],
+        SYNC_TIMEOUT_S,
+      ),
+    )
+    await this.deps.store.patch(id, {
+      syncState: result.ok ? 'READY' : 'PULL_FAILED',
+      syncCommit: result.commit,
+      syncOutput: result.output || null,
+    })
+    if (!result.ok || !start) return
+    const current = await this.get(id)
+    if (current.status !== 'GRANTED' || !current.run) return
+    if (!(await this.deps.store.claimRunStart(id, this.now()))) return
+    try {
+      await this.startTask(current, 'main', current.run)
+    } catch (err) {
+      await this.deps.store.note(id, `start command failed: ${(err as Error).message}`)
+    }
+  }
+
+  /** After reclaim: commit and push the Run directories that record this ticket. */
+  private async pushTicket(ticket: Ticket): Promise<void> {
+    const target = await this.checkout(ticket).catch(() => null)
+    if (!target || typeof target === 'string') return
+    await this.deps.store.patch(ticket.id, { pushState: 'PUSHING' })
+    const result = parsePush(
+      await this.deps.herdr.exec(
+        target.node.id,
+        ['bash', '-c', PUSH_SCRIPT, 'memon-push', target.root, ticket.id],
+        SYNC_TIMEOUT_S,
+      ),
+    )
+    let output = result.output
+    if (result.state === 'PUSHED' && target.project.localCheckout) {
+      const ff = await this.git(['-C', target.project.localCheckout, 'pull', '--ff-only'])
+      output = `${output}\n[central] ${
+        ff.code === 0
+          ? 'fast-forwarded its checkout'
+          : `fast-forward failed: ${ff.stderr.trim() || ff.stdout.trim()}`
+      }`.trim()
+    }
+    await this.deps.store.patch(ticket.id, {
+      pushState: result.state,
+      pushCommit: result.commit,
+      pushOutput: output || null,
+      unrecordedRuns: result.unrecorded,
+    })
+  }
+
+  private git(args: string[]): Promise<HcResult> {
+    return (
+      this.deps.localGit?.(args) ?? Promise.resolve({ code: 127, stdout: '', stderr: 'no git' })
+    )
+  }
+
   /** The terminal to attach to: a task, or a new login shell on the ticket's GPUs. */
   async attachTarget(
     id: string,
@@ -344,6 +485,7 @@ export class TicketBroker {
         await this.deps.store.note(id, `release pending: ${(err as Error).message}`)
         throw new TicketError('UNAVAILABLE', `could not reclaim ${id}: ${(err as Error).message}`)
       }
+      await this.pushTicket(ticket)
       const done = await this.deps.store.finish(id, 'RELEASED', this.now())
       this.kick()
       return done
@@ -447,10 +589,17 @@ export class TicketBroker {
       if ((ticket.expiresAtMs ?? Number.POSITIVE_INFINITY) > now.getTime()) continue
       try {
         await this.reclaim(ticket)
-        await store.finish(ticket.id, 'EXPIRED', now)
       } catch (err) {
         await store.note(ticket.id, `expiry reclaim pending: ${(err as Error).message}`)
+        if ((await this.checkout(ticket).catch(() => null)) !== null)
+          await store.patch(ticket.id, {
+            pushState: 'PUSH_FAILED',
+            pushOutput: `node unreachable; the push is retried with the expiry reclaim: ${(err as Error).message}`,
+          })
+        continue
       }
+      await this.pushTicket(ticket)
+      await store.finish(ticket.id, 'EXPIRED', now)
     }
 
     const snapshots = new Map<string, GpuSnapshot[] | null>()
@@ -483,6 +632,7 @@ export class TicketBroker {
 
     const pool: PoolNode[] = nodes.map((node) => ({
       id: node.id,
+      cluster: node.cluster ?? null,
       gpuType: node.gpuType ?? null,
       allocation: node.allocation,
       allocatable: allocatableGpuIndices(node) ?? [],
@@ -500,7 +650,15 @@ export class TicketBroker {
       }
     }
 
+    const projects = await this.deps.projects()
+    const clustersOf = (ticket: Ticket) => {
+      const project =
+        projects.find((p) => p.name === ticket.project) ??
+        projects.find((p) => p.host !== undefined && `${p.host}/${p.name}` === ticket.project)
+      return new Set(Object.keys(project?.gpuClusters ?? {}))
+    }
     const plan = planGrants({
+      clustersOf,
       queue: await store.list(['QUEUED']),
       nodes: pool,
       held,
@@ -511,12 +669,11 @@ export class TicketBroker {
       await store.finish(failure.id, 'FAILED', now, failure.reason)
     for (const grant of plan.grants) {
       const ticket = await store.grant(grant.id, grant.node, grant.gpus, now)
-      if (!ticket.run) continue
-      try {
-        await this.startTask(ticket, 'main', ticket.run)
-      } catch (err) {
-        await store.note(ticket.id, `start command failed: ${(err as Error).message}`)
-      }
+      // Pull outside the serialized tick so a slow clone never holds up the pool.
+      const sync = this.pullTicket(ticket.id, true)
+        .catch((err: Error) => this.log(`sync of ${ticket.id} failed: ${err.message}`))
+        .finally(() => this.syncs.delete(sync))
+      this.syncs.add(sync)
     }
     this.lastTick = { at: formatIsoLocal(this.now()), error: null }
   }
@@ -536,6 +693,21 @@ export function getTicketBroker(configPath: string): TicketBroker {
       store: new TicketStore(path),
       herdr: createHerdr(),
       nodes: () => loadNodes(),
+      projects: async () => {
+        const { getRuntime } = await import('../runtime')
+        return (await getRuntime()).config.projects.map((project) => ({
+          name: project.name,
+          ...(project.host ? { host: project.host } : {}),
+          // Central's own checkout: a plain local root, not a mount or an agent.
+          ...(project.root &&
+          project.storage !== 'sshfs' &&
+          (project.access === undefined || project.access.kind === 'filesystem')
+            ? { localCheckout: project.root }
+            : {}),
+          ...(project.gpuClusters ? { gpuClusters: project.gpuClusters } : {}),
+        }))
+      },
+      localGit: (args) => runCommand('git', args, { GIT_TERMINAL_PROMPT: '0' }),
     })
     holder[KEY].set(path, broker)
   }

@@ -31,6 +31,38 @@ poll:
   backoff_factor: 3
 `
 
+describe('project GPU clusters', () => {
+  it('loads each declared cluster checkout', async () => {
+    await fs.writeFile(
+      join(dir, 'config.yml'),
+      'projects:\n  - name: alpha\n    root: ./alpha\n    gpu_clusters:\n      cluster-a: { root: /work/alpha }\n      cluster.b: { root: /scratch/alpha }\n',
+    )
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.projects[0]!.gpuClusters).toEqual({
+      'cluster-a': { root: '/work/alpha' },
+      'cluster.b': { root: '/scratch/alpha' },
+    })
+  })
+
+  it('rejects relative roots, empty maps and unsafe cluster names, naming the entry', async () => {
+    const configPath = join(dir, 'config.yml')
+    for (const clusters of [
+      '{ cluster-a: { root: work/alpha } }',
+      '{}',
+      '{ "bad name": { root: /work/alpha } }',
+      '{ cluster-a: { root: /work/alpha, user: x } }',
+    ]) {
+      await fs.writeFile(
+        configPath,
+        `projects:\n  - { name: alpha, root: ./alpha, gpu_clusters: ${clusters} }\n`,
+      )
+      const error = await loadConfig({ cwd: dir }).catch((err: unknown) => err)
+      expect(error).toBeInstanceOf(ConfigError)
+      expect(String(error)).toContain('gpu_clusters')
+    }
+  })
+})
+
 describe('project storage mode', () => {
   it('defaults an undeclared project to direct local storage', async () => {
     await fs.writeFile(join(dir, 'config.yml'), VALID)

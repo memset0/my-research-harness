@@ -22,6 +22,10 @@ Commands below use `memon --project-root .`:
 - `show` reads inventory; `show <E-id|run-path>` reads a record and `--results`
   reads its results. JSON is the default; `--include-history` includes old records.
 
+GPU work on memon-managed clusters goes through tickets from memon central:
+read [gpu-tickets.md](gpu-tickets.md) before requesting GPUs. Every Run that uses
+a ticket records its cluster, node, GPUs and ticket in `run.json` `resources`.
+
 Run creation records a plan; it does not launch a process. Before reusing a
 launcher, check that it uses the allocated directory and current Run metadata.
 Do not bypass an obsolete-convention guard: discuss upgrading with the user,

@@ -46,6 +46,7 @@ const busy = (index: number) => ({ index, memoryUsedMib: 40_000, processes: 1 })
 function node(id: string, over: Partial<PoolNode> = {}): PoolNode {
   return {
     id,
+    cluster: 'cluster-a',
     gpuType: 'H200',
     allocation: 'gpus',
     allocatable: [0, 1, 2, 3],
@@ -69,6 +70,44 @@ const plan = (
   })
 
 describe('planGrants', () => {
+  it('grants only on nodes of the clusters the ticket may use', () => {
+    const nodes = [node('node-01', { cluster: 'cluster-b' }), node('node-02')]
+    const only = (clusters: string[]) => () => new Set(clusters)
+    const restricted = planGrants({
+      queue: [ticket('T0001')],
+      nodes,
+      held: new Map(),
+      dirty: new Set(),
+      nowMs: NOW,
+      clustersOf: only(['cluster-a']),
+    })
+    expect(restricted.grants).toEqual([{ id: 'T0001', node: 'node-02', gpus: [0, 1] }])
+
+    const busyOnly = planGrants({
+      queue: [ticket('T0001')],
+      nodes: [
+        nodes[0] as PoolNode,
+        node('node-02', { snapshot: [busy(0), busy(1), busy(2), busy(3)] }),
+      ],
+      held: new Map(),
+      dirty: new Set(),
+      nowMs: NOW,
+      clustersOf: only(['cluster-a']),
+    })
+    expect(busyOnly).toEqual({ grants: [], failures: [] })
+
+    const none = planGrants({
+      queue: [ticket('T0001')],
+      nodes,
+      held: new Map(),
+      dirty: new Set(),
+      nowMs: NOW,
+      clustersOf: only(['cluster-z']),
+    })
+    expect(none.grants).toEqual([])
+    expect(none.failures[0]?.reason).toMatch(/project project-a may use clusters cluster-z/)
+  })
+
   it('skips busy, held and dirty GPUs and takes the lowest free ones', () => {
     const result = plan(
       [ticket('T0001')],

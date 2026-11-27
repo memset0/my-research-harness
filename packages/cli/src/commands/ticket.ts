@@ -350,11 +350,49 @@ export async function runTicket(
       deps.out(text.endsWith('\n') ? text : `${text}\n`)
       return EXIT.SUCCESS
     }
+    case 'sync': {
+      const id = checkId(args[0] ?? '')
+      const result = (await call('POST', `/${id}/sync`, {
+        start: opts.start !== false,
+        ...force,
+      })) as { ticket: { sync?: { state?: string } } }
+      print(result)
+      return result.ticket.sync?.state === 'READY' ? EXIT.SUCCESS : EXIT.GENERIC
+    }
     case 'wait': {
       const id = checkId(args[0] ?? '')
-      const task = checkTask(args[1], `memon ticket wait ${id} <task>`)
       const deadline = Date.now() + Number(opts.timeout ?? 3600) * 1000
       const sleep = deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)))
+      if (!args[1]) {
+        // The ticket itself: until it is granted and its checkout is synced.
+        for (;;) {
+          const { ticket: view } = (await call('GET', `/${id}`)) as {
+            ticket: { status: string; sync?: { state?: string | null; output?: string | null } }
+          }
+          const sync = view.sync?.state ?? null
+          if (view.status === 'GRANTED' && sync === 'READY') {
+            print({ ticket: view })
+            return EXIT.SUCCESS
+          }
+          if (view.status !== 'QUEUED' && view.status !== 'GRANTED') {
+            print({ ticket: view })
+            return EXIT.GENERIC
+          }
+          if (sync === 'PULL_FAILED') {
+            print({ ticket: view })
+            process.stderr.write(
+              `memon: the checkout pull failed; fix it with \`memon ticket exec ${id} -- …\`, then run \`memon ticket sync ${id}\`\n`,
+            )
+            return EXIT.CONFLICT
+          }
+          if (Date.now() >= deadline) {
+            print({ ticket: view })
+            return EXIT.GENERIC
+          }
+          await sleep(3000)
+        }
+      }
+      const task = checkTask(args[1], `memon ticket wait ${id} <task>`)
       for (;;) {
         const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000))
         const { task: view } = (await call('POST', `/${id}/tasks/${task}/wait`, {
@@ -479,11 +517,22 @@ account that requested a ticket may use it; the super admin must add --force.`,
   ).action(act('logs'))
   withForce(
     ticket
+      .command('sync')
+      .argument('<id>')
+      .option('--no-start', 'only pull; leave a held start command unstarted')
+      .description(
+        'pull the ticket’s cluster checkout again; on success start a held start command once',
+      ),
+  ).action(act('sync'))
+  withForce(
+    ticket
       .command('wait')
       .argument('<id>')
-      .argument('<task>')
+      .argument('[task]', 'a task; without it, wait until the ticket is granted and synced')
       .option('--timeout <s>', 'seconds to wait (exit 1 if it is still running)', '3600')
-      .description('wait until a task stops; prints its state and exit code'),
+      .description(
+        'wait until a task stops, or until the ticket is ready (exit 9 when its checkout pull failed)',
+      ),
   ).action(act('wait'))
   withForce(
     ticket.command('kill').argument('<id>').argument('<task>').description('end a task'),

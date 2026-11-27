@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs'
 import { createTempProject, ExitCalled, removeTempDirs, spyExit } from '@memon/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { runRunCreate } from './run-metadata.js'
+import { runRunCreate, runRunUpdate, ticketResource, withTicketResource } from './run-metadata.js'
 import { runRunRecord } from './run-record.js'
 
 beforeEach(() => {
@@ -161,4 +161,58 @@ it('reports a saved record but incomplete publication when custom aggregation fa
     'metrics.loss,,0.9',
   )
   expect(result.stderr).toContain('memon refresh E0001')
+})
+
+describe('ticket resources', () => {
+  const base = {
+    MEMON_TICKET: 'tk_7h3q9m2xw4ra',
+    MEMON_CLUSTER: 'cluster-a',
+    MEMON_NODE: 'node-01',
+    CUDA_VISIBLE_DEVICES: '0,1',
+  }
+
+  it('reads the ticket environment, omitting GPUs for a whole node', () => {
+    expect(ticketResource(base)).toEqual({
+      ticket: 'tk_7h3q9m2xw4ra',
+      cluster: 'cluster-a',
+      node: 'node-01',
+      gpus: [0, 1],
+    })
+    expect(ticketResource({ ...base, MEMON_WHOLE_NODE: '1' })).toEqual({
+      ticket: 'tk_7h3q9m2xw4ra',
+      cluster: 'cluster-a',
+      node: 'node-01',
+    })
+    expect(ticketResource({})).toBeNull()
+    expect(ticketResource({ ...base, MEMON_TICKET: 'T0001' })).toBeNull()
+  })
+
+  it('appends each ticket once, in order of use', () => {
+    const first = withTicketResource(undefined, base)
+    expect(first).toHaveLength(1)
+    expect(withTicketResource(first, base)).toBeNull()
+    const second = withTicketResource(first, { ...base, MEMON_TICKET: 'tk_0000000000zz' })
+    expect(second?.map((entry) => entry.ticket)).toEqual(['tk_7h3q9m2xw4ra', 'tk_0000000000zz'])
+  })
+
+  it('records the ticket on run create and run update inside a ticket task', async () => {
+    const project = await projectFixture()
+    const base0 = { projectRoot: project.root, cwd: project.root, format: 'json' as const }
+    for (const [key, value] of Object.entries(base)) vi.stubEnv(key, value)
+    await runRunCreate({ ...base0, experiment: 'E0001', id: 'r1' })
+    const created = JSON.parse(String(vi.mocked(process.stdout.write).mock.calls.at(-1)?.[0]))
+    const runJson = async () => JSON.parse(await fs.readFile(project.path(created.path), 'utf8'))
+    expect((await runJson()).resources).toEqual([
+      { ticket: 'tk_7h3q9m2xw4ra', cluster: 'cluster-a', node: 'node-01', gpus: [0, 1] },
+    ])
+    vi.stubEnv('MEMON_TICKET', 'tk_0000000000zz')
+    vi.stubEnv('MEMON_WHOLE_NODE', '1')
+    await runRunUpdate({ ...base0, target: 'r1', status: 'RUNNING' })
+    await runRunUpdate({ ...base0, target: 'r1', status: 'FINISHED' })
+    expect((await runJson()).resources).toEqual([
+      { ticket: 'tk_7h3q9m2xw4ra', cluster: 'cluster-a', node: 'node-01', gpus: [0, 1] },
+      { ticket: 'tk_0000000000zz', cluster: 'cluster-a', node: 'node-01' },
+    ])
+    vi.unstubAllEnvs()
+  })
 })

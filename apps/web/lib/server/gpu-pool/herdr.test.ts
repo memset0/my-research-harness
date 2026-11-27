@@ -32,17 +32,18 @@ describe('launch templates', () => {
   it('wraps long tasks in their own named step and sets the environment', () => {
     const template = launchTemplate(
       { id: 'tk_00000000000a', grantedGpus: [2, 3] },
-      { id: 'node-01', enter: ENTER },
+      { id: 'node-01', cluster: 'cluster-a', enter: ENTER },
     )
-    expect(template.exec).toEqual([
+    const env = [
       'env',
       'CUDA_VISIBLE_DEVICES=2,3',
       'MEMON_TICKET=tk_00000000000a',
-    ])
+      'MEMON_NODE=node-01',
+      'MEMON_CLUSTER=cluster-a',
+    ]
+    expect(template.exec).toEqual(env)
     expect(template.run).toEqual([
-      'env',
-      'CUDA_VISIBLE_DEVICES=2,3',
-      'MEMON_TICKET=tk_00000000000a',
+      ...env,
       'srun',
       '--jobid=12345',
       '--overlap',
@@ -56,6 +57,11 @@ describe('launch templates', () => {
     expect(template.holdJob).toBe('12345')
     const plain = launchTemplate({ id: 'tk_00000000000a', grantedGpus: [0] }, { id: 'node-02' })
     expect(plain.run).toEqual(plain.exec)
+    const whole = launchTemplate(
+      { id: 'tk_00000000000a', grantedGpus: [0, 1], wholeNode: true },
+      { id: 'node-02', cluster: 'cluster-b' },
+    )
+    expect(whole.exec.slice(-2)).toEqual(['MEMON_CLUSTER=cluster-b', 'MEMON_WHOLE_NODE=1'])
   })
 
   it('names terminals within herdr limits', () => {

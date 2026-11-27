@@ -64,6 +64,13 @@ export interface ClusterTaskDto {
   ended_at: string | null
   requested_duration_s: number
   reason: string | null
+  /** Checkout pull on grant, and Run push on end (null when redacted or not reached). */
+  sync: { state: 'PULLING' | 'READY' | 'PULL_FAILED'; output: string | null } | null
+  push: {
+    state: 'PUSHING' | 'PUSHED' | 'NOTHING_TO_PUSH' | 'PUSH_FAILED'
+    output: string | null
+    unrecorded_runs: string[]
+  } | null
   tasks: ClusterTicketTaskDto[]
 }
 

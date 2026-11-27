@@ -312,6 +312,16 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
                   },
           }
         : {}),
+      ...(p.gpu_clusters
+        ? {
+            gpuClusters: Object.fromEntries(
+              Object.entries(p.gpu_clusters).map(([cluster, { root: checkout }]) => [
+                cluster,
+                { root: checkout },
+              ]),
+            ),
+          }
+        : {}),
       // Resolve each github mapping's path against the project root (absolute).
       ...(p.github
         ? {

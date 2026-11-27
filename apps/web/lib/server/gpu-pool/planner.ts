@@ -5,6 +5,8 @@ export const IDLE_MEMORY_MIB = 1024
 
 export interface PoolNode {
   id: string
+  /** The node registry's `cluster`, or null when the node names none. */
+  cluster: string | null
   gpuType: string | null
   allocation: 'node' | 'gpus'
   allocatable: number[]
@@ -21,6 +23,11 @@ export interface PlanInput {
   /** `node:gpu` keys withheld until clean. */
   dirty: Set<string>
   nowMs: number
+  /**
+   * The clusters a ticket's Project may use, or null for no restriction. An
+   * empty set means the Project may use none (for example, it was unconfigured).
+   */
+  clustersOf?: (ticket: Ticket) => ReadonlySet<string> | null
 }
 
 export interface Plan {
@@ -51,7 +58,22 @@ export function planGrants(input: PlanInput): Plan {
   const live = input.nodes.filter((node) => node.availableUntilMs > input.nowMs)
 
   for (const ticket of input.queue) {
-    const shaped = live.filter((node) => typeMatches(ticket, node) && needed(ticket, node) !== null)
+    const clusters = input.clustersOf?.(ticket) ?? null
+    const reachable =
+      clusters === null
+        ? live
+        : live.filter((node) => node.cluster !== null && clusters.has(node.cluster))
+    if (clusters !== null && reachable.length === 0) {
+      const names = [...clusters].join(', ') || 'none'
+      plan.failures.push({
+        id: ticket.id,
+        reason: `project ${ticket.project} may use clusters ${names}, which have no available registered node`,
+      })
+      continue
+    }
+    const shaped = reachable.filter(
+      (node) => typeMatches(ticket, node) && needed(ticket, node) !== null,
+    )
     if (shaped.length === 0) {
       const what = ticket.wholeNode ? 'a whole node' : `${ticket.gpus} GPU(s)`
       const type = ticket.gpuType ? ` of type ${ticket.gpuType}` : ''

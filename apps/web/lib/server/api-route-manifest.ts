@@ -115,6 +115,7 @@ export const API_ROUTE_MANIFEST = {
   'file-access/route.ts': central(['GET', 'PUT'], 'mutating'),
   'gpu-pool/tickets/[id]/exec/route.ts': central(['POST'], 'mutating'),
   'gpu-pool/tickets/[id]/release/route.ts': central(['POST'], 'mutating'),
+  'gpu-pool/tickets/[id]/sync/route.ts': central(['POST'], 'mutating'),
   'gpu-pool/tickets/[id]/tasks/[task]/kill/route.ts': central(['POST'], 'mutating'),
   'gpu-pool/tickets/[id]/tasks/[task]/logs/route.ts': central(['GET'], 'mutating'),
   'gpu-pool/tickets/[id]/tasks/[task]/wait/route.ts': central(['POST'], 'mutating'),
@@ -236,6 +237,7 @@ export const DIRECT_RUNTIME_SURFACES = {
   'lib/server/admin-accounts-route.ts': { owner: 'central', scope: 'global', purpose: 'auth' },
   'lib/server/tokens-route.ts': { owner: 'central', scope: 'global', purpose: 'auth' },
   'lib/server/gpu-pool/http.ts': { owner: 'central', scope: 'global', purpose: 'shell' },
+  'lib/server/gpu-pool/broker.ts': { owner: 'central', scope: 'global', purpose: 'shell' },
   'lib/server/cluster/tasks.ts': { owner: 'central', scope: 'global', purpose: 'shell' },
   'app/s/[token]/route.ts': { owner: 'central', scope: 'global', purpose: 'share-landing' },
   'components/runtime-config-bootstrap.tsx': {

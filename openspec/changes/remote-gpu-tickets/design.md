@@ -75,7 +75,7 @@
    - `resources: [{ticket, cluster, node, gpus?}]` is optional, and `RunMetadataSchema` already passes unknown keys through, so older CLIs and central read such Runs unchanged. This ships as a CLI/skills MINOR without an FS bump.
    - A list (rather than one `scheduler` value) covers both a ticket that serves several Runs and a Run resumed under later tickets.
    - Whole-node grants omit `gpus` so the record does not depend on the node's GPU count.
-   - The ticket environment gains `MEMON_CLUSTER` and `MEMON_NODE` (node id from the registry) next to `MEMON_TICKET`/`CUDA_VISIBLE_DEVICES`, so the CLI can fill the entry without asking central.
+   - The ticket environment gains `MEMON_CLUSTER`, `MEMON_NODE` (node id from the registry) and, for whole-node tickets, `MEMON_WHOLE_NODE=1`, next to `MEMON_TICKET`/`CUDA_VISIBLE_DEVICES`, so the CLI can fill the entry without asking central.
 
 8b. **Missing cluster checkouts are cloned from the Project's `origin`.** The URL is read from the Project's own checkout (`git remote get-url origin`) at grant time and the clone runs on the node like the pull. A clone failure is reported as `PULL_FAILED`, with the same hold and `ticket sync` path.
 

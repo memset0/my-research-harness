@@ -90,6 +90,23 @@ export const RunMetadataSchema = z
       .optional(),
     archived: z.boolean().optional(),
     deprecated: z.boolean().optional(),
+    /**
+     * Every GPU ticket this Run used, in order: the cluster, node and GPU
+     * indices it held. `gpus` is omitted for a whole-node ticket (every GPU of
+     * the node). Untracked outputs stay on the cluster named here.
+     */
+    resources: z
+      .array(
+        z
+          .object({
+            ticket: z.string().min(1),
+            cluster: z.string().min(1),
+            node: z.string().min(1),
+            gpus: z.array(z.number().int().nonnegative()).optional(),
+          })
+          .passthrough(),
+      )
+      .optional(),
   })
   .passthrough()
 

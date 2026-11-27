@@ -430,6 +430,47 @@ function shortTime(iso: string | null): string {
   return `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
+const SYNC_TEXT: Record<string, string> = {
+  PULLING: 'pulling',
+  READY: 'synced',
+  PULL_FAILED: 'pull failed',
+  PUSHING: 'pushing',
+  PUSHED: 'pushed',
+  NOTHING_TO_PUSH: 'nothing to push',
+  PUSH_FAILED: 'push failed',
+}
+
+/** Checkout pull / Run push state of a ticket; failures stand out, details in the tooltip. */
+function SyncBadge({
+  label,
+  state,
+  output,
+}: {
+  label: string
+  state: string | undefined
+  output: string | null | undefined
+}) {
+  if (!state) return null
+  const failed = state.endsWith('FAILED')
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge
+          variant={failed ? 'destructive' : 'outline'}
+          className={cn(BADGE, 'ml-1')}
+          data-slot={`ticket-${label}`}
+          data-state={state}
+        >
+          {SYNC_TEXT[state] ?? state}
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-md whitespace-pre-wrap font-mono text-xs">
+        {output || `${label}: ${SYNC_TEXT[state] ?? state}`}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
 function TicketRow({ task, nowMs }: { task: ClusterTaskDto; nowMs: number }) {
   const ends = task.expires_at ? Date.parse(task.expires_at) : null
   return (
@@ -451,6 +492,19 @@ function TicketRow({ task, nowMs }: { task: ClusterTaskDto; nowMs: number }) {
           </TooltipTrigger>
           <TooltipContent>{task.reason ?? `requested ${task.requested_at ?? '—'}`}</TooltipContent>
         </Tooltip>
+        <SyncBadge label="pull" state={task.sync?.state} output={task.sync?.output} />
+        <SyncBadge
+          label="push"
+          state={task.push?.state}
+          output={[
+            task.push?.output,
+            task.push?.unrecorded_runs.length
+              ? `unrecorded Runs (not pushed): ${task.push.unrecorded_runs.join(', ')}`
+              : null,
+          ]
+            .filter(Boolean)
+            .join('\n')}
+        />
       </TableCell>
       <TableCell className="whitespace-nowrap">
         {task.node ? `${task.node} · ${task.gpus.join(',')}` : '—'}

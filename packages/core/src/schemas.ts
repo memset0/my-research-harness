@@ -319,6 +319,25 @@ export const ProjectConfigRawSchema = z
     allowed_edits: z.array(z.enum(['title', 'discussion'])).optional(),
     persistent_cache: z.boolean().optional(),
     execution: ProjectExecutionRawSchema.optional(),
+    /**
+     * Clusters whose GPU tickets may run this Project, each with the absolute
+     * path of the Project's Git checkout on that cluster. A deployment fact:
+     * never read from the Project's own repository.
+     */
+    gpu_clusters: z
+      .record(
+        z.string().regex(/^[A-Za-z0-9._-]{1,64}$/, 'cluster names use A-Z a-z 0-9 . _ -'),
+        z
+          .object({
+            root: z
+              .string()
+              .min(2)
+              .refine((value) => value.startsWith('/'), 'root must be an absolute path'),
+          })
+          .strict(),
+      )
+      .refine((clusters) => Object.keys(clusters).length > 0, 'gpu_clusters must not be empty')
+      .optional(),
   })
   .superRefine((project, ctx) => {
     if (

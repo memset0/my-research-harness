@@ -820,6 +820,11 @@ export interface ProjectConfig {
   persistentCache?: boolean
   /** Explicit command-execution context; see ProjectExecutionConfig. */
   execution?: ProjectExecutionConfig
+  /**
+   * Clusters whose GPU tickets may run this Project (`gpu_clusters`), each
+   * with the absolute path of the Project's Git checkout there.
+   */
+  gpuClusters?: Readonly<Record<string, { root: string }>>
   /** GitHub repo -> local path mappings for code-preview (optional). */
   github?: GithubRepoMapping[]
 }

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { TicketBroker, TicketError } from './broker'
 import type { HcResult, Herdr, HerdrTerminal } from './herdr'
 import { TicketStore } from './store'
+import { PULL_SCRIPT, PUSH_SCRIPT } from './sync'
 
 const NODES = parseNodes({
   schema_version: 1,
@@ -29,6 +30,9 @@ class FakeHerdr implements Herdr {
   terminalsByTicket = new Map<string, HerdrTerminal[]>()
   calls: string[][] = []
   connected = true
+  /** What the Git sync scripts print on the node. */
+  pull = { stdout: `Already up to date.\n__MEMON_SYNC__ 0 ${'a'.repeat(40)}\n` }
+  push = { stdout: '__MEMON_PUSH__ NOTHING_TO_PUSH\n' }
 
   async machines() {
     return [{ name: 'node-01', state: this.connected ? 'connected' : 'connecting' }]
@@ -36,6 +40,10 @@ class FakeHerdr implements Herdr {
 
   async exec(_machine: string, argv: string[]): Promise<HcResult> {
     this.calls.push(argv)
+    if (argv[0] === 'bash' && argv[2] === PULL_SCRIPT)
+      return { code: 0, stdout: this.pull.stdout, stderr: '' }
+    if (argv[0] === 'bash' && argv[2] === PUSH_SCRIPT)
+      return { code: 0, stdout: this.push.stdout, stderr: '' }
     if (argv[0] === 'scontrol') {
       const stdout = this.steps.map((s) => `StepId=${s.id} UserId=1\n   Name=${s.name}`).join('\n')
       return { code: 0, stdout, stderr: '' }
@@ -113,6 +121,10 @@ beforeEach(async () => {
     store,
     herdr,
     nodes: async () => NODES,
+    projects: async () => [
+      { name: 'project-a', gpuClusters: { 'cluster-a': { root: '/work/project-a' } } },
+      { name: 'project-b' },
+    ],
     now: () => now,
     log: () => {},
   })
@@ -128,6 +140,16 @@ const request = (body: Record<string, unknown>) =>
   broker.request({ project: 'project-a', duration_s: 3600, ...body })
 
 describe('TicketBroker', () => {
+  it('refuses projects that are unconfigured or declare no GPU clusters', async () => {
+    await expect(
+      broker.request({ project: 'project-b', duration_s: 3600, whole_node: true }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST', message: /declares no gpu_clusters/ })
+    await expect(
+      broker.request({ project: 'missing', duration_s: 3600, whole_node: true }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST', message: /not configured/ })
+    expect(await store.list()).toEqual([])
+  })
+
   it('validates requests', async () => {
     await expect(request({ gpus: 2, whole_node: true })).rejects.toMatchObject({
       code: 'BAD_REQUEST',
@@ -143,8 +165,13 @@ describe('TicketBroker', () => {
     expect(queued).toMatchObject({ status: 'QUEUED' })
     expect(queued.id).toMatch(TICKET_ID_PATTERN)
     await broker.tick()
+    await broker.settled()
     const granted = await broker.get(queued.id)
     expect(granted).toMatchObject({ status: 'GRANTED', node: 'node-01', grantedGpus: [0, 1, 2, 3] })
+    expect(granted).toMatchObject({ syncState: 'READY', syncCommit: 'a'.repeat(40) })
+    expect(granted.runStartedAt).not.toBeNull()
+    const pull = herdr.calls.find((c) => c[2] === PULL_SCRIPT) as string[]
+    expect(pull.slice(3)).toEqual(['memon-sync', '/work/project-a', ''])
     expect(granted.expiresAtMs).toBe(now.getTime() + 3600_000)
     const launched = herdr.calls.find((c) => c.includes('srun')) as string[]
     expect(launched.slice(0, 3)).toEqual([
@@ -332,5 +359,97 @@ describe('ticket ownership and execution', () => {
     await expect(
       broker.execPlan(id, ADA, { command: 'ls', timeoutS: 5, stdin: false }),
     ).rejects.toMatchObject({ code: 'CONFLICT' })
+  })
+})
+
+describe('checkout sync', () => {
+  const ADA = { accountId: 2, username: 'ada', superAdmin: false }
+  const owner = { accountId: 2, username: 'ada' }
+  const grant = async (run?: string) => {
+    const ticket = await broker.request(
+      { project: 'project-a', duration_s: 3600, whole_node: true, ...(run ? { run } : {}) },
+      owner,
+    )
+    await broker.tick()
+    await broker.settled()
+    return ticket.id
+  }
+
+  it('holds the start command when the pull fails, and starts it once after a successful sync', async () => {
+    herdr.pull = { stdout: 'error: Your local changes would be overwritten\n__MEMON_SYNC__ 1 \n' }
+    const id = await grant('bash train.sh')
+    const failed = await broker.get(id)
+    expect(failed).toMatchObject({ syncState: 'PULL_FAILED', runStartedAt: null })
+    expect(failed.syncOutput).toContain('local changes would be overwritten')
+    expect(herdr.calls.some((c) => c.includes('train.sh'))).toBe(false)
+    // Execution still works so the holder can repair the checkout.
+    await expect(
+      broker.execPlan(id, ADA, { command: 'git status', timeoutS: 30, stdin: false }),
+    ).resolves.toBeDefined()
+
+    herdr.pull = { stdout: `Updating\n__MEMON_SYNC__ 0 ${'b'.repeat(40)}\n` }
+    expect(await broker.sync(id, ADA, { start: false })).toMatchObject({
+      syncState: 'READY',
+      runStartedAt: null,
+    })
+    const synced = await broker.sync(id, ADA, { start: true })
+    expect(synced.runStartedAt).not.toBeNull()
+    await broker.sync(id, ADA, { start: true })
+    expect(herdr.calls.filter((c) => c.at(-1) === 'bash train.sh')).toHaveLength(1)
+  })
+
+  it('pushes the ticket Runs on release, reports unrecorded Runs and fast-forwards central', async () => {
+    const git: string[][] = []
+    broker = new TicketBroker({
+      store,
+      herdr,
+      nodes: async () => NODES,
+      projects: async () => [
+        {
+          name: 'project-a',
+          localCheckout: '/central/project-a',
+          gpuClusters: { 'cluster-a': { root: '/work/project-a' } },
+        },
+      ],
+      localGit: async (args) => {
+        git.push(args)
+        return {
+          code: 0,
+          stdout: args.includes('get-url') ? 'git@example:org/a.git\n' : '',
+          stderr: '',
+        }
+      },
+      now: () => now,
+      log: () => {},
+    })
+    const id = await grant()
+    expect((herdr.calls.find((c) => c[2] === PULL_SCRIPT) as string[]).at(-1)).toBe(
+      'git@example:org/a.git',
+    )
+    herdr.push = {
+      stdout: `__MEMON_UNRECORDED__ logs/E0001/V0001/run-x\n[main abc] chore(runs)\n__MEMON_PUSH__ PUSHED ${'c'.repeat(40)}\n`,
+    }
+    const released = await broker.release(id, ADA)
+    expect(released).toMatchObject({
+      status: 'RELEASED',
+      pushState: 'PUSHED',
+      pushCommit: 'c'.repeat(40),
+      unrecordedRuns: ['logs/E0001/V0001/run-x'],
+    })
+    expect(released.pushOutput).toContain('[central] fast-forwarded')
+    expect(git).toContainEqual(['-C', '/central/project-a', 'pull', '--ff-only'])
+    const push = herdr.calls.find((c) => c[2] === PUSH_SCRIPT) as string[]
+    expect(push.slice(3)).toEqual(['memon-push', '/work/project-a', id])
+  })
+
+  it('records a pending push while an expired ticket node is unreachable', async () => {
+    const id = await grant()
+    herdr.connected = false
+    now = new Date(now.getTime() + 3601_000)
+    await broker.tick()
+    expect(await broker.get(id)).toMatchObject({ status: 'GRANTED', pushState: 'PUSH_FAILED' })
+    herdr.connected = true
+    await broker.tick()
+    expect(await broker.get(id)).toMatchObject({ status: 'EXPIRED', pushState: 'NOTHING_TO_PUSH' })
   })
 })
