@@ -28,7 +28,7 @@
 - [x] 4.4 Push on end: after reclaim, stage only Run dirs whose `resources` list the ticket, report changed Run dirs without `resources` as unrecorded, commit, push with up to three pull-retries, store `push_state`, and fast-forward central's checkout for `host: central` Projects; verify with a broker test that drives the script against a temporary bare remote plus two clones (other Run and source edits stay uncommitted)
 - [x] 4.5 Add the optional `resources` list to the Run schema, add `MEMON_CLUSTER`/`MEMON_NODE` to the ticket environment, and make `memon run create`/`update` append the current ticket's entry (no `gpus` for whole-node tickets) once; verify with core schema tests, launch-template tests and run CLI tests (per-GPU, whole-node, resumed under a second ticket)
 - [x] 4.6 Update the bundled skills' ticket section (remote login, sync states, `ticket sync`, the duty to record each Run's cluster, resources and ticket, raw outputs staying on the cluster) and the CLI help; verify with the skills build check
-- [ ] 4.7 Live check on a Slurm-held node with the central-hosted Project configured: grant pulls, a Run created in the task is pushed on release and appears in central's checkout, an induced pull failure holds the start command until `ticket sync`; record the result in LOCAL.md
+- [x] 4.7 Live check on a Slurm-held node with the central-hosted Project configured: grant pulls, a Run created in the task is pushed on release and appears in central's checkout, an induced pull failure holds the start command until `ticket sync`; record the result in LOCAL.md
 
 ## Workflow follow-up
 
