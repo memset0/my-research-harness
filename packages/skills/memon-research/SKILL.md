@@ -116,3 +116,32 @@ owner can close/reopen published discussions in the browser. Changes to titles,
 options or descriptions require renewed feedback; recategorization and state
 updates preserve answer validity. Reuse existing content only after a deliberate
 per-project decision; do not automatically convert old Reports.
+
+### Goals, subgoals and work progress
+
+A discussion is the shared workspace for one goal, such as a refactor or a new
+feature. State that goal in one line with frontmatter `goal: <sentence>`. Use
+categories for its sub-topics. Every question then tracks two separate things:
+whether it is settled (`status`), and whether you have built it (`work`).
+
+- `work: TODO | DOING | DONE | SKIP` is yours to maintain; absent means TODO.
+  SKIP means settled with nothing to implement. Mark work only on DECIDED
+  questions or subgoals:
+  `memon --project-root . discussion work D0001/RESULT-STORAGE DONE`.
+  This never acknowledges feedback. `resolve` also accepts `--work <state>`.
+- When the owner only conveyed intent and you settle a detail for them,
+  resolve it yourself; `decided_by` becomes `agent` automatically (it becomes
+  `owner` when resolve acknowledges their answer). Pass `--by` to override.
+  The owner can overturn an agent decision by answering it.
+- Use `type: subgoal` for a work item that needs no answer. It has no options,
+  preference or decision and stays OPEN until DEFERRED or DROPPED; it counts
+  as settled from the start and completes when you mark its work DONE. The
+  owner can still comment on it, so process that feedback like any other.
+  Subgoals need the current CLI: run `memon update` first on older nodes.
+- `memon --project-root . discussion todo` lists settled, unfinished units in
+  OPEN discussions: your work queue. `discussion show` includes `progress`.
+- Cite the Reports that back a question with `refs: [R0012, R0014#heading]` in
+  its fence, or with relative Markdown links to the Report from its
+  description or your replies. Cite the same Report as often as it is
+  relevant; each Report page lists the questions that cite it. Unknown refs are
+  reported by refresh.

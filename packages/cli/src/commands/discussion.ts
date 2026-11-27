@@ -5,10 +5,14 @@ import {
   listDiscussions,
   loadDiscussion,
   pendingDiscussionResponses,
+  progressSegment,
+  type QuestionDecider,
   type QuestionStatus,
+  type QuestionWorkState,
   replyToDiscussion,
   resolveDiscussionQuestion,
   setDiscussionStatus,
+  setDiscussionWork,
 } from '@memon/core'
 import type { Command } from 'commander'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
@@ -26,12 +30,14 @@ export async function runDiscussion(
     decision?: string
     note?: string
     text?: string
+    work?: string
+    by?: string
     expectedMtime?: number
     expectedHash?: string
   } = {},
 ) {
   const root = singleProjectRoot(await resolveContext(globals))
-  const mutate = ['create', 'status', 'resolve', 'reply'].includes(action)
+  const mutate = ['create', 'status', 'resolve', 'reply', 'work'].includes(action)
   const work = async () => {
     switch (action) {
       case 'create':
@@ -54,10 +60,40 @@ export async function runDiscussion(
           status: options.status as QuestionStatus,
           decision,
           note: options.note,
+          work: options.work as QuestionWorkState | undefined,
+          by: options.by as QuestionDecider | undefined,
           expectedMtime: options.expectedMtime,
           expectedHash: options.expectedHash,
         })
       }
+      case 'work':
+        return setDiscussionWork(
+          root,
+          target!,
+          options.work as QuestionWorkState,
+          options.expectedMtime !== undefined && options.expectedHash !== undefined
+            ? { mtime: options.expectedMtime, hash: options.expectedHash }
+            : undefined,
+        )
+      case 'todo':
+        // The agent's work queue: settled units in OPEN discussions that are not complete yet.
+        return {
+          todo: (await listDiscussions(root, true))
+            .filter((d) => d.status === 'OPEN')
+            .flatMap((d) =>
+              d.questions
+                .filter((q) => q.id && progressSegment(q) === 'awaitingWork')
+                .map((q) => ({
+                  target: `${d.id}/${q.id}`,
+                  discussion: d.id,
+                  title: q.title,
+                  category: q.category,
+                  type: q.type,
+                  work: q.work ?? 'TODO',
+                  ...(q.decision === undefined ? {} : { decision: q.decision }),
+                })),
+            ),
+        }
       case 'reply':
         return replyToDiscussion(root, target!, options.text!)
       case 'show':
@@ -139,9 +175,26 @@ export function registerDiscussionCommands(program: Command, globals: () => Glob
     .requiredOption('--status <status>', 'OPEN|DECIDED|DEFERRED|DROPPED')
     .option('--decision <value>', 'option ID, text, boolean or JSON array')
     .option('--note <text>', 'decision rationale and acknowledgement note')
+    .option('--work <state>', 'also set implementation state: TODO|DOING|DONE|SKIP')
+    .option(
+      '--by <decider>',
+      'owner|agent; default owner when owner feedback is acknowledged, else agent',
+    )
     .option('--expected-mtime <ms>', 'explicit document mtime guard', Number)
     .option('--expected-hash <hash>', 'explicit document hash guard')
     .action((target: string, opts) => runDiscussion(globals(), 'resolve', target, opts))
+  command
+    .command('work <target> <state>')
+    .description('set implementation state TODO|DOING|DONE|SKIP; acknowledges nothing')
+    .option('--expected-mtime <ms>', 'explicit document mtime guard', Number)
+    .option('--expected-hash <hash>', 'explicit document hash guard')
+    .action((target: string, state: string, opts) =>
+      runDiscussion(globals(), 'work', target, { ...opts, work: state }),
+    )
+  command
+    .command('todo')
+    .description('settled but unfinished units in OPEN discussions (the agent work queue)')
+    .action(() => runDiscussion(globals(), 'todo'))
   command
     .command('reply <target> <text>')
     .action((target: string, text: string) => runDiscussion(globals(), 'reply', target, { text }))

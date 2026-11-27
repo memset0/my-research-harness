@@ -25,7 +25,7 @@ Today, a DECIDED question reads as "finished" even when nothing has been impleme
   - Relative Markdown links to Report bundles in question descriptions and agent replies also count as references.
   - Refresh publishes references in `discussions.json`. Each Report page lists the published discussions and questions that reference it, and the same Report may be cited any number of times.
 - **Progress**:
-  - The discussion header shows a segmented progress bar: completed · settled awaiting work · waiting for the owner · awaiting the agent's response · other unsettled.
+  - The discussion header shows two progress bars, settled and completed, with the remaining buckets (waiting for the owner, awaiting the agent, settled awaiting work, other unsettled) as a short text summary.
   - DROPPED is excluded from the count. DEFERRED is shown beside the bar but not counted.
   - Discussion list rows show a compact settled/completed summary.
 - **CLI**:

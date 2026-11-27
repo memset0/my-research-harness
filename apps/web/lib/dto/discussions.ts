@@ -1,4 +1,4 @@
-import type { DiscussionDocument, listDiscussions } from '@memon/core'
+import type { DiscussionDocument, discussionCitations, listDiscussions } from '@memon/core'
 export interface DiscussionComparison {
   before: string
   after: string
@@ -8,6 +8,7 @@ export interface DiscussionComparison {
 export type DiscussionDetail = DiscussionDocument & {
   comparisons?: Record<string, DiscussionComparison>
 }
+export type DiscussionCitationsResponse = Awaited<ReturnType<typeof discussionCitations>>
 export interface DiscussionsResponse {
   discussions: Awaited<ReturnType<typeof listDiscussions>>
 }

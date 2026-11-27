@@ -23,13 +23,19 @@ import {
   parseDiscussion,
   parseDiscussionEvents,
   pendingDiscussionResponses,
+  QUESTION_WORK_STATES,
+  type QuestionDecider,
   QuestionMetadataSchema,
   type QuestionStatus,
+  type QuestionWorkState,
   questionDisplayStatus,
   questionHistory,
+  questionSettled,
   responseWithSection,
   validateDiscussionAnswer,
 } from './model.js'
+import { deriveDiscussionProgress, progressSegment } from './progress.js'
+import { type ReportRegistration, resolveDiscussionRefs } from './refs.js'
 
 export class DiscussionError extends Error {
   constructor(
@@ -74,6 +80,28 @@ export async function discussionRegistrations(root: string) {
     )
   }
 }
+/**
+ * Published Report registrations for citation titles. A missing or unreadable Reports catalog
+ * yields none, so citations show as unresolved instead of failing the discussion read.
+ */
+export async function reportRegistrations(root: string): Promise<ReportRegistration[]> {
+  try {
+    const resolved = await resolveProjectResource(root, '.memon/index/reports.json', {
+      forCreate: true,
+    })
+    if (!resolved.exists) return []
+    const catalog = ProjectCatalogSchema.parse(JSON.parse(await fs.readFile(resolved.path, 'utf8')))
+    if (catalog.kind !== 'reports') return []
+    return catalog.entries.map((e) => ({
+      id: e.id,
+      resource: e.resource,
+      title: String(e.summary.title ?? e.id),
+    }))
+  } catch (e) {
+    if (isFileAccessError(e)) throw e
+    return []
+  }
+}
 export async function loadDiscussion(root: string, id: string, allowDraft = false) {
   if (!DISCUSSION_ID.test(id))
     throw new DiscussionError('BAD_REQUEST', 'Use a padded discussion ID such as D0001')
@@ -91,17 +119,42 @@ export async function loadDiscussion(root: string, id: string, allowDraft = fals
   const logResource = `${dirname(entry.resource)}/responses.jsonl`
   const log = await optionalText(root, logResource)
   const history = parseDiscussionEvents(log)
-  const questions = parsed.questions.map((q) => ({
-    ...q,
-    displayStatus: questionDisplayStatus(q, history.events),
-    history: questionHistory(q, history.events),
-  }))
+  const cited = resolveDiscussionRefs(
+    entry.resource,
+    parsed.questions,
+    history.events,
+    await reportRegistrations(root),
+  )
+  const questions = parsed.questions.map((q) => {
+    const displayStatus = questionDisplayStatus(q, history.events)
+    return {
+      ...q,
+      displayStatus,
+      segment: progressSegment({
+        type: q.metadata?.type,
+        status: q.metadata?.status,
+        work: q.metadata?.work,
+        displayStatus,
+      }),
+      history: questionHistory(q, history.events),
+      refs: (q.metadata && cited.refs.get(q.metadata.id)) || [],
+    }
+  })
   return {
     id,
     slug: entry.slug,
     resource: entry.resource,
     ...parsed,
+    diagnostics: [...parsed.diagnostics, ...cited.diagnostics],
     questions,
+    progress: deriveDiscussionProgress(
+      questions.map((q) => ({
+        type: q.metadata?.type,
+        status: q.metadata?.status,
+        work: q.metadata?.work,
+        displayStatus: q.displayStatus,
+      })),
+    ),
     events: history.events,
     historyDiagnostics: history.diagnostics,
     mtime: stat.mtimeMs,
@@ -122,19 +175,21 @@ export async function listDiscussions(root: string, allowDraft = false) {
     const history = parseDiscussionEvents(
       await optionalText(root, `${dirname(entry.resource)}/responses.jsonl`),
     )
+    const questions = summary.questions.map((q) => {
+      const displayStatus = questionDisplayStatus(
+        {
+          metadata: q.id && q.status ? { id: q.id, status: q.status, type: q.type } : null,
+          snapshot: q.snapshot,
+        },
+        history.events,
+      )
+      return { ...q, displayStatus, segment: progressSegment({ ...q, displayStatus }) }
+    })
     summaries.push({
       ...summary,
       historyDiagnostics: history.diagnostics,
-      questions: summary.questions.map((q) => ({
-        ...q,
-        displayStatus: questionDisplayStatus(
-          {
-            metadata: q.id && q.status ? { id: q.id, status: q.status } : null,
-            snapshot: q.snapshot,
-          },
-          history.events,
-        ),
-      })),
+      questions,
+      progress: deriveDiscussionProgress(questions),
     })
   }
   return summaries
@@ -350,6 +405,49 @@ export async function createDiscussion(root: string, slug: string, title: string
     return loadDiscussion(root, id, true)
   })
 }
+function questionTarget(target: string): [string, string] {
+  const [id, questionId, extra] = target.split('/')
+  if (!id || !questionId || extra) throw new DiscussionError('BAD_REQUEST', 'Use D0001/QUESTION-ID')
+  return [id, questionId]
+}
+/**
+ * Rewrite fields of one question fence under mtime-and-hash locking. `undefined` leaves a field
+ * alone and `null` removes it; every byte outside that fence is preserved.
+ */
+async function writeQuestionFields(
+  root: string,
+  doc: DiscussionDocument,
+  q: DiscussionDocument['questions'][number],
+  fields: Record<string, unknown>,
+  expected: { mtime: number; hash: string },
+) {
+  try {
+    const merged: Record<string, unknown> = { ...q.metadata }
+    for (const [key, value] of Object.entries(fields))
+      if (value === null) delete merged[key]
+      else if (value !== undefined) merged[key] = value
+    QuestionMetadataSchema.parse(merged)
+  } catch (e) {
+    throw new DiscussionError('BAD_REQUEST', String(e))
+  }
+  const fence = doc.source.slice(q.fenceStart, q.fenceEnd)
+  const begin = fence.indexOf('\n') + 1,
+    end = fence.lastIndexOf('\n')
+  const yaml = parseDocument(fence.slice(begin, end))
+  for (const [key, value] of Object.entries(fields))
+    if (value === null) yaml.delete(key)
+    else if (value !== undefined) yaml.set(key, value)
+  const newline = fence.includes('\r\n') ? '\r\n' : '\n'
+  const content = yaml.toString().trimEnd().replace(/\r?\n/g, newline)
+  const next =
+    doc.source.slice(0, q.fenceStart) +
+    fence.slice(0, begin) +
+    content +
+    newline +
+    fence.slice(end + 1) +
+    doc.source.slice(q.fenceEnd)
+  await guardedSourceWrite(root, doc.resource, next, expected)
+}
 export async function resolveDiscussionQuestion(
   root: string,
   target: string,
@@ -357,49 +455,35 @@ export async function resolveDiscussionQuestion(
     status: QuestionStatus
     decision?: unknown
     note?: string
+    work?: QuestionWorkState
+    by?: QuestionDecider
     expectedMtime?: number
     expectedHash?: string
   },
 ) {
-  const [id, questionId, extra] = target.split('/')
-  if (!id || !questionId || extra) throw new DiscussionError('BAD_REQUEST', 'Use D0001/QUESTION-ID')
+  const [id, questionId] = questionTarget(target)
   return freshDiscussionWork(() =>
     withFileWriterLock(root, async () => {
       const doc = await loadDiscussion(root, id, true)
       const q = doc.questions.find((q) => q.metadata?.id === questionId)
       if (!q?.metadata) throw new DiscussionError('BAD_REQUEST', 'Question is missing or invalid')
-      let metadata: ReturnType<typeof QuestionMetadataSchema.parse>
-      try {
-        metadata = QuestionMetadataSchema.parse({
-          ...q.metadata,
-          status: input.status,
-          ...(input.decision === undefined ? {} : { decision: input.decision }),
-          ...(input.note === undefined ? {} : { rationale: input.note }),
-        })
-      } catch (e) {
-        throw new DiscussionError('BAD_REQUEST', String(e))
-      }
-      const fence = doc.source.slice(q.fenceStart, q.fenceEnd)
-      const begin = fence.indexOf('\n') + 1,
-        end = fence.lastIndexOf('\n')
-      const yaml = parseDocument(fence.slice(begin, end))
-      yaml.set('status', metadata.status)
-      if (input.decision !== undefined) yaml.set('decision', metadata.decision)
-      if (input.note !== undefined) yaml.set('rationale', input.note)
-      const newline = fence.includes('\r\n') ? '\r\n' : '\n'
-      const content = yaml.toString().trimEnd().replace(/\r?\n/g, newline)
-      const next =
-        doc.source.slice(0, q.fenceStart) +
-        fence.slice(0, begin) +
-        content +
-        newline +
-        fence.slice(end + 1) +
-        doc.source.slice(q.fenceEnd)
       const pending = pendingDiscussionResponses(q.history)
-      await guardedSourceWrite(root, doc.resource, next, {
-        mtime: input.expectedMtime ?? doc.mtime,
-        hash: input.expectedHash ?? doc.hash,
-      })
+      // Who settled it: the owner when this resolve processes their feedback, else the agent.
+      const decidedBy =
+        input.status === 'DECIDED' ? (input.by ?? (pending.length ? 'owner' : 'agent')) : null
+      await writeQuestionFields(
+        root,
+        doc,
+        q,
+        {
+          status: input.status,
+          decision: input.decision,
+          rationale: input.note,
+          work: input.work,
+          decided_by: q.metadata.type === 'subgoal' ? undefined : decidedBy,
+        },
+        { mtime: input.expectedMtime ?? doc.mtime, hash: input.expectedHash ?? doc.hash },
+      )
       const acked: string[] = []
       try {
         for (const r of pending) {
@@ -429,6 +513,41 @@ export async function resolveDiscussionQuestion(
     }),
   )
 }
+/** Set one question's implementation state; never acknowledges feedback. */
+export async function setDiscussionWork(
+  root: string,
+  target: string,
+  work: QuestionWorkState,
+  expected?: { mtime: number; hash: string },
+) {
+  if (!QUESTION_WORK_STATES.includes(work))
+    throw new DiscussionError(
+      'BAD_REQUEST',
+      `work must be one of ${QUESTION_WORK_STATES.join(', ')}`,
+    )
+  const [id, questionId] = questionTarget(target)
+  return freshDiscussionWork(() =>
+    withFileWriterLock(root, async () => {
+      const doc = await loadDiscussion(root, id, true)
+      const q = doc.questions.find((q) => q.metadata?.id === questionId)
+      if (!q?.metadata) throw new DiscussionError('BAD_REQUEST', 'Question is missing or invalid')
+      if ((work === 'DOING' || work === 'DONE') && !questionSettled(q.metadata))
+        throw new DiscussionError(
+          'BAD_REQUEST',
+          `work ${work} requires a DECIDED question or a subgoal; resolve it first`,
+        )
+      await writeQuestionFields(root, doc, q, { work }, expected ?? doc)
+      try {
+        await publishDiscussionCatalog(root)
+      } catch (e) {
+        throw new DiscussionError('PARTIAL', 'Work saved; run memon refresh to republish', {
+          cause: String(e),
+        })
+      }
+      return loadDiscussion(root, id, true)
+    }),
+  )
+}
 export async function replyToDiscussion(root: string, target: string, text: string) {
   const [id, questionId, extra] = target.split('/')
   if (!id || !questionId || extra || !text.trim())
@@ -444,5 +563,37 @@ export async function replyToDiscussion(root: string, target: string, text: stri
     by: 'agent',
     text: text.trim(),
   })
+  // Replies can cite Reports, so the published citation index follows them.
+  try {
+    await publishDiscussionCatalog(root)
+  } catch (e) {
+    throw new DiscussionError('PARTIAL', 'Reply saved; run memon refresh to republish', {
+      cause: String(e),
+    })
+  }
   return loadDiscussion(root, id, true)
+}
+/**
+ * Questions in published (OPEN/CLOSED) discussions that cite one Report, from catalog
+ * registrations only. Drafts never appear.
+ */
+export async function discussionCitations(root: string, report: string) {
+  if (!/^R\d{4}$/.test(report))
+    throw new DiscussionError('BAD_REQUEST', 'Use a padded Report ID such as R0001')
+  const citations = []
+  for (const d of await listDiscussions(root))
+    for (const q of d.questions) {
+      const refs = (q.refs ?? []).filter((r) => r.report === report)
+      if (!q.id || !refs.length) continue
+      citations.push({
+        discussion: d.id,
+        discussionTitle: d.title,
+        discussionStatus: d.status,
+        question: q.id,
+        title: q.title,
+        displayStatus: q.displayStatus,
+        anchors: [...new Set(refs.flatMap((r) => (r.anchor ? [r.anchor] : [])))],
+      })
+    }
+  return { report, citations }
 }

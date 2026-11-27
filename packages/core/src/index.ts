@@ -92,6 +92,8 @@ export {
 } from './discovery/stale.js'
 export * from './discussion/append.js'
 export * from './discussion/model.js'
+export * from './discussion/progress.js'
+export * from './discussion/refs.js'
 export * from './discussion/store.js'
 export { type ParsedDuration, parseDuration } from './duration.js'
 export type { DiscoverExperimentsResult } from './experiments/discover.js'

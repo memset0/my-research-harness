@@ -39,6 +39,10 @@ describe('document-scoped targets', () => {
       '/api/reports/R0005?host=host-a&project=project-x',
     ])
       expect(covers(wiki, path)).toBe(false)
+    // Discussion citations name other documents, so a Report-only grant never covers them.
+    expect(
+      covers(report, '/api/discussions/citations?host=host-a&project=project-x&report=R0005'),
+    ).toBe(false)
   })
 
   it('admits a shared Report and its assets', () => {

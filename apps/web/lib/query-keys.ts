@@ -29,6 +29,9 @@ export const queryKeys = {
   discussions: (project: ProjectTarget) => ['discussions', ...projectQueryKey(project)] as const,
   discussion: (project: ProjectTarget, id: string) =>
     ['discussion', ...projectQueryKey(project), id] as const,
+  /** Published discussion questions citing one Report. */
+  discussionCitations: (project: ProjectTarget, report: string) =>
+    ['discussion-citations', ...projectQueryKey(project), report] as const,
   // Global
   projects: () => ['projects'] as const,
   hosts: () => ['hosts'] as const,

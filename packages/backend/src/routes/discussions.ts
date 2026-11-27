@@ -6,7 +6,7 @@ import {
 import { BACKEND_API_PREFIX } from '../http/paths.js'
 import { type BackendRoute, httpError } from '../http/pipeline.js'
 import { readBoundedJsonRequest, writeJson } from '../http/respond.js'
-import { editMutating, op, parse, projectQuery, read, requireProject } from './shared.js'
+import { editMutating, op, parse, projectQuery, read, required, requireProject } from './shared.js'
 
 const idParam = parse((v) => /^D\d{4}$/.test(v))
 const failure = httpError(500, 'INTERNAL', 'Discussion operation failed')
@@ -20,6 +20,27 @@ function validated<T>(schema: { parse(value: unknown): T }, value: unknown): T {
   }
 }
 export const DISCUSSION_ROUTES: readonly BackendRoute[] = [
+  {
+    key: `${BACKEND_API_PREFIX}/discussions/citations`,
+    query: projectQuery({ report: required((v) => /^R\d{4}$/.test(v)) }),
+    operations: {
+      GET: op(read, {
+        project: 'query',
+        available: requireProject(({ options }) => !!options.documentService?.discussionCitations),
+        failure,
+        handle: async (ctx) => {
+          writeJson(
+            ctx.response,
+            200,
+            await ctx.options.documentService!.discussionCitations!(
+              ctx.project!,
+              ctx.search.get('report')!,
+            ),
+          )
+        },
+      }),
+    },
+  },
   {
     key: `${BACKEND_API_PREFIX}/discussions`,
     query: projectQuery(),

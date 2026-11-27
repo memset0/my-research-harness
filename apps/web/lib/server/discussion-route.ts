@@ -5,11 +5,34 @@ import {
   DiscussionStatusInputSchema,
 } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
-import type { DiscussionDetail, DiscussionsResponse } from '../dto/discussions'
+import type {
+  DiscussionCitationsResponse,
+  DiscussionDetail,
+  DiscussionsResponse,
+} from '../dto/discussions'
 import { getRuntime } from './runtime'
 import { standaloneError } from './standalone-error'
 import { standaloneServices } from './standalone-services'
 
+/** Published discussion questions that cite one Report. */
+export async function discussionCitationsRoute(request: NextRequest) {
+  try {
+    const search = new URL(request.url).searchParams
+    const project = search.get('project'),
+      report = search.get('report')
+    if (!project || !report || !/^R\d{4}$/.test(report))
+      throw new DiscussionError('BAD_REQUEST', 'Provide a Project and padded Report ID')
+    const rt = await getRuntime()
+    return NextResponse.json(
+      (await standaloneServices(rt.config).documents.discussionCitations(
+        project,
+        report,
+      )) satisfies DiscussionCitationsResponse,
+    )
+  } catch (error) {
+    return standaloneError(error)
+  }
+}
 export async function discussionRoute(
   request: NextRequest,
   id?: string,

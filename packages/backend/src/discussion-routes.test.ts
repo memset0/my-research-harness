@@ -4,6 +4,7 @@ import {
   ActorContextSchema,
   type ProjectConfig,
   publishDiscussionCatalog,
+  publishReportCatalog,
 } from '@memon/core'
 import {
   actorHeader,
@@ -126,4 +127,78 @@ it('serves registered published discussions, rejects drafts, stale answers and v
       })
     ).status,
   ).toBe(409)
+})
+
+it('lists published discussion questions citing a Report and omits drafts', async () => {
+  const cited =
+    '---\ntitle: Refactor\nstatus: OPEN\ngoal: Ship it\n---\n## Cache\n```question\nid: CACHE\ntype: subgoal\ncategory: impl\nstatus: OPEN\nwork: DONE\nrefs: ["R0012#numbers"]\n```\n\nSee [bench](../../reports/R0012-bench/).\n'
+  const p = await createTempProject({
+    files: {
+      '.memon/project.yml': 'schema_version: 1\n',
+      'docs/reports/R0012-bench/README.md': '---\ntitle: Bench\n---\n\n# Bench\n',
+      'docs/discussions/D0001-refactor/README.md': cited,
+      'docs/discussions/D0002-draft/README.md': cited.replace('status: OPEN', 'status: DRAFT'),
+    },
+  })
+  await publishReportCatalog(p.root)
+  await publishDiscussionCatalog(p.root)
+  const service = new FilesystemDocumentService([
+    { name: 'project-a', root: p.root, include: [], exclude: [], storage: 'local' },
+  ])
+  const token = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+  const server = createBackendServer({
+    hostId: 'host-a',
+    serviceTokens: { current: token },
+    capabilities: {
+      projects: true,
+      mutations: true,
+      events: true,
+      logStreaming: true,
+      reportAssets: true,
+      wikiAssets: true,
+      git: false,
+      shares: false,
+      slurm: false,
+    },
+    instanceEpoch: '123e4567-e89b-42d3-a456-426614174000',
+    documentService: service,
+    eventStream: new BackendEventStream({ instanceEpoch: '123e4567-e89b-42d3-a456-426614174000' }),
+  })
+  const origin = await startBackend(server, servers)
+  const request = createBackendRequest<ActorContext>({
+    origin: () => origin,
+    token,
+    actorHeaderName: BACKEND_ACTOR_CONTEXT_HEADER,
+  })
+  const owner = ActorContextSchema.parse({ role: 'owner' })
+  const response = await request(
+    '/api/backend/v1/discussions/citations?project=project-a&report=R0012',
+    { actor: owner },
+  )
+  expect(response.status).toBe(200)
+  expect(await response.json()).toEqual({
+    report: 'R0012',
+    citations: [
+      {
+        discussion: 'D0001',
+        discussionTitle: 'Refactor',
+        discussionStatus: 'OPEN',
+        question: 'CACHE',
+        title: 'Cache',
+        displayStatus: 'OPEN',
+        anchors: ['numbers'],
+      },
+    ],
+  })
+  const list = (await (
+    await request('/api/backend/v1/discussions?project=project-a', { actor: owner })
+  ).json()) as { discussions: { goal?: string; progress: { completed: number } }[] }
+  expect(list.discussions[0]).toMatchObject({ goal: 'Ship it', progress: { completed: 1 } })
+  expect(
+    (
+      await request('/api/backend/v1/discussions/citations?project=project-a&report=12', {
+        actor: owner,
+      })
+    ).status,
+  ).toBeGreaterThanOrEqual(400)
 })

@@ -51,7 +51,7 @@ In addition to choice, multi, confirm and text, a question SHALL accept `type: s
 - **THEN** refresh and show report a diagnostic with its source line and the website renders an error card
 
 ### Requirement: Questions cite Reports
-A question SHALL accept optional `refs`: a list of Report IDs (`R<NNNN>`), each optionally followed by `#<heading-anchor>`. Relative Markdown links that resolve to a registered Report bundle SHALL also count as references when they appear in question descriptions or agent replies. The same Report MAY be cited any number of times. A ref to an unregistered Report SHALL be reported as a diagnostic.
+A question SHALL accept optional `refs`: a list of Report IDs (`R<NNNN>`), each optionally followed by `#<heading-anchor>`. A card SHALL show one badge per cited Report and anchor. Relative Markdown links that resolve to a registered Report bundle SHALL also count as references when they appear in question descriptions or agent replies. The same Report MAY be cited any number of times. A ref to an unregistered Report SHALL be reported as a diagnostic.
 
 #### Scenario: Structured references render as badges
 - **WHEN** a question lists `refs: [R0012, R0014#benchmarks]` and both Reports are registered
@@ -92,11 +92,11 @@ A discussion SHALL derive progress over its countable units: every question exce
 - **THEN** after the response is accepted, that unit moves from waiting for the owner to awaiting the agent without an agent refresh
 
 ### Requirement: Browser renders progress compactly
-The discussion header SHALL show one segmented progress bar with a text summary of settled and completed counts. Each list row SHALL show the same counts compactly, and the waiting-for-owner count SHALL be the most prominent. The question overview SHALL let readers filter by work state. Cards SHALL show work, decider and reference badges. Owners SHALL NOT edit `work` from the browser.
+The discussion header SHALL show two progress bars, settled and completed, each with its count, plus a text summary of the remaining buckets. Each list row SHALL show the same counts compactly, and the waiting-for-owner count SHALL be the most prominent. The question overview SHALL let readers filter by work state. Cards SHALL show work, decider and reference badges. Owners SHALL NOT edit `work` from the browser.
 
 #### Scenario: Read progress at a glance
 - **WHEN** the owner opens a discussion page on desktop or a 390px viewport
-- **THEN** the header shows the segmented bar and the settled/completed summary without overflow, built from existing shadcn primitives
+- **THEN** the header shows the settled and completed bars with their counts and the remaining-bucket summary without overflow, built from existing shadcn primitives
 
 #### Scenario: Filter to unfinished work
 - **WHEN** a reader selects the "awaiting work" filter in the overview

@@ -61,7 +61,7 @@ It applies the spec's partition in a fixed order:
 
 Pending feedback therefore wins over awaiting work: a settled question with a new owner comment counts under awaiting agent. Invalid questions are not counted, and a separate diagnostics count shows them.
 
-`show`, the backend detail DTO and the catalog summary all call the same function. List rows use catalog counts recomputed with live response logs, which lists already read on demand, so an owner answer moves a unit immediately.
+Progress is never stored. The catalog carries the inputs it needs per question (`type`, `status`, `work`), and detail reads, list summaries and `show` derive progress from those plus the live response log, which lists already read on demand. An owner answer therefore moves a unit immediately, and a published progress value cannot go stale.
 
 ### Reference resolution
 
@@ -87,9 +87,9 @@ Factor the existing fence YAML round trip out of `resolveDiscussionQuestion` int
 
 All UI uses stock primitives; none is forked:
 
-- **Header**: the goal line (muted text) and a segmented bar. The bar is composed of one shadcn `Progress` per segment in a flex row, or the stock bar with stacked indicator spans in a wrapper component, with a `Tooltip` per segment. A mono summary follows: `settled 4/6 · done 2/6 · 1 waiting for you`.
+- **Header**: the goal line (muted text with a Target icon), then two stock shadcn `Progress` bars, settled and completed, each with an `n/total` count. A single segmented bar was considered, but it needs hand-built segment markup, while two bars map one-to-one onto the owner's two axes. A summary line follows: a "N waiting for you" Badge, then the other buckets in words.
 - **List rows**: a compact summary line plus the existing waiting Badge.
-- **Cards**: a work Badge (icon plus label), an "agent decided" outline Badge, and ref Badges (`asChild` Link, title from the Reports catalog) in the metadata row.
+- **Cards**: a work Badge (icon plus label), an "agent decided" outline Badge, and a Reports row of ref Badges (`asChild` Link, title from the Reports catalog). The row shows one badge per Report and anchor even when both `refs` and a link cite it; unresolved `refs` entries render as destructive Badges.
 - **Subgoal cards**: a Target icon, and only the comment form.
 - **Overview**: the ToggleGroup gains a work-state group (awaiting work / done).
 - **Report page**: a compact "Referenced by" Item list.

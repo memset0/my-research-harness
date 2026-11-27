@@ -44,6 +44,7 @@ import { DocumentHeader } from './document-header'
 import { FrontmatterPanel } from './frontmatter-panel'
 import { Markdown } from './markdown'
 import { ReadmeMonaco } from './readme-monaco'
+import { ReportDiscussionCitations } from './report-discussion-citations'
 import { ReportHtmlHostContext, ReportHtmlZoomProvider } from './report-html-embed'
 import { useIsDocumentOnlyViewer } from './session-provider'
 import { ListSkeleton } from './skeletons'
@@ -491,6 +492,9 @@ function SelectedItemPane({
                   : undefined
               }
             />
+            {kind === 'reports' && (
+              <ReportDiscussionCitations project={project} reportId={selectedId} />
+            )}
           </div>
         </div>
         {editable && editing && (

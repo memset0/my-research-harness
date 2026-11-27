@@ -33,6 +33,7 @@ import {
   DocumentTitleError,
   deriveCompletion,
   discoverRuns,
+  discussionCitations,
   discussionRegistrations,
   EXPERIMENT_REF_REGEX,
   type Experiment,
@@ -128,6 +129,7 @@ export type BackendWikiWriteResult = BackendWikiWriteResponse | BackendWikiConfl
 export interface BackendDocumentService {
   listDiscussions?(project: string): Promise<unknown>
   getDiscussion?(project: string, id: string): Promise<unknown>
+  discussionCitations?(project: string, report: string): Promise<unknown>
   respondDiscussion?(
     project: string,
     id: string,
@@ -339,6 +341,10 @@ export class FilesystemDocumentService implements BackendDocumentService {
   async listDiscussions(projectName: string) {
     const project = await this.discussionProject(projectName)
     return { discussions: await listDiscussions(project.root) }
+  }
+  async discussionCitations(projectName: string, report: string) {
+    const project = await this.discussionProject(projectName)
+    return discussionCitations(project.root, report)
   }
   async getDiscussion(projectName: string, id: string) {
     const project = await this.discussionProject(projectName, id)

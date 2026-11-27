@@ -16,11 +16,20 @@ export const DISCUSSION_DIRECTORY = /^D\d{4}-[a-z0-9]+(?:-[a-z0-9]+)*$/
 export type { DiscussionStatus, QuestionStatus } from '../types.js'
 export { DISCUSSION_STATUSES, QUESTION_STATUSES } from '../types.js'
 export type QuestionDisplayStatus = QuestionStatus | 'ANSWERED' | 'REVISED'
+export const QUESTION_TYPES = ['choice', 'multi', 'confirm', 'text', 'subgoal'] as const
+export type QuestionType = (typeof QUESTION_TYPES)[number]
+/** Implementation progress, written only by agents and independent of decision status. */
+export const QUESTION_WORK_STATES = ['TODO', 'DOING', 'DONE', 'SKIP'] as const
+export type QuestionWorkState = (typeof QUESTION_WORK_STATES)[number]
+export const QUESTION_DECIDERS = ['owner', 'agent'] as const
+export type QuestionDecider = (typeof QUESTION_DECIDERS)[number]
+/** `R0012` or `R0012#heading-anchor`. */
+export const REPORT_REF = /^R\d{4}(?:#[^\s#]{1,200})?$/
 const decisionSchema = z.union([z.string().min(1), z.array(z.string().min(1)).min(1), z.boolean()])
 export const QuestionMetadataSchema = z
   .object({
     id: z.string().regex(QUESTION_ID),
-    type: z.enum(['choice', 'multi', 'confirm', 'text']),
+    type: z.enum(QUESTION_TYPES),
     category: z.string().trim().min(1).max(128),
     status: z.enum(QUESTION_STATUSES),
     options: z
@@ -43,12 +52,24 @@ export const QuestionMetadataSchema = z
       .optional(),
     decision: decisionSchema.optional(),
     rationale: z.string().optional(),
+    work: z.enum(QUESTION_WORK_STATES).optional(),
+    decided_by: z.enum(QUESTION_DECIDERS).optional(),
+    refs: z
+      .array(z.string().regex(REPORT_REF, 'refs entries must look like R0012 or R0012#anchor'))
+      .optional(),
   })
   .passthrough()
   .superRefine((q, ctx) => {
     const options = q.options?.map((o) => o.id) ?? []
     const error = (message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, message })
     if (new Set(options).size !== options.length) error('option IDs must be unique')
+    if (q.type === 'subgoal') {
+      // A subgoal is settled by construction: feedback is comment-only and completion is `work`.
+      if (q.options !== undefined || q.prefer !== undefined || q.decision !== undefined)
+        error('subgoal takes no options, preference or decision')
+      if (q.status === 'DECIDED') error('subgoal status must be OPEN, DEFERRED or DROPPED')
+      return
+    }
     if (['text', 'confirm'].includes(q.type) && q.options !== undefined)
       error('options require choice or multi type')
     if (q.prefer && (q.type === 'text' || !validSelection(q.type, q.prefer.option, options)))
@@ -80,6 +101,10 @@ export interface DiscussionDiagnostic {
   message: string
   question?: string
 }
+/** Settled means no owner decision is outstanding: DECIDED, or a subgoal. */
+export function questionSettled(q: { type?: string | null; status?: string | null }): boolean {
+  return q.type === 'subgoal' || q.status === 'DECIDED'
+}
 export interface DiscussionQuestion {
   title: string
   line: number
@@ -100,6 +125,7 @@ export type DiscussionPart =
 export interface ParsedDiscussion {
   status: DiscussionStatus
   title: string
+  goal?: string
   categories: string[]
   questions: DiscussionQuestion[]
   parts: DiscussionPart[]
@@ -141,10 +167,18 @@ export function parseDiscussion(source: string): ParsedDiscussion {
         title: z.string().trim().min(1),
         status: z.enum(DISCUSSION_STATUSES),
         categories: z.array(z.string().min(1)).optional(),
+        goal: z
+          .string()
+          .trim()
+          .min(1)
+          .max(512)
+          .regex(/^[^\r\n]*$/, 'goal must be one line')
+          .optional(),
       })
       .parse(doc.toJS())
     result.status = fm.status
     result.title = fm.title
+    if (fm.goal) result.goal = fm.goal
     result.categories = [...new Set(fm.categories ?? [])]
   } catch (e) {
     result.diagnostics.push({ line: 1, message: e instanceof Error ? e.message : String(e) })
@@ -191,6 +225,17 @@ export function parseDiscussion(source: string): ParsedDiscussion {
     } catch (e) {
       diagnostics.push({ line, message: e instanceof Error ? e.message : String(e) })
     }
+    // Reported, not fatal: the question still renders but does not count as complete.
+    if (
+      metadata &&
+      (metadata.work === 'DOING' || metadata.work === 'DONE') &&
+      !questionSettled(metadata)
+    )
+      diagnostics.push({
+        line,
+        question: metadata.id,
+        message: `work ${metadata.work} requires a DECIDED question or a subgoal`,
+      })
     const section = source.slice(start, end)
     if (start > cursor)
       result.parts.push({ type: 'prose', markdown: source.slice(cursor, start), start: cursor })
@@ -344,13 +389,17 @@ export function questionHistory(
   )
 }
 export function questionDisplayStatus(
-  q: { metadata: Pick<QuestionMetadata, 'id' | 'status'> | null; snapshot: string },
+  q: {
+    metadata: (Pick<QuestionMetadata, 'id' | 'status'> & { type?: string | null }) | null
+    snapshot: string
+  },
   events: DiscussionEvent[],
 ): QuestionDisplayStatus | 'INVALID' {
   if (!q.metadata) return 'INVALID'
   const history = questionHistory(q, events)
   const latest = history.filter((e): e is DiscussionResponse => e.type === 'response').at(-1)
-  if (latest && latest.snapshot !== q.snapshot) return 'REVISED'
+  // A subgoal comment asks for nothing to reconfirm, so a later edit never revises it.
+  if (latest && latest.snapshot !== q.snapshot && q.metadata.type !== 'subgoal') return 'REVISED'
   if (pendingDiscussionResponses(history).length) return 'ANSWERED'
   return q.metadata.status
 }
@@ -370,12 +419,16 @@ export function validateDiscussionAnswer(
     .parse(input)
   const keys = ['choice', 'choices', 'confirm', 'text'] as const
   const present = keys.filter((k) => answer[k] !== undefined)
+  if (q.type === 'subgoal') {
+    if (present.length || !answer.comment) throw new Error('subgoal feedback must be a comment')
+    return answer
+  }
   const expected = { choice: 'choice', multi: 'choices', confirm: 'confirm', text: 'text' } as const
   if (
     present.length > 1 ||
     (present.length === 0 && !answer.comment) ||
     (present.length === 1 &&
-      (present[0] !== expected[q.type] ||
+      (present[0] !== expected[q.type as keyof typeof expected] ||
         !validSelection(q.type, answer[present[0]!], q.options?.map((o) => o.id) ?? [])))
   )
     throw new Error('answer must match the question type and declared options')
@@ -397,11 +450,21 @@ export function responseWithSection(
   return { ...response, section: kept, section_truncated: kept !== section }
 }
 
+/** A resolved Report citation; `source` says whether it came from `refs` or a Markdown link. */
+export const DiscussionRefSchema = z.object({
+  report: z.string().regex(/^R\d{4}$/),
+  anchor: z.string().optional(),
+  title: z.string(),
+  resource: z.string(),
+  source: z.enum(['field', 'link']),
+})
+export type DiscussionRef = z.infer<typeof DiscussionRefSchema>
 export const DiscussionSummarySchema = z.object({
   id: z.string().regex(DISCUSSION_ID),
   slug: z.string().min(1),
   resource: z.string().regex(/^docs\/discussions\/D\d{4}-[a-z0-9]+(?:-[a-z0-9]+)*\/README\.md$/),
   title: z.string(),
+  goal: z.string().optional(),
   status: z.enum(DISCUSSION_STATUSES),
   mtime: z.number().finite(),
   categories: z.array(z.string()),
@@ -415,6 +478,11 @@ export const DiscussionSummarySchema = z.object({
       line: z.number().int().positive(),
       decision: decisionSchema.optional(),
       rationale: z.string().optional(),
+      // Optional so catalogs published by earlier CLIs stay readable.
+      type: z.enum(QUESTION_TYPES).optional(),
+      work: z.enum(QUESTION_WORK_STATES).optional(),
+      decided_by: z.enum(QUESTION_DECIDERS).optional(),
+      refs: z.array(DiscussionRefSchema).optional(),
     }),
   ),
   diagnostics: z.array(
@@ -428,12 +496,14 @@ export function summarizeDiscussion(
   resource: string,
   parsed: ParsedDiscussion,
   mtime: number,
+  refs: Map<string, DiscussionRef[]> = new Map(),
 ): DiscussionSummary {
   return DiscussionSummarySchema.parse({
     id,
     slug,
     resource,
     title: parsed.title || id,
+    ...(parsed.goal ? { goal: parsed.goal } : {}),
     status: parsed.status,
     mtime,
     categories: parsed.categories,
@@ -447,6 +517,10 @@ export function summarizeDiscussion(
       line: q.line,
       ...(q.metadata?.decision === undefined ? {} : { decision: q.metadata.decision }),
       ...(q.metadata?.rationale === undefined ? {} : { rationale: q.metadata.rationale }),
+      ...(q.metadata ? { type: q.metadata.type } : {}),
+      ...(q.metadata?.work ? { work: q.metadata.work } : {}),
+      ...(q.metadata?.decided_by ? { decided_by: q.metadata.decided_by } : {}),
+      ...(q.metadata && refs.get(q.metadata.id)?.length ? { refs: refs.get(q.metadata.id) } : {}),
     })),
   })
 }

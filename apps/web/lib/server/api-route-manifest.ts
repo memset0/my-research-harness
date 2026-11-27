@@ -58,6 +58,7 @@ const backend = (
 
 export const API_ROUTE_MANIFEST = {
   'discussions/route.ts': backend(['GET'], 'project-query', 'read'),
+  'discussions/citations/route.ts': backend(['GET'], 'project-query', 'read'),
   'discussions/[id]/route.ts': backend(['GET'], 'resource', 'read'),
   'discussions/[id]/responses/route.ts': {
     ...backend(['POST'], 'resource', 'mutating'),

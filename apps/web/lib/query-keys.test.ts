@@ -38,6 +38,7 @@ describe('queryKeys', () => {
         "commitMarks",
         "contentHealth",
         "discussion",
+        "discussionCitations",
         "discussions",
         "docAsset",
         "experiment",
@@ -811,4 +812,10 @@ it('scopes discussion lists and documents by Host and Project', () => {
     'D0001',
   ])
   expect(queryKeys.discussion(STANDALONE, 'D0001')).toEqual(['discussion', 'project-a', 'D0001'])
+  expect(queryKeys.discussionCitations(HOSTED, 'R0012')).toEqual([
+    'discussion-citations',
+    'host-a',
+    'project-a',
+    'R0012',
+  ])
 })

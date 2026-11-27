@@ -30,6 +30,8 @@ it('exposes the discussion command family and creates/reads an unpublished draft
       'reply',
       'status',
       'decisions',
+      'work',
+      'todo',
     ]),
   )
 })
@@ -78,4 +80,48 @@ it.each([
   )
   expect(result.exitCode, result.stderr).toBe(0)
   expect(result.json.questions[0].metadata.decision).toEqual(expected)
+})
+
+it('marks work, lists the agent work queue and shows progress', async () => {
+  const p = await createTempProject({
+    files: {
+      '.memon/project.yml': 'schema_version: 1\n',
+      'docs/discussions/D0001-design/README.md':
+        '---\ntitle: Design\nstatus: OPEN\ngoal: Ship it\n---\n## Question\n```question\nid: Q\ntype: text\ncategory: design\nstatus: OPEN\n```\n\nEvidence\n\n## Migrate\n```question\nid: MIGRATE\ntype: subgoal\ncategory: impl\nstatus: OPEN\n```\n\nPlan\n',
+    },
+  })
+  await publishDiscussionCatalog(p.root)
+  const globals = { projectRoot: p.root, cwd: p.root, format: 'json' as const }
+  const early = await captureCli(() => runDiscussion(globals, 'work', 'D0001/Q', { work: 'DONE' }))
+  expect(early.exitCode).not.toBe(0)
+  const resolved = await captureCli(() =>
+    runDiscussion(globals, 'resolve', 'D0001/Q', {
+      status: 'DECIDED',
+      decision: 'Agreed',
+      work: 'DOING',
+      by: 'agent',
+    }),
+  )
+  expect(resolved.exitCode, resolved.stderr).toBe(0)
+  expect(resolved.json.questions[0].metadata).toMatchObject({ work: 'DOING', decided_by: 'agent' })
+  const todo = await captureCli(() => runDiscussion(globals, 'todo'))
+  expect(todo.json.todo.map((t: { target: string; work: string }) => [t.target, t.work])).toEqual([
+    ['D0001/Q', 'DOING'],
+    ['D0001/MIGRATE', 'TODO'],
+  ])
+  const done = await captureCli(() =>
+    runDiscussion(globals, 'work', 'D0001/MIGRATE', { work: 'DONE' }),
+  )
+  expect(done.exitCode, done.stderr).toBe(0)
+  const shown = await captureCli(() => runDiscussion(globals, 'show', 'D0001'))
+  expect(shown.json.goal).toBe('Ship it')
+  expect(shown.json.progress).toMatchObject({ counted: 2, completed: 1, awaitingWork: 1 })
+  const stale = await captureCli(() =>
+    runDiscussion(globals, 'work', 'D0001/Q', {
+      work: 'DONE',
+      expectedMtime: 1,
+      expectedHash: 'wrong',
+    }),
+  )
+  expect(stale.exitCode).toBe(9)
 })

@@ -4,15 +4,22 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
   ArrowLeft,
+  Bot,
   Check,
+  CheckCheck,
   ChevronRight,
+  Circle,
   CircleDot,
+  CircleMinus,
+  FileText,
   GitCompare,
+  Hammer,
   Lock,
   MessageSquare,
   MessagesSquare,
   RefreshCw,
   Sparkles,
+  Target,
 } from 'lucide-react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
@@ -27,7 +34,7 @@ import {
   parseDiscussionViewState,
 } from '@/lib/discussion-view-state'
 import type { DiscussionComparison, DiscussionDetail } from '@/lib/dto/discussions'
-import { projectPagePath } from '@/lib/project-routes'
+import { projectPagePath, reportPath } from '@/lib/project-routes'
 import {
   type ProjectTarget,
   projectHost,
@@ -57,6 +64,7 @@ import {
   ItemTitle,
 } from './ui/item'
 import { Label } from './ui/label'
+import { Progress } from './ui/progress'
 import { RadioGroup, RadioGroupItem } from './ui/radio-group'
 import { Separator } from './ui/separator'
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs'
@@ -75,6 +83,65 @@ const LABELS: Record<string, string> = {
   DEFERRED: 'Deferred',
   DROPPED: 'Dropped',
   INVALID: 'Invalid question',
+}
+const WORK_LABELS: Record<string, string> = {
+  TODO: 'To build',
+  DOING: 'In progress',
+  DONE: 'Done',
+  SKIP: 'Nothing to build',
+}
+function WorkIcon({ work }: { work: string }) {
+  if (work === 'DONE') return <CheckCheck aria-hidden="true" />
+  if (work === 'DOING') return <Hammer aria-hidden="true" />
+  if (work === 'SKIP') return <CircleMinus aria-hidden="true" />
+  return <Circle aria-hidden="true" />
+}
+type DiscussionProgressCounts = DiscussionDetail['progress']
+/** Settled and completed as two native progress bars, plus the remaining buckets in words. */
+function GoalProgress({ progress }: { progress: DiscussionProgressCounts }) {
+  if (progress.counted === 0) return null
+  const percent = (n: number) => Math.round((n / progress.counted) * 100)
+  const rest = [
+    progress.awaitingAgent && `${progress.awaitingAgent} awaiting agent`,
+    progress.awaitingWork && `${progress.awaitingWork} to build`,
+    progress.otherUnsettled && `${progress.otherUnsettled} other open`,
+    progress.deferred && `${progress.deferred} deferred`,
+  ].filter(Boolean)
+  return (
+    <section aria-label="Goal progress" className="space-y-1.5" data-discussion-progress>
+      <div className="grid gap-x-4 gap-y-1.5 sm:grid-cols-2">
+        {(
+          [
+            ['Settled', progress.settled],
+            ['Done', progress.completed],
+          ] as const
+        ).map(([label, value]) => (
+          <div key={label} className="space-y-1">
+            <div className="flex items-baseline justify-between text-xs">
+              <span className="font-medium">{label}</span>
+              <span className="font-mono text-muted-foreground tabular-nums">
+                {value}/{progress.counted}
+              </span>
+            </div>
+            <Progress
+              value={percent(value)}
+              aria-label={`${label} ${value} of ${progress.counted}`}
+            />
+          </div>
+        ))}
+      </div>
+      {(rest.length > 0 || progress.waitingOwner > 0) && (
+        <p className="text-xs text-muted-foreground">
+          {progress.waitingOwner > 0 && (
+            <Badge className="mr-1.5 h-4 px-1.5 tabular-nums">
+              {progress.waitingOwner} waiting for you
+            </Badge>
+          )}
+          {rest.join(' · ')}
+        </p>
+      )}
+    </section>
+  )
 }
 function useSavedState<T>(key: string, initial: T) {
   const [value, setValue] = useState(initial),
@@ -132,8 +199,7 @@ const VIEWS = [
   ['CLOSED', 'Closed'],
 ] as const
 type DiscussionSummary = Awaited<ReturnType<typeof fetchDiscussions>>['discussions'][number]
-const waitingQuestion = (q: DiscussionSummary['questions'][number]) =>
-  q.displayStatus === 'OPEN' || q.displayStatus === 'REVISED'
+const waitingQuestion = (q: DiscussionSummary['questions'][number]) => q.segment === 'waitingOwner'
 function inView(d: DiscussionSummary, mode: string) {
   return mode === 'CLOSED'
     ? d.status === 'CLOSED'
@@ -191,7 +257,14 @@ function DiscussionList({ project }: { project: ProjectTarget }) {
               kind: 'discussion',
               number: Number(d.id.slice(1)),
             })
-            const waiting = d.questions.filter(waitingQuestion)
+            const waiting =
+              d.status === 'CLOSED'
+                ? d.questions.filter(
+                    (q) =>
+                      q.type !== 'subgoal' &&
+                      (q.displayStatus === 'OPEN' || q.displayStatus === 'REVISED'),
+                  )
+                : d.questions.filter(waitingQuestion)
             const decided = d.questions.filter((q) => q.status === 'DECIDED')
             const questions = mode === 'waiting' ? waiting : mode === 'decisions' ? decided : []
             return (
@@ -204,8 +277,10 @@ function DiscussionList({ project }: { project: ProjectTarget }) {
                         {d.title}
                       </Link>
                     </ItemTitle>
+                    {d.goal && <ItemDescription className="w-full">{d.goal}</ItemDescription>}
                     <ItemDescription className="font-mono">
-                      {d.id} · {d.questions.length} questions · {decided.length} decided
+                      {d.id} · settled {d.progress.settled}/{d.progress.counted} · done{' '}
+                      {d.progress.completed}/{d.progress.counted}
                     </ItemDescription>
                   </ItemContent>
                   <ItemActions>
@@ -286,6 +361,7 @@ function DiscussionPage({ project, id }: { project: ProjectTarget; id: string })
   const changed = useChanges(doc, storageKey)
   const [category, setCategory] = useSavedState<string>(`${storageKey}:category`, 'all')
   const [status, setStatus] = useSavedState<string>(`${storageKey}:status`, 'all')
+  const [work, setWork] = useSavedState<string>(`${storageKey}:work`, 'all')
   const initialFragment = useRef<string | null>(null)
   useEffect(() => {
     if (!doc || initialFragment.current === storageKey) return
@@ -297,10 +373,11 @@ function DiscussionPage({ project, id }: { project: ProjectTarget; id: string })
       if (!doc.questions.some((q) => (q.metadata?.id ?? `invalid-${q.line}`) === target)) return
       setCategory('all')
       setStatus('all')
+      setWork('all')
       const frame = requestAnimationFrame(() => scrollFragmentIntoSurface(target))
       return () => cancelAnimationFrame(frame)
     } catch {}
-  }, [doc, setCategory, setStatus, storageKey])
+  }, [doc, setCategory, setStatus, setWork, storageKey])
   const [busy, setBusy] = useState(false)
   const refresh = async () => {
     await Promise.all([
@@ -344,7 +421,8 @@ function DiscussionPage({ project, id }: { project: ProjectTarget; id: string })
   ]
   const matches = (q: DiscussionDetail['questions'][number]) =>
     (category === 'all' || (q.metadata?.category ?? 'Uncategorized') === category) &&
-    (status === 'all' || q.displayStatus === status)
+    (status === 'all' || q.displayStatus === status) &&
+    (work === 'all' || q.segment === work)
   const resourceBaseUrl = `/api/doc-assets/${encodeURIComponent(projectName(project))}/${doc.resource.split('/').slice(0, -1).map(encodeURIComponent).join('/')}?${new URLSearchParams(projectHost(project) ? { host: projectHost(project)! } : {})}`
   const markdownProps = {
     project,
@@ -393,6 +471,19 @@ function DiscussionPage({ project, id }: { project: ProjectTarget; id: string })
             </Button>
           )}
         </div>
+        {doc.goal && (
+          <p
+            className="flex items-start gap-1.5 text-sm text-muted-foreground"
+            data-discussion-goal
+          >
+            <Target className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            <span>
+              <span className="sr-only">Goal: </span>
+              {doc.goal}
+            </span>
+          </p>
+        )}
+        <GoalProgress progress={doc.progress} />
         {doc.status === 'CLOSED' && (
           <Alert>
             <Lock />
@@ -458,6 +549,20 @@ function DiscussionPage({ project, id }: { project: ProjectTarget; id: string })
                       {label}
                     </ToggleGroupItem>
                   ))}
+              </ToggleGroup>
+              <Separator orientation="vertical" className="h-4 data-vertical:self-center" />
+              <ToggleGroup
+                type="single"
+                size="sm"
+                variant="outline"
+                value={work}
+                onValueChange={(value) => value && setWork(value)}
+                aria-label="Filter by work"
+                className="flex-wrap"
+              >
+                <ToggleGroupItem value="all">All work</ToggleGroupItem>
+                <ToggleGroupItem value="awaitingWork">To build</ToggleGroupItem>
+                <ToggleGroupItem value="completed">Done</ToggleGroupItem>
               </ToggleGroup>
             </div>
             <Separator />
@@ -574,6 +679,24 @@ export function QuestionCard({
             <StatusIcon status={q.displayStatus} />
             {LABELS[q.displayStatus]}
           </Badge>
+          {metadata &&
+            (metadata.type === 'subgoal' || metadata.status === 'DECIDED' || metadata.work) && (
+              <Badge
+                variant={
+                  metadata.work === 'DONE' || metadata.work === 'SKIP' ? 'secondary' : 'outline'
+                }
+                data-question-work={metadata.work ?? 'TODO'}
+              >
+                <WorkIcon work={metadata.work ?? 'TODO'} />
+                {WORK_LABELS[metadata.work ?? 'TODO']}
+              </Badge>
+            )}
+          {metadata?.status === 'DECIDED' && metadata.decided_by === 'agent' && (
+            <Badge variant="outline">
+              <Bot />
+              Agent decided
+            </Badge>
+          )}
           {metadata && (
             <>
               <Badge variant="secondary">{metadata.category}</Badge>
@@ -590,6 +713,7 @@ export function QuestionCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
+        {metadata && <ReportRefs q={q} project={project} />}
         {!metadata ? (
           <Alert variant="destructive">
             <AlertTriangle />
@@ -752,6 +876,53 @@ export function QuestionCard({
         )}
       </CardContent>
     </Card>
+  )
+}
+/** Report citations as linked badges; `refs` entries that did not resolve show as warnings. */
+function ReportRefs({
+  q,
+  project,
+}: {
+  q: DiscussionDetail['questions'][number]
+  project: ProjectTarget
+}) {
+  const label = (r: { report: string; anchor?: string }) =>
+    r.anchor ? `${r.report}#${r.anchor}` : r.report
+  const resolved = new Set(q.refs.filter((r) => r.source === 'field').map(label))
+  const unresolved = (q.metadata?.refs ?? []).filter((entry) => !resolved.has(entry))
+  // A Report cited both in `refs` and by a link is one citation to the reader.
+  const shown = q.refs.filter(
+    (r, index) => q.refs.findIndex((other) => label(other) === label(r)) === index,
+  )
+  if (!shown.length && !unresolved.length) return null
+  return (
+    <div className="flex flex-wrap items-center gap-1.5" data-question-refs>
+      <span className="text-xs text-muted-foreground">Reports</span>
+      {shown.map((r) => (
+        <Badge
+          key={label(r)}
+          variant="outline"
+          className="h-auto max-w-full py-0.5 whitespace-normal"
+          asChild
+        >
+          <Link
+            href={`${reportPath(projectRouteTarget(project), r.report)}${r.anchor ? `#${encodeURIComponent(r.anchor)}` : ''}`}
+            data-report-ref={r.report}
+          >
+            <FileText aria-hidden="true" />
+            <span className="font-mono">{r.report}</span>
+            {r.title}
+            {r.anchor && <span className="text-muted-foreground">#{r.anchor}</span>}
+          </Link>
+        </Badge>
+      ))}
+      {unresolved.map((entry) => (
+        <Badge key={`missing:${entry}`} variant="destructive" title="Not a registered Report">
+          <AlertTriangle aria-hidden="true" />
+          {entry}
+        </Badge>
+      ))}
+    </div>
   )
 }
 function Comparison({ comparison }: { comparison?: DiscussionComparison }) {
@@ -966,7 +1137,11 @@ export function AnswerForm({
           id={`${question.id}-comment`}
           value={comment}
           onChange={(event) => setComment(event.target.value)}
-          placeholder="Add context, ask a question or explain your choice"
+          placeholder={
+            question.type === 'subgoal'
+              ? 'Annotate this subgoal or tell the agent what to change'
+              : 'Add context, ask a question or explain your choice'
+          }
           rows={2}
         />
       </div>
@@ -998,7 +1173,7 @@ export function AnswerForm({
           size="sm"
           disabled={busy || stale || (!selected.length && !text.trim() && !comment.trim())}
         >
-          {busy ? 'Saving…' : 'Send answer'}
+          {busy ? 'Saving…' : question.type === 'subgoal' ? 'Send feedback' : 'Send answer'}
         </Button>
       </div>
     </form>

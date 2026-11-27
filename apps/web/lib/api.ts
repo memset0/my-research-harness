@@ -1318,6 +1318,15 @@ export async function fetchDiscussion(
   if (host) params.set('host', host)
   return jsonFetch(`/api/discussions/${id}?${params}`)
 }
+export async function fetchDiscussionCitations(
+  project: ProjectTarget,
+  report: string,
+): Promise<import('./dto/discussions').DiscussionCitationsResponse> {
+  const params = new URLSearchParams({ project: projectName(project), report })
+  const host = projectHost(project)
+  if (host) params.set('host', host)
+  return jsonFetch(`/api/discussions/citations?${params}`)
+}
 export async function mutateDiscussion(
   project: ProjectTarget,
   id: string,

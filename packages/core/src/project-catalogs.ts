@@ -21,6 +21,7 @@ import {
   parseDiscussionEvents,
   summarizeDiscussion,
 } from './discussion/model.js'
+import { resolveDiscussionRefs } from './discussion/refs.js'
 import { projectFs } from './project-file-store.js'
 import { deriveVariantStatus } from './results/summary.js'
 import { formatIsoLocal } from './time.js'
@@ -549,6 +550,12 @@ export async function buildDiscussionCatalog(
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { entries: [], invalid: [] }
     throw error
   }
+  // Citations resolve against the Reports the source would publish now, valid ones only.
+  const reports = (await buildReportCatalog(root, io)).entries.map((e) => ({
+    id: e.id,
+    resource: e.resource,
+    title: String(e.summary.title ?? e.id),
+  }))
   for (const entry of paths) {
     if (!DISCUSSION_DIRECTORY.test(entry.name)) {
       if (/^D[0-9]/.test(entry.name))
@@ -565,9 +572,12 @@ export async function buildDiscussionCatalog(
       const [text, stat] = await Promise.all([io.readFile(path, 'utf8'), io.stat(path)])
       const parsed = parseDiscussion(text)
       const logResource = resource.replace(/README\.md$/, 'responses.jsonl')
+      let events: ReturnType<typeof parseDiscussionEvents>['events'] = []
       try {
         const log = await io.readFile(await contained(root, logResource), 'utf8')
-        for (const diagnostic of parseDiscussionEvents(log).diagnostics)
+        const history = parseDiscussionEvents(log)
+        events = history.events
+        for (const diagnostic of history.diagnostics)
           warnings.push({
             kind: 'discussions',
             resource: logResource,
@@ -576,7 +586,8 @@ export async function buildDiscussionCatalog(
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       }
-      for (const diagnostic of parsed.diagnostics)
+      const cited = resolveDiscussionRefs(resource, parsed.questions, events, reports)
+      for (const diagnostic of [...parsed.diagnostics, ...cited.diagnostics])
         warnings.push({
           kind: 'discussions',
           resource,
@@ -588,7 +599,14 @@ export async function buildDiscussionCatalog(
         id,
         slug,
         resource,
-        summary: summarizeDiscussion(id, slug, resource, parsed, stat.mtimeMs),
+        summary: summarizeDiscussion(
+          id,
+          slug,
+          resource,
+          { ...parsed, diagnostics: [...parsed.diagnostics, ...cited.diagnostics] },
+          stat.mtimeMs,
+          cited.refs,
+        ),
       })
     } catch (error) {
       invalid.push({ kind: 'discussions', resource, message: (error as Error).message })

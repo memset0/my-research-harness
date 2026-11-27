@@ -95,7 +95,13 @@ describe('discussion answers', () => {
     expect(screen.getByRole('button', { name: 'Send answer' })).toBeEnabled()
   })
   it('keeps share viewers read-only while showing category and evidence', () => {
-    const q = { ...question(), displayStatus: 'OPEN' as const, history: [] }
+    const q = {
+      ...question(),
+      displayStatus: 'OPEN' as const,
+      history: [],
+      refs: [],
+      segment: 'waitingOwner' as const,
+    }
     render(
       <SessionProvider value={{ role: 'viewer', scopeProjects: ['project-a'] }}>
         <QuestionCard
@@ -112,5 +118,49 @@ describe('discussion answers', () => {
     expect(screen.queryByRole('button', { name: 'Send answer' })).toBeNull()
     expect(screen.getByText('custom')).toBeInTheDocument()
     expect(screen.getByText('Evidence.')).toBeInTheDocument()
+  })
+  it('renders a subgoal with work, Report refs and a comment-only feedback form', async () => {
+    const parsed = parseDiscussion(
+      '---\ntitle: Design\nstatus: OPEN\n---\n## Migrate CLI\n\n```question\nid: MIGRATE\ntype: subgoal\ncategory: impl\nstatus: OPEN\nwork: DOING\nrefs: [R0012, R0099]\n```\n\nPlan.',
+    ).questions[0]!
+    const q = {
+      ...parsed,
+      displayStatus: 'OPEN' as const,
+      segment: 'awaitingWork' as const,
+      history: [],
+      refs: [
+        {
+          report: 'R0012',
+          title: 'Bench',
+          resource: 'docs/reports/R0012-bench/README.md',
+          source: 'field' as const,
+        },
+      ],
+    }
+    render(
+      <QuestionCard
+        q={q}
+        project={project}
+        doc={{ id: 'D0001', status: 'OPEN' } as DiscussionDetail}
+        storageKey="test"
+        markdownProps={markdownProps}
+        changed={false}
+        onUpdated={vi.fn(async () => {})}
+      />,
+    )
+    expect(screen.getByText('In progress')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /R0012\s*Bench/ })).toHaveAttribute(
+      'href',
+      '/host-a/project-a/r/12',
+    )
+    expect(screen.getByText('R0099')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Your answer')).toBeNull()
+    expect(screen.queryByRole('radiogroup')).toBeNull()
+    await userEvent.type(screen.getByLabelText('Comment'), 'Keep old flags')
+    await userEvent.click(screen.getByRole('button', { name: 'Send feedback' }))
+    await waitFor(() => expect(mutateDiscussion).toHaveBeenCalled())
+    expect((vi.mocked(mutateDiscussion).mock.calls[0]![3] as { answer: unknown }).answer).toEqual({
+      comment: 'Keep old flags',
+    })
   })
 })
