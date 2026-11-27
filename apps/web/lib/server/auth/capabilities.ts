@@ -16,7 +16,7 @@ export const CAPABILITIES_BY_LEVEL: Readonly<Record<AccountLevel, readonly Capab
     'access_clusters',
     'manage_project_grants',
   ],
-  // On the Projects the super admin granted them; they read those and nothing else.
+  // Owner reach on every Project (GPU nodes give no isolation between Projects).
   admin: ['access_clusters', 'manage_project_grants'],
   user: [],
   guest: [],

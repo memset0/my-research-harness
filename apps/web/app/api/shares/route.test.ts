@@ -174,7 +174,7 @@ describe('/api/shares', () => {
     )
   })
 
-  it('scopes admins to their own shares on granted Projects and names creators for the super admin', async () => {
+  it('scopes admins to their own shares on any Project and names creators for the super admin', async () => {
     const store = await getAccountStore(join(directory, 'config.yml'), 'owner')
     const ada = await store.create({ username: 'ada', password: 'password1', level: 'admin' })
     const ADA = {
@@ -183,7 +183,7 @@ describe('/api/shares', () => {
       'x-memon-account': encodeAccountHeader({ id: ada.id, username: 'ada', level: 'admin' }),
     }
     const body = { host: 'host-a', project: 'project-x', scope: { kind: 'project' } }
-    expect((await create(body, ADA)).status).toBe(404)
+    expect((await create({ ...body, host: 'host-b' }, ADA)).status).toBe(404)
 
     const legacy = await (await create({ ...body, label: 'before' })).json()
     // A record written before creator tracking existed.
@@ -191,7 +191,6 @@ describe('/api/shares', () => {
     const file = JSON.parse(await fs.readFile(registryFile, 'utf8'))
     for (const record of file.shares) delete record.created_by
     await fs.writeFile(registryFile, JSON.stringify(file))
-    await store.changeProjectAdmin('add', 'host-a', 'project-x', 'ada')
     const own = await create({ ...body, label: 'mine' }, ADA)
     expect(own.status).toBe(201)
     expect((await own.json()).share).toMatchObject({ created_by: 'ada' })

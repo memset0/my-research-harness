@@ -5,7 +5,7 @@ import { X } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { toast } from 'sonner'
 import type { ProjectAccessDto, ProjectAccessGrantDto } from '@/lib/dto/accounts'
-import { changeProjectAccess, changeProjectAdmin, fetchProjectAccess } from '../lib/api'
+import { changeProjectAccess, fetchProjectAccess } from '../lib/api'
 import { queryKeys } from '../lib/query-keys'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
@@ -22,39 +22,32 @@ function grantText(grant: ProjectAccessGrantDto): string {
   return grant.document ? `${grant.username} · ${grant.document.id}` : grant.username
 }
 
-/** Admin area → Projects: read grants on manageable Projects; the super admin also assigns admins. */
-export function AdminProjectsPanel({ superAdmin }: { superAdmin: boolean }) {
+/** Admin area → Projects: user read grants on every Project (admins reach all of them). */
+export function AdminProjectsPanel() {
   const access = useQuery({ queryKey: queryKeys.projectAccess(), queryFn: fetchProjectAccess })
   const projects = access.data?.projects ?? []
   return (
     <Card size="sm" id="projects" className="scroll-mt-3" data-slot="admin-projects">
       <CardHeader>
         <CardTitle>Projects</CardTitle>
-        <CardDescription>
-          {superAdmin ? 'Project admins and user read grants.' : 'Read grants on your projects.'}
-        </CardDescription>
+        <CardDescription>User read grants. Admins reach every project.</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-2">
         {access.isError && <p className="text-xs text-destructive">{errorMessage(access.error)}</p>}
         {access.isSuccess && projects.length === 0 && (
-          <p className="text-xs text-muted-foreground">No projects have been granted to you yet.</p>
+          <p className="text-xs text-muted-foreground">No projects are configured.</p>
         )}
         {projects.length > 0 && (
           <Table className="text-xs">
             <TableHeader>
               <TableRow>
                 <TableHead className="h-8">Project</TableHead>
-                {superAdmin && <TableHead className="h-8">Admins</TableHead>}
                 <TableHead className="h-8">Read access</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {projects.map((project) => (
-                <ProjectRow
-                  key={`${project.host}/${project.project}`}
-                  project={project}
-                  superAdmin={superAdmin}
-                />
+                <ProjectRow key={`${project.host}/${project.project}`} project={project} />
               ))}
             </TableBody>
           </Table>
@@ -64,7 +57,7 @@ export function AdminProjectsPanel({ superAdmin }: { superAdmin: boolean }) {
   )
 }
 
-function ProjectRow({ project, superAdmin }: { project: ProjectAccessDto; superAdmin: boolean }) {
+function ProjectRow({ project }: { project: ProjectAccessDto }) {
   const client = useQueryClient()
   const refresh = () => client.invalidateQueries({ queryKey: queryKeys.projectAccess() })
   const ref = { host: project.host, project: project.project }
@@ -73,39 +66,11 @@ function ProjectRow({ project, superAdmin }: { project: ProjectAccessDto; superA
     onSuccess: refresh,
     onError: (error) => toast.error(errorMessage(error)),
   })
-  const admin = useMutation({
-    mutationFn: (args: Parameters<typeof changeProjectAdmin>) => changeProjectAdmin(...args),
-    onSuccess: refresh,
-    onError: (error) => toast.error(errorMessage(error)),
-  })
   return (
     <TableRow data-project={`${project.host}/${project.project}`}>
       <TableCell className="py-1 align-top font-mono">
         {project.host}/{project.project}
       </TableCell>
-      {superAdmin && (
-        <TableCell className="py-1 align-top">
-          <div className="flex flex-wrap items-center gap-1">
-            {(project.admins ?? []).map((name) => (
-              <Badge key={name} variant="secondary" className="gap-0.5">
-                {name}
-                <button
-                  type="button"
-                  aria-label={`Remove admin ${name}`}
-                  onClick={() => admin.mutate(['remove', { ...ref, username: name }])}
-                >
-                  <X className="size-3" />
-                </button>
-              </Badge>
-            ))}
-            <NameForm
-              placeholder="admin username"
-              pending={admin.isPending}
-              onSubmit={(username) => admin.mutate(['add', { ...ref, username }])}
-            />
-          </div>
-        </TableCell>
-      )}
       <TableCell className="py-1 align-top">
         <div className="flex flex-wrap items-center gap-1">
           {project.grants.map((grant) => (
@@ -138,39 +103,6 @@ function ProjectRow({ project, superAdmin }: { project: ProjectAccessDto; superA
         </div>
       </TableCell>
     </TableRow>
-  )
-}
-
-function NameForm({
-  placeholder,
-  pending,
-  onSubmit,
-}: {
-  placeholder: string
-  pending: boolean
-  onSubmit: (name: string) => void
-}) {
-  const [name, setName] = useState('')
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    if (!name.trim()) return
-    onSubmit(name.trim())
-    setName('')
-  }
-  return (
-    <form onSubmit={submit} className="flex items-center gap-1">
-      <Input
-        className="h-6 w-32 text-xs"
-        aria-label={placeholder}
-        placeholder={placeholder}
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        autoComplete="off"
-      />
-      <Button type="submit" size="xs" variant="outline" disabled={pending || !name.trim()}>
-        Add
-      </Button>
-    </form>
   )
 }
 

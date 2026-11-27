@@ -19,8 +19,6 @@ export interface AccountDto {
   created_at: number
   updated_at: number
   grants: AccountGrantDto[]
-  /** Admins: Projects the super admin granted them to manage. */
-  admin_projects: Array<{ host: string; project: string }>
 }
 
 export interface AccountListResponse {
@@ -56,8 +54,6 @@ export interface ProjectAccessDto {
   host: string
   project: string
   grants: ProjectAccessGrantDto[]
-  /** Super admin only: the admins granted this Project. */
-  admins?: string[]
 }
 
 export interface ProjectAccessResponse {

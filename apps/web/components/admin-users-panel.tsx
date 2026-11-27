@@ -147,11 +147,7 @@ export function AdminUsersPanel() {
                       : account.grants.map(grantLabel).join(', ')
                     : account.level === 'guest'
                       ? 'Share links only'
-                      : account.level === 'admin'
-                        ? account.admin_projects.length === 0
-                          ? 'No projects (grant in the Projects card)'
-                          : `Manages ${account.admin_projects.map((p) => `${p.host}/${p.project}`).join(', ')}`
-                        : 'All projects'}
+                      : 'All projects'}
                 </TableCell>
                 <TableCell className="py-1">
                   {!account.managed_by_config && (

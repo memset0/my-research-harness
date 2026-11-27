@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   accountsDatabasePath,
   closeAccountStores,
+  createAccountLookup,
   getAccountStore,
   hashPassword,
   verifyPasswordHash,
@@ -127,24 +128,11 @@ describe('account store', () => {
     expect((await store.byId(1))?.username).toBe('alice')
   })
 
-  it('grants Projects to admins and user access by exact username', async () => {
+  it('grants user access by exact username', async () => {
     const store = await getAccountStore(configPath, 'owner')
-    const ada = await store.create({ username: 'ada', password: 'password1', level: 'admin' })
+    await store.create({ username: 'ada', password: 'password1', level: 'admin' })
     await store.create({ username: 'bob', password: 'password1', level: 'user' })
     await store.create({ username: 'gil', password: 'password1', level: 'guest' })
-
-    await store.changeProjectAdmin('add', 'host-a', 'project-a', 'ada')
-    expect((await store.byId(ada.id))?.adminProjects).toEqual([
-      { host: 'host-a', project: 'project-a' },
-    ])
-    expect(await store.projectAdmins()).toEqual([
-      { host: 'host-a', project: 'project-a', username: 'ada' },
-    ])
-    await expect(
-      store.changeProjectAdmin('add', 'host-a', 'project-a', 'bob'),
-    ).rejects.toMatchObject({
-      code: 'BAD_REQUEST',
-    })
 
     const ref = { host: 'host-a', project: 'project-a' }
     await store.changeGrantByUsername('add', 'bob', ref)
@@ -171,8 +159,43 @@ describe('account store', () => {
       ),
     )
     expect(new Set(failures)).toEqual(new Set(['cannot grant access to that name']))
+  })
 
-    await store.update(ada.id, { level: 'user' })
-    expect((await store.byId(ada.id))?.adminProjects).toEqual([])
+  it('drops retired Project-admin grants and gives admins every configured Project', async () => {
+    const sqlite3 = (await import('sqlite3')).default
+    const path = accountsDatabasePath(configPath)
+    const legacy = new sqlite3.Database(path)
+    await new Promise<void>((resolve, reject) =>
+      legacy.exec(
+        `CREATE TABLE project_admins (host TEXT, project TEXT, account_id INTEGER);
+         INSERT INTO project_admins VALUES ('host-a', 'project-a', 2);`,
+        (error) => (error ? reject(error) : resolve()),
+      ),
+    )
+    await new Promise<void>((resolve) => legacy.close(() => resolve()))
+
+    const store = await getAccountStore(configPath, 'owner')
+    const ada = await store.create({ username: 'ada', password: 'password1', level: 'admin' })
+    const bob = await store.create({ username: 'bob', password: 'password1', level: 'user' })
+    const tables = await new Promise<string[]>((resolve, reject) => {
+      const db = new sqlite3.Database(path)
+      db.all(
+        "SELECT name FROM sqlite_master WHERE type = 'table'",
+        (error, rows: Array<{ name: string }>) => {
+          db.close()
+          if (error) reject(error)
+          else resolve(rows.map((row) => row.name))
+        },
+      )
+    })
+    expect(tables).not.toContain('project_admins')
+
+    const projects = [
+      { host: 'host-a', project: 'project-a' },
+      { host: 'host-b', project: 'project-b' },
+    ]
+    const lookup = createAccountLookup(configPath, 'owner', () => projects)
+    expect((await lookup.byId(ada.id))?.adminProjects).toEqual(projects)
+    expect((await lookup.byId(bob.id))?.adminProjects).toBeUndefined()
   })
 })

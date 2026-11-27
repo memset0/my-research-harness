@@ -1,6 +1,6 @@
-// Read grants on the Projects an admin manages (the super admin manages all).
+// Read grants on every configured Project, for admins and the super admin alike.
 //
-//   GET    → the caller's manageable Projects with their user grants (usernames only)
+//   GET    → every configured Project with its user grants (usernames only)
 //   POST   {host, project, username, document?} → grant read access to a user account
 //   DELETE {host, project, username, document?} → revoke it
 //
@@ -16,7 +16,6 @@ import {
   parseBody,
   withAccountStore,
 } from '@/lib/server/admin-accounts-route'
-import { readAccountFromRequest } from '@/lib/server/auth/request-context'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,12 +31,9 @@ const GrantSchema = z
   })
   .strict()
 
-async function manageable(req: NextRequest, store: AccountStore) {
-  const account = readAccountFromRequest(req)
-  const configured = await configuredProjects()
-  if (account?.level === 'super_admin') return configured
-  const granted = (account ? await store.byId(account.id) : null)?.adminProjects ?? []
-  return configured.filter((p) => granted.some((g) => g.host === p.host && g.project === p.project))
+/** Admins and the super admin both manage read grants on every configured Project. */
+async function manageable(_req: NextRequest, _store: AccountStore) {
+  return configuredProjects()
 }
 
 export async function GET(req: NextRequest) {
@@ -45,21 +41,9 @@ export async function GET(req: NextRequest) {
     req,
     async (store) => {
       const projects = await manageable(req, store)
-      const superAdmin = readAccountFromRequest(req)?.level === 'super_admin'
-      const admins = superAdmin ? await store.projectAdmins() : []
       return json({
         projects: await Promise.all(
-          projects.map(async (p) => ({
-            ...p,
-            grants: await store.grantsOn(p.host, p.project),
-            ...(superAdmin
-              ? {
-                  admins: admins
-                    .filter((a) => a.host === p.host && a.project === p.project)
-                    .map((a) => a.username),
-                }
-              : {}),
-          })),
+          projects.map(async (p) => ({ ...p, grants: await store.grantsOn(p.host, p.project) })),
         ),
       })
     },

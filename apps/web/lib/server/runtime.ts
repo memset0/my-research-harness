@@ -247,7 +247,11 @@ async function init(): Promise<Runtime> {
   const initialised = await ensureAuthInitialised(configPath, config)
   const auth = {
     ...initialised,
-    accounts: createAccountLookup(configPath, initialised.username),
+    accounts: createAccountLookup(configPath, initialised.username, () =>
+      config.projects.flatMap((project) =>
+        project.host ? [{ host: project.host, project: project.name }] : [],
+      ),
+    ),
   }
 
   // Slurm capability probe. When the user opts in via `slurm.total_nodes`,

@@ -34,8 +34,6 @@ export interface Account {
   createdAt: number
   updatedAt: number
   grants: AccountGrant[]
-  /** Projects the super admin granted this admin to manage. */
-  adminProjects: Array<{ host: string; project: string }>
 }
 
 export class AccountStoreError extends Error {
@@ -55,12 +53,6 @@ interface AccountRow {
   disabled: number
   created_at: number
   updated_at: number
-}
-
-interface AdminRow {
-  host: string
-  project: string
-  account_id: number
 }
 
 interface GrantRow {
@@ -152,12 +144,8 @@ export class AccountStore {
         created_at    INTEGER NOT NULL,
         updated_at    INTEGER NOT NULL
       );
-      CREATE TABLE IF NOT EXISTS project_admins (
-        host       TEXT NOT NULL,
-        project    TEXT NOT NULL,
-        account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-        PRIMARY KEY (host, project, account_id)
-      ) WITHOUT ROWID;
+      -- Admins reach every Project, so per-Project admin grants are retired.
+      DROP TABLE IF EXISTS project_admins;
       CREATE TABLE IF NOT EXISTS account_grants (
         account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
         host       TEXT NOT NULL,
@@ -210,11 +198,7 @@ export class AccountStore {
     await this.ready
     const rows = await this.all<AccountRow>(`SELECT * FROM accounts ORDER BY id`, [])
     const grants = await this.all<GrantRow>(`SELECT * FROM account_grants ORDER BY rowid`, [])
-    const admins = await this.all<AdminRow>(
-      `SELECT * FROM project_admins ORDER BY host, project`,
-      [],
-    )
-    return rows.map((row) => this.toAccount(row, grants, admins))
+    return rows.map((row) => this.toAccount(row, grants))
   }
 
   async byId(id: number): Promise<Account | null> {
@@ -224,11 +208,7 @@ export class AccountStore {
     const grants = await this.all<GrantRow>(`SELECT * FROM account_grants WHERE account_id = ?`, [
       id,
     ])
-    const admins = await this.all<AdminRow>(
-      `SELECT * FROM project_admins WHERE account_id = ? ORDER BY host, project`,
-      [id],
-    )
-    return this.toAccount(row, grants, admins)
+    return this.toAccount(row, grants)
   }
 
   /** Verify a stored account's password; account #1 never verifies here. */
@@ -299,8 +279,6 @@ export class AccountStore {
       ])
       if (patch.level !== 'user')
         await this.run(`DELETE FROM account_grants WHERE account_id = ?`, [id])
-      if (patch.level !== 'admin')
-        await this.run(`DELETE FROM project_admins WHERE account_id = ?`, [id])
     }
     if (patch.disabled !== undefined)
       await this.run(`UPDATE accounts SET disabled = ?, updated_at = ? WHERE id = ?`, [
@@ -340,41 +318,6 @@ export class AccountStore {
       throw error
     }
     return (await this.byId(id)) as Account
-  }
-
-  /** Grant or revoke an admin's management of one Project (super admin only). */
-  async changeProjectAdmin(
-    action: 'add' | 'remove',
-    host: string,
-    project: string,
-    username: string,
-  ): Promise<void> {
-    await this.ready
-    if (!host || !project)
-      throw new AccountStoreError('BAD_REQUEST', 'host and project are required')
-    const row = await this.row(`SELECT * FROM accounts WHERE username = ?`, [username])
-    if (!row || row.level !== 'admin')
-      throw new AccountStoreError('BAD_REQUEST', `${username} is not an admin account`)
-    if (action === 'add')
-      await this.run(
-        `INSERT OR IGNORE INTO project_admins (host, project, account_id) VALUES (?, ?, ?)`,
-        [host, project, row.id],
-      )
-    else
-      await this.run(
-        `DELETE FROM project_admins WHERE host = ? AND project = ? AND account_id = ?`,
-        [host, project, row.id],
-      )
-  }
-
-  /** Every Project-admin grant, for the super admin. */
-  async projectAdmins(): Promise<Array<{ host: string; project: string; username: string }>> {
-    await this.ready
-    return this.all(
-      `SELECT p.host, p.project, a.username FROM project_admins p JOIN accounts a ON a.id = p.account_id
-        ORDER BY p.host, p.project, a.username`,
-      [],
-    )
   }
 
   /** The user grants on one Project, as `{username, document?}` (for its admins' view). */
@@ -453,7 +396,7 @@ export class AccountStore {
       )
   }
 
-  private toAccount(row: AccountRow, grants: GrantRow[], admins: AdminRow[]): Account {
+  private toAccount(row: AccountRow, grants: GrantRow[]): Account {
     return {
       id: row.id,
       username: row.username,
@@ -470,9 +413,6 @@ export class AccountStore {
             ? { document: { kind: grant.kind as 'report' | 'wiki', id: grant.doc_id } }
             : {}),
         })),
-      adminProjects: admins
-        .filter((admin) => admin.account_id === row.id)
-        .map((admin) => ({ host: admin.host, project: admin.project })),
     }
   }
 
@@ -538,13 +478,25 @@ export async function getAccountStore(
   return entry.store
 }
 
-/** Identity-resolution view of the store, opened lazily on first lookup. */
+/**
+ * Identity-resolution view of the store, opened lazily on first lookup. Admins
+ * reach every configured Project, which `projects` lists at lookup time.
+ */
 export function createAccountLookup(
   configPath: string,
   ownerUsername: string,
-): { byId(id: number): Promise<Account | null> } {
+  projects: () => Array<{ host: string; project: string }>,
+): {
+  byId(
+    id: number,
+  ): Promise<(Account & { adminProjects?: Array<{ host: string; project: string }> }) | null>
+} {
   return {
-    byId: async (id) => (await getAccountStore(configPath, ownerUsername)).byId(id),
+    byId: async (id) => {
+      const account = await (await getAccountStore(configPath, ownerUsername)).byId(id)
+      if (!account || account.level !== 'admin') return account
+      return { ...account, adminProjects: projects() }
+    },
   }
 }
 

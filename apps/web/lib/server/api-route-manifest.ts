@@ -74,7 +74,6 @@ export const API_ROUTE_MANIFEST = {
   'admin/accounts/[id]/grants/route.ts': central(['PUT'], 'mutating'),
   'admin/accounts/[id]/route.ts': central(['PATCH'], 'mutating'),
   'admin/accounts/route.ts': central(['GET', 'POST'], 'mutating'),
-  'admin/project-admins/route.ts': central(['DELETE', 'GET', 'POST'], 'mutating'),
   'auth/check/route.ts': central(['GET'], 'anon'),
   'auth/login/route.ts': central(['POST'], 'anon'),
   'auth/logout/route.ts': central(['POST'], 'mutating'),

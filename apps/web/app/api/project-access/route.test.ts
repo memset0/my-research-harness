@@ -10,7 +10,6 @@ import { encodeAccountHeader, type RequestAccount } from '@/lib/server/auth/requ
 vi.mock('@/lib/server/runtime', () => ({ getRuntime: vi.fn() }))
 
 import { getRuntime, type Runtime } from '@/lib/server/runtime'
-import { POST as ADMIN_POST } from '../admin/project-admins/route'
 import { DELETE, GET, POST } from './route'
 
 let directory: string
@@ -53,26 +52,21 @@ function call(account: RequestAccount, method: string, url: string, body?: unkno
   })
 }
 
-const grantA = { host: 'host-a', project: 'project-a', username: 'ada' }
-
 describe('project access', () => {
-  it('shows an admin only its granted Projects and lets it grant users there', async () => {
-    expect((await (await GET(call(ada, 'GET', '/api/project-access'))).json()).projects).toEqual([])
-    expect(
-      (await ADMIN_POST(call(SUPER, 'POST', '/api/admin/project-admins', grantA))).status,
-    ).toBe(200)
-
+  it('shows an admin every Project and lets it grant users on any of them', async () => {
     const listed = (await (await GET(call(ada, 'GET', '/api/project-access'))).json()).projects
-    expect(listed).toEqual([{ host: 'host-a', project: 'project-a', grants: [] }])
+    expect(listed).toEqual([
+      { host: 'host-a', project: 'project-a', grants: [] },
+      { host: 'host-a', project: 'project-b', grants: [] },
+    ])
 
-    const add = { host: 'host-a', project: 'project-a', username: 'bob' }
+    const add = { host: 'host-a', project: 'project-b', username: 'bob' }
     expect((await POST(call(ada, 'POST', '/api/project-access', add))).status).toBe(200)
     const after = (await (await GET(call(ada, 'GET', '/api/project-access'))).json()).projects
-    expect(after[0].grants).toEqual([{ username: 'bob' }])
+    expect(after[1].grants).toEqual([{ username: 'bob' }])
 
     expect(
-      (await POST(call(ada, 'POST', '/api/project-access', { ...add, project: 'project-b' })))
-        .status,
+      (await POST(call(ada, 'POST', '/api/project-access', { ...add, project: 'missing' }))).status,
     ).toBe(404)
     const unknown = await POST(
       call(ada, 'POST', '/api/project-access', { ...add, username: 'nobody' }),
@@ -84,25 +78,11 @@ describe('project access', () => {
     expect((await DELETE(call(ada, 'DELETE', '/api/project-access', add))).status).toBe(200)
   })
 
-  it('shows the super admin every Project with its admins', async () => {
-    await ADMIN_POST(call(SUPER, 'POST', '/api/admin/project-admins', grantA))
+  it('shows the super admin the same Projects, with no admin assignments', async () => {
     const listed = (await (await GET(call(SUPER, 'GET', '/api/project-access'))).json()).projects
     expect(listed).toEqual([
-      { host: 'host-a', project: 'project-a', grants: [], admins: ['ada'] },
-      { host: 'host-a', project: 'project-b', grants: [], admins: [] },
+      { host: 'host-a', project: 'project-a', grants: [] },
+      { host: 'host-a', project: 'project-b', grants: [] },
     ])
-  })
-
-  it('keeps project-admin grants super-admin only', async () => {
-    expect((await ADMIN_POST(call(ada, 'POST', '/api/admin/project-admins', grantA))).status).toBe(
-      403,
-    )
-    expect(
-      (
-        await ADMIN_POST(
-          call(SUPER, 'POST', '/api/admin/project-admins', { ...grantA, project: 'missing' }),
-        )
-      ).status,
-    ).toBe(404)
   })
 })

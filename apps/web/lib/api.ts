@@ -363,13 +363,6 @@ export function changeProjectAccess(
   return accountWrite('/api/project-access', action === 'add' ? 'POST' : 'DELETE', body)
 }
 
-export function changeProjectAdmin(
-  action: 'add' | 'remove',
-  body: { host: string; project: string; username: string },
-): Promise<{ ok: true }> {
-  return accountWrite('/api/admin/project-admins', action === 'add' ? 'POST' : 'DELETE', body)
-}
-
 export function replaceAdminGrants(
   id: number,
   body: ReplaceGrantsRequest,

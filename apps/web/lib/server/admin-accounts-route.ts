@@ -24,7 +24,6 @@ export function toAccountDto(account: Account): AccountDto {
     created_at: account.createdAt,
     updated_at: account.updatedAt,
     grants: account.grants,
-    admin_projects: account.adminProjects,
   }
 }
 

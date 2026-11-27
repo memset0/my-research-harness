@@ -28,7 +28,7 @@ export default async function AccessControlPage() {
       >
         <h1 className="text-sm font-medium">Access control</h1>
         {accounts && <AdminUsersPanel />}
-        {grants && <AdminProjectsPanel superAdmin={superAdmin} />}
+        {grants && <AdminProjectsPanel />}
         {grants && <AdminSharesPanel superAdmin={superAdmin} />}
       </div>
     </div>

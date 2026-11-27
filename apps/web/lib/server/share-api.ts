@@ -136,7 +136,7 @@ export function shareRow(
 
 /**
  * Who may manage shares on this request: the super admin (every share) or an
- * admin (its own shares, created only on Projects granted to it).
+ * admin (its own shares, on any configured Project).
  */
 export async function shareManager(
   req: NextRequest,
@@ -154,5 +154,11 @@ export async function shareManager(
     account.id,
   )
   if (!stored || stored.disabled || stored.level !== 'admin') return null
-  return { kind: 'admin', username: stored.username, projects: stored.adminProjects }
+  return {
+    kind: 'admin',
+    username: stored.username,
+    projects: runtime.config.projects.flatMap((project) =>
+      project.host ? [{ host: project.host, project: project.name }] : [],
+    ),
+  }
 }

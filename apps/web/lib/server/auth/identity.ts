@@ -124,7 +124,7 @@ export interface LookedUpAccount extends IdentityAccount {
     project: string
     document?: { kind: 'report' | 'wiki'; id: string }
   }>
-  /** Admins: the Projects the super admin granted them. */
+  /** Admins: every configured Project (admins reach all of them). */
   adminProjects?: ReadonlyArray<{ host: string; project: string }>
 }
 

@@ -2,7 +2,7 @@
 
 ## 1. Admin reach on every Project
 
-- [ ] 1.1 Make the admin branch of identity resolution grant owner reach on every configured Project, drop admin Project grants in the account store on open, retire `/api/admin/project-admins` and its UI, and list every Project in `/api/project-access` for admins; verify with updated `identity-accounts.test.ts`, `capabilities.test.ts`, `account-store.test.ts` and the project-access route test
+- [x] 1.1 Make the admin branch of identity resolution grant owner reach on every configured Project, drop admin Project grants in the account store on open, retire `/api/admin/project-admins` and its UI, and list every Project in `/api/project-access` for admins; verify with updated `identity-accounts.test.ts`, `capabilities.test.ts`, `account-store.test.ts` and the project-access route test
 - [ ] 1.2 Update the `user-accounts` behavior in admin copy and help text; verify the Access control page renders for an admin without the removed Project-admin card (rendered check)
 
 ## 2. API tokens
