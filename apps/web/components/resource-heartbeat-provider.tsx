@@ -79,6 +79,7 @@ const RESOURCE_QUERY_ROOTS: Record<string, true> = {
   'reports-inventory': true,
   runs: true,
   'runs-inventory': true,
+  traffic: true,
   wiki: true,
   'wiki-inventory': true,
   'wiki-backlinks': true,

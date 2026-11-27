@@ -180,6 +180,9 @@ export const API_ROUTE_MANIFEST = {
   'shares/[id]/route.ts': central(['DELETE'], 'mutating'),
   'shares/route.ts': central(['GET', 'POST'], 'mutating'),
   'slurm/status/route.ts': backend(['GET'], 'project-query', 'read', 'none', 'slurm'),
+  'traffic/payload/route.ts': central(['GET'], 'mutating', 'bytes'),
+  'traffic/probe/route.ts': central(['POST'], 'shell'),
+  'traffic/route.ts': central(['GET'], 'mutating'),
   'ui-preferences/route.ts': central(['GET', 'PUT'], 'mixed'),
   'wiki-assets/[project]/[id]/[...path]/route.ts': backend(
     ['GET', 'HEAD'],

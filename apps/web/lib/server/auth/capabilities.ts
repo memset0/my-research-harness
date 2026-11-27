@@ -44,6 +44,7 @@ const PATH_RULES: ReadonlyArray<{
   any: readonly Capability[]
 }> = [
   { match: under('/manage/users'), any: ['manage_accounts'] },
+  { match: under('/manage/access'), any: ['manage_accounts', 'manage_project_grants'] },
   { match: under('/api/admin'), any: ['manage_accounts'] },
   { match: under('/manage/projects'), any: ['manage_project_grants'] },
   { match: under('/api/project-access'), any: ['manage_project_grants'] },
@@ -51,6 +52,8 @@ const PATH_RULES: ReadonlyArray<{
   { match: under('/api/shares'), any: ['manage_project_grants'] },
   { match: under('/manage/file-access'), any: ['configure_instance'] },
   { match: under('/api/file-access'), any: ['configure_instance'] },
+  { match: under('/manage/traffic'), any: ['configure_instance'] },
+  { match: under('/api/traffic'), any: ['configure_instance'] },
   { match: under('/manage/clusters'), any: ['access_clusters'] },
   { match: under('/api/clusters'), any: ['access_clusters'] },
   { match: under('/manage/gpu-pool'), any: ['access_clusters'] },
@@ -75,30 +78,33 @@ export interface AdminSection {
   key: string
   label: string
   href: string
-  capability: Capability
+  /** At least one of these opens the section. */
+  any: readonly Capability[]
 }
 
-/** The admin navbar, in order. Further cluster sections join with `access_clusters`. */
+/**
+ * The admin navbar, in order. Access control holds the Users, Projects and
+ * Shares cards, each gated again by its own capability; the old section URLs
+ * redirect to their anchors. Further cluster sections join with `access_clusters`.
+ */
 export const ADMIN_SECTIONS: readonly AdminSection[] = [
-  { key: 'clusters', label: 'Clusters', href: '/manage/clusters', capability: 'access_clusters' },
-  { key: 'users', label: 'Users', href: '/manage/users', capability: 'manage_accounts' },
+  { key: 'clusters', label: 'Clusters', href: '/manage/clusters', any: ['access_clusters'] },
   {
-    key: 'projects',
-    label: 'Projects',
-    href: '/manage/projects',
-    capability: 'manage_project_grants',
+    key: 'access',
+    label: 'Access control',
+    href: '/manage/access',
+    any: ['manage_accounts', 'manage_project_grants'],
   },
-  { key: 'shares', label: 'Shares', href: '/manage/shares', capability: 'manage_project_grants' },
   {
-    key: 'file-access',
-    label: 'File access',
-    href: '/manage/file-access',
-    capability: 'configure_instance',
+    key: 'traffic',
+    label: 'Traffic control',
+    href: '/manage/traffic',
+    any: ['configure_instance'],
   },
 ]
 
 export function adminSectionsFor(level: AccountLevel | null | undefined): AdminSection[] {
-  return ADMIN_SECTIONS.filter((section) => levelCan(level, section.capability))
+  return ADMIN_SECTIONS.filter((section) => section.any.some((c) => levelCan(level, c)))
 }
 
 export function hasAdminArea(level: AccountLevel | null | undefined): boolean {

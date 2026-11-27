@@ -34,6 +34,7 @@ export const queryKeys = {
   hosts: () => ['hosts'] as const,
   slurmStatus: () => ['slurm-status'] as const,
   fileAccess: (windowMs: number) => ['file-access', windowMs] as const,
+  traffic: (windowMs: number) => ['traffic', windowMs] as const,
   adminAccounts: () => ['admin-accounts'] as const,
   projectAccess: () => ['project-access'] as const,
   adminShares: () => ['admin-shares'] as const,

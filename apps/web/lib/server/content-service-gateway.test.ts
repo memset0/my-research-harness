@@ -12,6 +12,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createContentServiceGateway } from './content-service-gateway'
 import { createMemonServer } from './server-core'
 import { shareRegistryFor } from './share-registry'
+import { trafficTracker } from './traffic/tracker'
+import { serviceProbeHook } from './traffic/transport'
 
 const teardown: Array<() => void | Promise<void>> = []
 afterEach(async () => {
@@ -168,6 +170,41 @@ describe('content service gateway', () => {
       app.seen.every((entry) => !entry.authorization && !entry.cookie?.includes('memon-')),
     ).toBe(true)
     expect(app.seen[0]!.prefix).toBe(gateway.prefix.slice(0, -1))
+  })
+  it('records forwarded requests without their query and re-fetches through the probe hook', async () => {
+    const app = await source()
+    const gateway = await setup(app.port)
+    await parity(gateway.url, gateway.prefix)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const records = trafficTracker()
+      .records()
+      .filter((r) => r.project === 'project-a' && r.document === 'wiki/W0001')
+    const asset = records.find((r) => r.kind === 'service' && r.path.startsWith('/asset'))
+    expect(asset).toMatchObject({
+      host: '-',
+      transport: 'native',
+      path: '/asset?…',
+      status: 200,
+      outcome: 'ok',
+      bytes: '/asset?q=2 OK'.length,
+    })
+    expect(asset!.ttfbMs).not.toBeNull()
+    expect(asset!.resolveMs).not.toBeNull()
+    expect(asset!.upstreamTtfbMs).not.toBeNull()
+    expect(JSON.stringify(records)).not.toContain('q=2')
+    expect(records.some((r) => r.kind === 'websocket' && r.path === '/ws')).toBe(true)
+
+    const step = await serviceProbeHook()!.fetch({
+      host: '-',
+      project: 'project-a',
+      kind: 'wiki',
+      id: 'W0001',
+      path: '/probe-path',
+      maxBytes: 1024,
+      timeoutMs: 5000,
+    })
+    expect(step).toMatchObject({ ok: true, status: 200, bytes: '/probe-path OK'.length })
+    expect(step.ttfbMs).toBeGreaterThanOrEqual(0)
   })
   it('closes active upgrades when the gateway stops', async () => {
     const app = await source()

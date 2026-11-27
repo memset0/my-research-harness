@@ -37,6 +37,10 @@ describe('path gating', () => {
     ['/manage/users', ['manage_accounts']],
     ['/api/admin/accounts/3/grants', ['manage_accounts']],
     ['/manage/file-access', ['configure_instance']],
+    ['/manage/traffic', ['configure_instance']],
+    ['/api/traffic/probe', ['configure_instance']],
+    ['/api/traffic/payload', ['configure_instance']],
+    ['/manage/access', ['manage_accounts', 'manage_project_grants']],
     ['/api/file-access/restart', ['configure_instance']],
     ['/manage/clusters', ['access_clusters']],
     ['/api/clusters', ['access_clusters']],
@@ -60,20 +64,23 @@ describe('path gating', () => {
     expect(levelMayReach('admin', '/api/clusters')).toBe(true)
     expect(levelMayReach('admin', '/manage/users')).toBe(false)
     expect(levelMayReach('admin', '/api/file-access')).toBe(false)
+    expect(levelMayReach('admin', '/api/traffic')).toBe(false)
+    expect(levelMayReach('admin', '/manage/traffic')).toBe(false)
+    expect(levelMayReach('admin', '/manage/access')).toBe(true)
+    expect(levelMayReach('user', '/manage/access')).toBe(false)
     expect(levelMayReach('user', '/api/clusters')).toBe(false)
     expect(levelMayReach('guest', '/manage')).toBe(false)
     expect(levelMayReach('super_admin', '/manage/users')).toBe(true)
   })
 
   it('builds the navbar per level', () => {
-    expect(adminSectionsFor('super_admin').map((s) => s.key)).toEqual([
-      'clusters',
-      'users',
-      'projects',
-      'shares',
-      'file-access',
+    expect(adminSectionsFor('super_admin').map((s) => s.label)).toEqual([
+      'Clusters',
+      'Access control',
+      'Traffic control',
     ])
-    expect(adminSectionsFor('admin').map((s) => s.key)).toEqual(['clusters', 'projects', 'shares'])
+    expect(adminSectionsFor('admin').map((s) => s.key)).toEqual(['clusters', 'access'])
+    expect(adminSectionsFor('user')).toEqual([])
     expect(hasAdminArea('admin')).toBe(true)
     expect(hasAdminArea('user')).toBe(false)
   })

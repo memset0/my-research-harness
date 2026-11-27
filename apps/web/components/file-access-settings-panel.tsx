@@ -1,6 +1,6 @@
 'use client'
 
-// Owner-only File access panel: what the central filesystem scheduler is doing
+// Owner-only File access panel (part of Traffic control): what the central filesystem scheduler is doing
 // right now, and what it will do after the next restart.
 //
 // Two honest separations drive the layout:
@@ -373,9 +373,9 @@ export function FileAccessSettingsPanel() {
   const metrics = settings.metrics
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
-        <h1 className="text-lg font-semibold">File access</h1>
+        <h2 className="text-sm font-medium">File access</h2>
         {settings.restartRequired ? (
           <Badge
             variant="outline"

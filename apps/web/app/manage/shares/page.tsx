@@ -1,14 +1,11 @@
-// /manage/shares — share links: every share for the super admin, an admin's own otherwise.
+// /manage/shares — moved to the Shares card of Access control. The old URL
+// keeps its capability (middleware also gates the path) and then redirects.
 
-import { notFound } from 'next/navigation'
-import { AdminSharesPanel } from '../../../components/admin-shares-panel'
+import { notFound, redirect } from 'next/navigation'
 import { levelCan } from '../../../lib/server/auth/capabilities'
 import { readAccountFromHeaders } from '../../../lib/server/auth/request-context'
 
-export const metadata = { title: 'Shares — memon' }
-
 export default async function SharesPage() {
-  const level = (await readAccountFromHeaders())?.level
-  if (!levelCan(level, 'manage_project_grants')) notFound()
-  return <AdminSharesPanel superAdmin={level === 'super_admin'} />
+  if (!levelCan((await readAccountFromHeaders())?.level, 'manage_project_grants')) notFound()
+  redirect('/manage/access#shares')
 }

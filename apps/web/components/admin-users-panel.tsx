@@ -16,6 +16,7 @@ import {
 import { queryKeys } from '../lib/query-keys'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import {
   Dialog,
   DialogContent,
@@ -94,100 +95,108 @@ export function AdminUsersPanel() {
   })
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3" data-slot="admin-users">
-      <div className="flex items-center justify-between">
-        <h1 className="text-sm font-medium">Users</h1>
-        <Button size="sm" onClick={() => setCreating(true)}>
-          <Plus data-icon="inline-start" />
-          New account
-        </Button>
-      </div>
-      {accounts.isError && (
-        <p className="text-xs text-destructive">{errorMessage(accounts.error)}</p>
-      )}
-      <Table className="text-xs">
-        <TableHeader>
-          <TableRow>
-            <TableHead className="h-8">Username</TableHead>
-            <TableHead className="h-8">Level</TableHead>
-            <TableHead className="h-8">Status</TableHead>
-            <TableHead className="h-8">Access</TableHead>
-            <TableHead className="h-8 w-8" />
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {(accounts.data?.accounts ?? []).map((account) => (
-            <TableRow key={account.id} data-account={account.username}>
-              <TableCell className="py-1 font-medium">{account.username}</TableCell>
-              <TableCell className="py-1">
-                {account.managed_by_config ? (
-                  <Badge variant="secondary">{LEVEL_LABEL[account.level]}</Badge>
-                ) : (
-                  <LevelSelect
-                    value={account.level as Assignable}
-                    disabled={update.isPending}
-                    onChange={(level) => update.mutate({ id: account.id, patch: { level } })}
-                  />
-                )}
-              </TableCell>
-              <TableCell className="py-1">
-                <Badge variant={account.disabled ? 'outline' : 'secondary'}>
-                  {account.disabled ? 'Disabled' : 'Active'}
-                </Badge>
-              </TableCell>
-              <TableCell className="py-1 text-muted-foreground">
-                {account.level === 'user'
-                  ? account.grants.length === 0
-                    ? 'No grants'
-                    : account.grants.map(grantLabel).join(', ')
-                  : account.level === 'guest'
-                    ? 'Share links only'
-                    : account.level === 'admin'
-                      ? account.admin_projects.length === 0
-                        ? 'No projects (grant under Projects)'
-                        : `Manages ${account.admin_projects.map((p) => `${p.host}/${p.project}`).join(', ')}`
-                      : 'All projects'}
-              </TableCell>
-              <TableCell className="py-1">
-                {!account.managed_by_config && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label={`Actions for ${account.username}`}
-                      >
-                        <MoreHorizontal />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      {account.level === 'user' && (
-                        <DropdownMenuItem onSelect={() => setGranting(account)}>
-                          Edit access
-                        </DropdownMenuItem>
-                      )}
-                      <DropdownMenuItem onSelect={() => setResetting(account)}>
-                        Reset password
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onSelect={() =>
-                          update.mutate({ id: account.id, patch: { disabled: !account.disabled } })
-                        }
-                      >
-                        {account.disabled ? 'Enable' : 'Disable'}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-              </TableCell>
+    <Card size="sm" id="users" className="scroll-mt-3" data-slot="admin-users">
+      <CardHeader>
+        <CardTitle>Users</CardTitle>
+        <CardDescription>Accounts, levels and read grants.</CardDescription>
+        <CardAction>
+          <Button size="sm" onClick={() => setCreating(true)}>
+            <Plus data-icon="inline-start" />
+            New account
+          </Button>
+        </CardAction>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-2">
+        {accounts.isError && (
+          <p className="text-xs text-destructive">{errorMessage(accounts.error)}</p>
+        )}
+        <Table className="text-xs">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="h-8">Username</TableHead>
+              <TableHead className="h-8">Level</TableHead>
+              <TableHead className="h-8">Status</TableHead>
+              <TableHead className="h-8">Access</TableHead>
+              <TableHead className="h-8 w-8" />
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {(accounts.data?.accounts ?? []).map((account) => (
+              <TableRow key={account.id} data-account={account.username}>
+                <TableCell className="py-1 font-medium">{account.username}</TableCell>
+                <TableCell className="py-1">
+                  {account.managed_by_config ? (
+                    <Badge variant="secondary">{LEVEL_LABEL[account.level]}</Badge>
+                  ) : (
+                    <LevelSelect
+                      value={account.level as Assignable}
+                      disabled={update.isPending}
+                      onChange={(level) => update.mutate({ id: account.id, patch: { level } })}
+                    />
+                  )}
+                </TableCell>
+                <TableCell className="py-1">
+                  <Badge variant={account.disabled ? 'outline' : 'secondary'}>
+                    {account.disabled ? 'Disabled' : 'Active'}
+                  </Badge>
+                </TableCell>
+                <TableCell className="py-1 text-muted-foreground">
+                  {account.level === 'user'
+                    ? account.grants.length === 0
+                      ? 'No grants'
+                      : account.grants.map(grantLabel).join(', ')
+                    : account.level === 'guest'
+                      ? 'Share links only'
+                      : account.level === 'admin'
+                        ? account.admin_projects.length === 0
+                          ? 'No projects (grant in the Projects card)'
+                          : `Manages ${account.admin_projects.map((p) => `${p.host}/${p.project}`).join(', ')}`
+                        : 'All projects'}
+                </TableCell>
+                <TableCell className="py-1">
+                  {!account.managed_by_config && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Actions for ${account.username}`}
+                        >
+                          <MoreHorizontal />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        {account.level === 'user' && (
+                          <DropdownMenuItem onSelect={() => setGranting(account)}>
+                            Edit access
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuItem onSelect={() => setResetting(account)}>
+                          Reset password
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() =>
+                            update.mutate({
+                              id: account.id,
+                              patch: { disabled: !account.disabled },
+                            })
+                          }
+                        >
+                          {account.disabled ? 'Enable' : 'Disable'}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
       <CreateAccountDialog open={creating} onOpenChange={setCreating} onCreated={refresh} />
       <ResetPasswordDialog account={resetting} onClose={() => setResetting(null)} />
       <GrantsDialog account={granting} onClose={() => setGranting(null)} onSaved={refresh} />
-    </div>
+    </Card>
   )
 }
 

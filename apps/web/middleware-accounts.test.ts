@@ -87,6 +87,9 @@ describe('account levels in middleware', () => {
     expect(passes(await call(1, '/api/admin/accounts'))).toBe(true)
     expect(passes(await call(1, '/api/file-access'))).toBe(true)
     expect(passes(await call(1, '/api/clusters'))).toBe(true)
+    expect(passes(await call(1, '/api/traffic'))).toBe(true)
+    expect(passes(await call(1, '/api/traffic/probe', 'POST'))).toBe(true)
+    expect(passes(await call(1, '/manage/traffic', 'GET', { accept: 'text/html' }))).toBe(true)
   })
 
   it('lets an admin reach clusters and its project access, but nothing else', async () => {
@@ -98,6 +101,11 @@ describe('account levels in middleware', () => {
     expect((await call(2, '/api/admin/project-admins', 'POST')).status).toBe(403)
     expect((await call(2, '/api/file-access')).status).toBe(403)
     expect((await call(2, '/manage/users', 'GET', { accept: 'text/html' })).status).toBe(403)
+    expect(passes(await call(2, '/manage/access', 'GET', { accept: 'text/html' }))).toBe(true)
+    expect((await call(2, '/manage/traffic', 'GET', { accept: 'text/html' })).status).toBe(403)
+    expect((await call(2, '/api/traffic')).status).toBe(403)
+    expect((await call(2, '/api/traffic/payload?bytes=0')).status).toBe(403)
+    expect((await call(2, '/api/traffic/probe', 'POST')).status).toBe(403)
     expect(passes(await call(2, '/api/shares', 'POST'))).toBe(true)
   })
 
@@ -107,6 +115,8 @@ describe('account levels in middleware', () => {
       expect((await call(uid, '/manage', 'GET', { accept: 'text/html' })).status).toBe(403)
       expect((await call(uid, '/api/admin/accounts', 'POST')).status).toBe(403)
       expect((await call(uid, '/api/project-access')).status).toBe(403)
+      expect((await call(uid, '/manage/access', 'GET', { accept: 'text/html' })).status).toBe(403)
+      expect((await call(uid, '/api/traffic')).status).toBe(403)
       expect((await call(uid, '/api/shares', 'POST')).status).toBe(403)
     }
   })

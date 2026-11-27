@@ -277,6 +277,24 @@ const RULES: Rule[] = [
     projectFor: projectGlobal(),
   },
 
+  // Traffic control network measurements: owner-only (`configure_instance`).
+  // A probe opens transport connections or spawns ssh, so it is shell class.
+  {
+    match: methodIs(['POST'], exact('/api/traffic/probe')),
+    class: 'shell',
+    projectFor: projectGlobal(),
+  },
+  {
+    match: methodIs(['GET'], exact('/api/traffic')),
+    class: 'mutating',
+    projectFor: projectGlobal(),
+  },
+  {
+    match: methodIs(['GET'], exact('/api/traffic/payload')),
+    class: 'mutating',
+    projectFor: projectGlobal(),
+  },
+
   // Account and access management: owner-class routes; middleware admits the
   // accounts holding the path's capability and handlers scope them further.
   {

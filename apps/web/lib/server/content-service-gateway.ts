@@ -33,6 +33,114 @@ import { SshTunnelManager } from './central/ssh-tunnel'
 import { INVALID_SHARE_LINK_BODY, SHARE_TOKEN_PATTERN } from './share-link'
 import { shareRegistryFor } from './share-registry'
 import { withShareRegistry } from './share-validator'
+import {
+  type ProbeStep,
+  type TrafficKind,
+  type TrafficOutcome,
+  type TrafficTransport,
+  trafficTracker,
+} from './traffic/tracker'
+import {
+  assetTransportOf,
+  registerServiceProbeHook,
+  type ServiceFetchProbeInput,
+  serviceTransportOf,
+} from './traffic/transport'
+
+/** One in-flight forwarded request's timing; finished exactly once. */
+class RequestTiming {
+  readonly startedAt = Date.now()
+  private readonly t0 = performance.now()
+  resolveMs: number | null = null
+  private dispatchedAt: number | null = null
+  ttfbMs: number | null = null
+  upstreamTtfbMs: number | null = null
+  status: number | null = null
+  bytes = 0
+  bytesUp = 0
+  reused: boolean | null = null
+  private done = false
+
+  constructor(
+    private readonly base: {
+      host: string
+      project: string
+      transport: TrafficTransport
+      kind: TrafficKind
+      document: string
+      method: string
+      path: string
+    },
+  ) {}
+
+  elapsed(): number {
+    return performance.now() - this.t0
+  }
+  resolved(): void {
+    this.resolveMs = this.elapsed()
+  }
+  dispatched(): void {
+    this.dispatchedAt = this.elapsed()
+  }
+  headers(status: number | null, reused?: boolean): void {
+    if (this.ttfbMs !== null) return
+    this.ttfbMs = this.elapsed()
+    if (this.dispatchedAt !== null) this.upstreamTtfbMs = this.ttfbMs - this.dispatchedAt
+    this.status = status
+    if (reused !== undefined) this.reused = reused
+  }
+  finish(outcome: TrafficOutcome, extra: { sessionMs?: number; totalMs?: number } = {}): void {
+    if (this.done) return
+    this.done = true
+    trafficTracker().record({
+      ...this.base,
+      status: this.status,
+      bytes: this.bytes,
+      bytesUp: this.bytesUp,
+      resolveMs: this.resolveMs,
+      ttfbMs: this.ttfbMs,
+      upstreamTtfbMs: this.upstreamTtfbMs,
+      totalMs: extra.totalMs ?? this.elapsed(),
+      reused: this.reused,
+      outcome,
+      startedAt: this.startedAt,
+      ...(extra.sessionMs !== undefined ? { sessionMs: extra.sessionMs } : {}),
+    })
+  }
+}
+
+function chunkLength(chunk: unknown): number {
+  if (typeof chunk === 'string') return Buffer.byteLength(chunk)
+  if (chunk instanceof Uint8Array) return chunk.byteLength
+  return 0
+}
+
+/** Time a response written by Next (content assets): first header write and body bytes. */
+function instrumentResponse(response: ServerResponse, timing: RequestTiming): void {
+  const writeHead = response.writeHead
+  const write = response.write
+  const end = response.end
+  const stamp = () => timing.headers(response.statusCode)
+  response.writeHead = function (this: ServerResponse, ...args: unknown[]) {
+    stamp()
+    timing.status = typeof args[0] === 'number' ? args[0] : response.statusCode
+    return (writeHead as (...a: unknown[]) => ServerResponse).apply(this, args)
+  } as typeof response.writeHead
+  response.write = function (this: ServerResponse, chunk: unknown, ...args: unknown[]) {
+    stamp()
+    timing.bytes += chunkLength(chunk)
+    return (write as (...a: unknown[]) => boolean).apply(this, [chunk, ...args])
+  } as typeof response.write
+  response.end = function (this: ServerResponse, chunk?: unknown, ...args: unknown[]) {
+    stamp()
+    if (typeof chunk !== 'function') timing.bytes += chunkLength(chunk)
+    return (end as (...a: unknown[]) => ServerResponse).apply(this, [chunk, ...args])
+  } as typeof response.end
+  response.once('close', () => {
+    timing.status = response.statusCode
+    timing.finish(response.writableFinished ? 'ok' : 'aborted')
+  })
+}
 
 export interface ServiceTarget {
   url: URL
@@ -431,10 +539,37 @@ export function createContentServiceGateway(
     })
     if (!authResult.ok) return { denied: authResult }
     if (!sameOrigin(request)) return { denied: { status: 403, headers: {}, setCookies: [] } }
-    const project = config.projects.find(
-      (p) => p.name === route.project && (p.host ?? '-') === route.host,
-    )
+    const project = projectFor(route.host, route.project)
     if (!project) throw new Error('Project not found')
+    const port = await servicePortFor(project, route.kind, route.id)
+    return {
+      target: await target(project, port, route.health ? '/' : route.path),
+      setCookies: authResult.setCookies,
+    }
+  }
+  function projectFor(host: string, name: string): ProjectConfig | undefined {
+    return config.projects.find((p) => p.name === name && (p.host ?? '-') === host)
+  }
+  /** Timing for a forwarded request of a configured Project; health checks are not measured. */
+  function timingFor(route: Route, kind: TrafficKind, method: string): RequestTiming | null {
+    if (route.health) return null
+    const project = projectFor(route.host, route.project)
+    if (!project) return null
+    return new RequestTiming({
+      host: route.host,
+      project: route.project,
+      transport: serviceTransportOf(project),
+      kind,
+      document: `${route.kind}/${route.id}`,
+      method,
+      path: route.path,
+    })
+  }
+  async function servicePortFor(
+    project: ProjectConfig,
+    kind: Route['kind'],
+    id: string,
+  ): Promise<number> {
     const documents = new FilesystemDocumentService([project], { readPolicy: CENTRAL_READ_POLICY })
     const document = await withProjectFileContext(
       {
@@ -448,16 +583,92 @@ export function createContentServiceGateway(
       },
       async () => {
         await prepareProjectFileAccess()
-        return documents.getContentPresentation(project.name, route.kind, route.id)
+        return documents.getContentPresentation(project.name, kind, id)
       },
     )
     if (document.presentation !== 'service' || document.contentError || !document.servicePort)
       throw new Error(document.contentError ?? 'This document has no valid service manifest')
-    return {
-      target: await target(project, document.servicePort, route.health ? '/' : route.path),
-      setCookies: authResult.setCookies,
-    }
+    return document.servicePort
   }
+  // Probe re-fetch: the same manifest lookup and live target as a browser
+  // request, minus browser auth (the /api/traffic/probe route is owner-gated).
+  async function probeFetch(input: ServiceFetchProbeInput): Promise<ProbeStep> {
+    const label = `Service fetch ${input.kind}/${input.id} ${input.path}`
+    const project = projectFor(input.host, input.project)
+    if (!project) return { label, ok: false, note: 'Project not found' }
+    const t0 = performance.now()
+    let upstream: ServiceTarget
+    try {
+      const port = await servicePortFor(project, input.kind, input.id)
+      upstream = await target(project, port, input.path)
+    } catch (error) {
+      return { label, ok: false, note: (error as Error).message }
+    }
+    const resolveMs = performance.now() - t0
+    return new Promise<ProbeStep>((resolvePromise) => {
+      let settled = false
+      let ttfb: number | null = null
+      let bytes = 0
+      let status: number | null = null
+      const dispatched = performance.now()
+      const settle = (step: Partial<ProbeStep>) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        upstream.release?.()
+        const total = performance.now() - dispatched
+        const transfer = ttfb === null ? null : Math.max(total - ttfb, 1)
+        resolvePromise({
+          label,
+          ok: false,
+          setupMs: resolveMs,
+          ttfbMs: ttfb,
+          bytes,
+          status,
+          throughputBps:
+            transfer !== null && bytes >= 32 * 1024 ? Math.round((bytes * 1000) / transfer) : null,
+          ...step,
+        })
+      }
+      const call = (upstream.url.protocol === 'https:' ? httpsRequest : httpRequest)(upstream.url, {
+        ...upstream.options,
+        method: 'GET',
+        headers: {
+          ...upstream.options?.headers,
+          'accept-encoding': 'identity',
+          'x-forwarded-prefix': `/api/content-services/${input.host}/${input.project}/${input.kind}/${input.id}`,
+        },
+      })
+      const timer = setTimeout(() => {
+        call.destroy()
+        settle({ note: `No complete answer within ${input.timeoutMs} ms` })
+      }, input.timeoutMs)
+      call.once('response', (incoming) => {
+        ttfb = performance.now() - dispatched
+        status = incoming.statusCode ?? null
+        if (
+          upstream.expectedSourceIdentity &&
+          incoming.headers['x-memon-source-identity'] !== upstream.expectedSourceIdentity
+        ) {
+          incoming.destroy()
+          settle({ note: 'Source identity mismatch' })
+          return
+        }
+        incoming.on('data', (chunk: Buffer) => {
+          bytes += chunk.length
+          if (bytes >= input.maxBytes) {
+            incoming.destroy()
+            settle({ ok: true, note: `Stopped at the ${input.maxBytes}-byte cap` })
+          }
+        })
+        incoming.once('end', () => settle({ ok: (status ?? 500) < 500 }))
+        incoming.once('error', (error) => settle({ note: error.message }))
+      })
+      call.once('error', (error) => settle({ note: error.message }))
+      call.end()
+    })
+  }
+  registerServiceProbeHook({ fetch: probeFetch })
   function upstreamRequest(
     request: IncomingMessage,
     route: Route,
@@ -494,6 +705,23 @@ export function createContentServiceGateway(
           original.searchParams.delete('host')
           original.searchParams.set('project', decodeURIComponent(asset[2]!))
           if (asset[1] !== '-') original.searchParams.set('host', decodeURIComponent(asset[1]!))
+          const assetProject = projectFor(
+            decodeURIComponent(asset[1]!),
+            decodeURIComponent(asset[2]!),
+          )
+          if (assetProject)
+            instrumentResponse(
+              response,
+              new RequestTiming({
+                host: assetProject.host ?? '-',
+                project: assetProject.name,
+                transport: assetTransportOf(assetProject),
+                kind: 'asset',
+                document: `${asset[3]}/${asset[4]}`,
+                method: request.method ?? 'GET',
+                path: `/${asset[5]}`,
+              }),
+            )
           request.url = original.pathname + original.search
           return false
         } catch {
@@ -520,9 +748,12 @@ export function createContentServiceGateway(
         await redeemShare(request, response, route, url, share)
         return true
       }
+      let timing: RequestTiming | null = null
       try {
+        timing = timingFor(route, 'service', request.method ?? 'GET')
         const resolved = await resolve(request, route)
         if (resolved.denied) {
+          timing = null
           writeImmediate(
             request,
             response,
@@ -532,13 +763,30 @@ export function createContentServiceGateway(
           )
           return true
         }
-        response.once('close', () => resolved.target?.release?.())
+        timing?.resolved()
+        const measured = timing
+        response.once('close', () => {
+          resolved.target?.release?.()
+          measured?.finish(
+            measured.status !== null && measured.status >= 500
+              ? 'error'
+              : response.writableFinished
+                ? 'ok'
+                : 'aborted',
+          )
+        })
         const call = upstreamRequest(request, route, resolved.target!, false)
+        measured?.dispatched()
         call.on('response', (incoming) => {
+          measured?.headers(incoming.statusCode ?? null, call.reusedSocket)
+          incoming.on('data', (chunk: Buffer) => {
+            if (measured) measured.bytes += chunk.length
+          })
           if (
             resolved.target!.expectedSourceIdentity &&
             incoming.headers['x-memon-source-identity'] !== resolved.target!.expectedSourceIdentity
           ) {
+            if (measured) measured.status = 503
             incoming.destroy()
             writeImmediate(request, response, 503, {}, [], {
               code: 'SOURCE_UNAVAILABLE',
@@ -563,6 +811,7 @@ export function createContentServiceGateway(
           incoming.pipe(response)
         })
         call.on('error', () => {
+          if (measured && measured.status === null) measured.status = 503
           if (!response.headersSent)
             writeImmediate(request, response, 503, { 'Cache-Control': 'no-store' }, [], {
               code: 'SERVICE_UNAVAILABLE',
@@ -578,6 +827,10 @@ export function createContentServiceGateway(
           call.end()
         } else request.pipe(call)
       } catch (error) {
+        if (timing) {
+          timing.status = 503
+          timing.finish('error')
+        }
         writeImmediate(request, response, 503, { 'Cache-Control': 'no-store' }, [], {
           code: 'SERVICE_UNAVAILABLE',
           message: (error as Error).message,
@@ -596,21 +849,41 @@ export function createContentServiceGateway(
           deny(400)
           return true
         }
+        const timing = timingFor(route, 'websocket', 'GET')
         const resolved = await resolve(request, route)
         if (resolved.denied) {
           deny(resolved.denied.status)
           return true
         }
-        socket.once('close', () => resolved.target?.release?.())
+        timing?.resolved()
+        let setupMs: number | null = null
+        socket.once('close', () => {
+          resolved.target?.release?.()
+          if (!timing) return
+          if (setupMs === null) timing.finish('error')
+          else timing.finish('ok', { totalMs: setupMs, sessionMs: timing.elapsed() })
+        })
         const call = upstreamRequest(request, route, resolved.target!, true)
+        timing?.dispatched()
         call.on('upgrade', (incoming, upstream, upstreamHead) => {
+          timing?.headers(101, call.reusedSocket)
           if (
             resolved.target!.expectedSourceIdentity &&
             incoming.headers['x-memon-source-identity'] !== resolved.target!.expectedSourceIdentity
           ) {
+            if (timing) timing.status = 503
             upstream.destroy()
             deny(503)
             return
+          }
+          setupMs = timing?.elapsed() ?? null
+          if (timing) {
+            upstream.on('data', (chunk: Buffer) => {
+              timing.bytes += chunk.length
+            })
+            socket.on('data', (chunk: Buffer) => {
+              timing.bytesUp += chunk.length
+            })
           }
           const headers = responseHeaders(incoming.headers, route.prefix)
           headers.connection = 'Upgrade'
@@ -637,10 +910,14 @@ export function createContentServiceGateway(
           socket.pipe(upstream).pipe(socket)
         })
         call.on('response', (incoming) => {
+          timing?.headers(incoming.statusCode ?? 502, call.reusedSocket)
           incoming.resume()
           deny(incoming.statusCode ?? 502)
         })
-        call.on('error', () => deny(503))
+        call.on('error', () => {
+          if (timing && timing.status === null) timing.status = 503
+          deny(503)
+        })
         socket.once('close', () => call.destroy())
         call.end()
       } catch {

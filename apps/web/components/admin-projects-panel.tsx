@@ -9,6 +9,7 @@ import { changeProjectAccess, changeProjectAdmin, fetchProjectAccess } from '../
 import { queryKeys } from '../lib/query-keys'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { Input } from './ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table'
@@ -26,36 +27,40 @@ export function AdminProjectsPanel({ superAdmin }: { superAdmin: boolean }) {
   const access = useQuery({ queryKey: queryKeys.projectAccess(), queryFn: fetchProjectAccess })
   const projects = access.data?.projects ?? []
   return (
-    <div
-      className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3"
-      data-slot="admin-projects"
-    >
-      <h1 className="text-sm font-medium">Projects</h1>
-      {access.isError && <p className="text-xs text-destructive">{errorMessage(access.error)}</p>}
-      {access.isSuccess && projects.length === 0 && (
-        <p className="text-xs text-muted-foreground">No projects have been granted to you yet.</p>
-      )}
-      {projects.length > 0 && (
-        <Table className="text-xs">
-          <TableHeader>
-            <TableRow>
-              <TableHead className="h-8">Project</TableHead>
-              {superAdmin && <TableHead className="h-8">Admins</TableHead>}
-              <TableHead className="h-8">Read access</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {projects.map((project) => (
-              <ProjectRow
-                key={`${project.host}/${project.project}`}
-                project={project}
-                superAdmin={superAdmin}
-              />
-            ))}
-          </TableBody>
-        </Table>
-      )}
-    </div>
+    <Card size="sm" id="projects" className="scroll-mt-3" data-slot="admin-projects">
+      <CardHeader>
+        <CardTitle>Projects</CardTitle>
+        <CardDescription>
+          {superAdmin ? 'Project admins and user read grants.' : 'Read grants on your projects.'}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-2">
+        {access.isError && <p className="text-xs text-destructive">{errorMessage(access.error)}</p>}
+        {access.isSuccess && projects.length === 0 && (
+          <p className="text-xs text-muted-foreground">No projects have been granted to you yet.</p>
+        )}
+        {projects.length > 0 && (
+          <Table className="text-xs">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="h-8">Project</TableHead>
+                {superAdmin && <TableHead className="h-8">Admins</TableHead>}
+                <TableHead className="h-8">Read access</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {projects.map((project) => (
+                <ProjectRow
+                  key={`${project.host}/${project.project}`}
+                  project={project}
+                  superAdmin={superAdmin}
+                />
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 

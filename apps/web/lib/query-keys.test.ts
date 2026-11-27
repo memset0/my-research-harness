@@ -69,6 +69,7 @@ describe('queryKeys', () => {
         "slurmStatus",
         "submodules",
         "tabCollection",
+        "traffic",
         "wiki",
         "wikiBacklinks",
         "wikiInventory",
@@ -140,6 +141,10 @@ describe('queryKeys', () => {
         86400000,
       ]
     `)
+  })
+
+  it('traffic', () => {
+    expect(queryKeys.traffic(900_000)).toEqual(['traffic', 900_000])
   })
 
   it('allRuns', () => {
