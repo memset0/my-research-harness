@@ -438,7 +438,10 @@ function TicketRow({ task, nowMs }: { task: ClusterTaskDto; nowMs: number }) {
         {task.id}
         {task.label && <span className="ml-1 font-sans text-muted-foreground">{task.label}</span>}
       </TableCell>
-      <TableCell className="truncate">{task.project}</TableCell>
+      <TableCell className="truncate">
+        {task.project}
+        {task.owner && <span className="ml-1 text-muted-foreground">· {task.owner}</span>}
+      </TableCell>
       <TableCell>
         <Tooltip>
           <TooltipTrigger asChild>

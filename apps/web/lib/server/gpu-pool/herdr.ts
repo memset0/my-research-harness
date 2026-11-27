@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process'
 import os from 'node:os'
 import path from 'node:path'
 import { TICKET_ID_PATTERN } from '@memon/core'
@@ -37,6 +37,8 @@ export interface Herdr {
   ticketTerminals(): Promise<Map<string, HerdrTerminal[]>>
   kill(address: string): Promise<void>
   remove(address: string): Promise<void>
+  /** A terminal's screen plus `lines` of history, as plain text. */
+  read(address: string, lines: number): Promise<string>
 }
 
 const MAX_OUTPUT = 1024 * 1024
@@ -66,6 +68,11 @@ export function runHc(args: string[], hc = hcPath(), timeoutMs = 120_000): Promi
       })
     })
   })
+}
+
+/** Start memon's herdr client with piped stdio, for streamed one-shot commands. */
+export function spawnHc(args: string[], hc = hcPath()): ChildProcessWithoutNullStreams {
+  return spawn(hc, args, { stdio: ['pipe', 'pipe', 'pipe'] })
 }
 
 function json<T>(result: HcResult, what: string): T {
@@ -139,6 +146,14 @@ export function createHerdr(hc = hcPath()): Herdr {
         throw new Error(
           `hc kill ${address} failed: ${result.stderr.trim() || result.stdout.trim()}`,
         )
+    },
+    async read(address, lines) {
+      const result = await runHc(['read', address, '--lines', String(lines)], hc)
+      if (result.code !== 0)
+        throw new Error(
+          `hc read ${address} failed: ${result.stderr.trim() || result.stdout.trim()}`,
+        )
+      return result.stdout
     },
     async remove(address) {
       const result = await runHc(['rm', address, '--json'], hc)

@@ -1,83 +1,52 @@
-import { spawn } from 'node:child_process'
-import os from 'node:os'
-import path from 'node:path'
+// `memon ticket`: GPU tickets through memon central's API only. Nothing here
+// talks to herdr, SSH or the node registry, so it works from any machine with
+// a `memon login` (see lib/central-client.ts).
+
 import { isTicketId } from '@memon/core'
 import type { Command } from 'commander'
-import { centralRequest } from '../lib/central-client.js'
+import WebSocket from 'ws'
+import { type CentralClientDeps, centralRequest, resolveCentral } from '../lib/central-client.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { EXIT } from '../lib/exit-codes.js'
 
-interface Launch {
-  machine: string
-  exec: string[]
-  run: string[]
-  holdJob: string | null
-}
-
-interface TicketView {
-  ticket: { id: string; status: string; [key: string]: unknown }
-  launch: Launch | null
-}
-
-export interface TicketDeps {
-  fetch: typeof fetch
-  env: NodeJS.ProcessEnv
-  /** Home directory holding `.config/memon` (tests); defaults to the user's. */
-  home?: string
-  /** Runs memon's herdr client with inherited stdio; resolves to its exit status. */
-  hc: (args: string[]) => Promise<number>
-  /** Runs memon's herdr client and captures stdout. */
-  hcCapture: (args: string[]) => Promise<{ code: number; stdout: string }>
+export interface TicketDeps extends CentralClientDeps {
   out: (text: string) => void
+  /** Raw output streams for `exec` and `attach`. */
+  stdout?: (chunk: Buffer) => void
+  stderr?: (chunk: Buffer) => void
   isTty: boolean
+  /** All of piped standard input (only read when not a terminal). */
+  readStdin?: () => Promise<Buffer>
+  /** Opens the attach WebSocket; injectable for tests. */
+  openSocket?: (url: string, headers: Record<string, string>) => WebSocket
+  sleep?: (ms: number) => Promise<void>
 }
 
-export function hcPath(env: NodeJS.ProcessEnv): string {
-  return (
-    env.MEMON_HC || path.join(os.homedir(), '.local', 'share', 'memon', 'herdr-core', 'bin', 'hc')
-  )
-}
+const MAX_STDIN_BYTES = 8 * 1024 * 1024
+/** Each `wait` request blocks at most this long on central; the CLI repeats it. */
+const WAIT_SLICE_S = 60
 
 function defaultDeps(): TicketDeps {
-  const env = process.env
-  const hc = hcPath(env)
   return {
     fetch,
-    env,
-    hc: (args) =>
-      new Promise((resolve) => {
-        const child = spawn(hc, args, { stdio: 'inherit' })
-        child.on('error', (err) =>
-          emitErrorAndExit(
-            'TRANSPORT_UNAVAILABLE',
-            `cannot start ${hc}: ${err.message}`,
-            undefined,
-            EXIT.GENERIC,
-          ),
-        )
-        child.on('exit', (code, signal) =>
-          resolve(code ?? 128 + (signal ? (os.constants.signals[signal] ?? 0) : 0)),
-        )
-      }),
-    hcCapture: (args) =>
-      new Promise((resolve) => {
-        const child = spawn(hc, args, { stdio: ['ignore', 'pipe', 'inherit'] })
-        let stdout = ''
-        child.stdout.on('data', (chunk: Buffer) => {
-          stdout += chunk.toString()
-        })
-        child.on('error', (err) =>
-          emitErrorAndExit(
-            'TRANSPORT_UNAVAILABLE',
-            `cannot start ${hc}: ${err.message}`,
-            undefined,
-            EXIT.GENERIC,
-          ),
-        )
-        child.on('close', (code) => resolve({ code: code ?? 1, stdout }))
-      }),
+    env: process.env,
     out: (text) => process.stdout.write(text),
+    stdout: (chunk) => process.stdout.write(chunk),
+    stderr: (chunk) => process.stderr.write(chunk),
     isTty: process.stdin.isTTY === true && process.stdout.isTTY === true,
+    readStdin: async () => {
+      const chunks: Buffer[] = []
+      let size = 0
+      for await (const chunk of process.stdin) {
+        size += (chunk as Buffer).length
+        if (size > MAX_STDIN_BYTES)
+          emitErrorAndExit('BAD_REQUEST', 'standard input for ticket exec is limited to 8 MiB')
+        chunks.push(chunk as Buffer)
+      }
+      return Buffer.concat(chunks)
+    },
+    openSocket: (url, headers) => new WebSocket(url, { headers }),
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   }
 }
 
@@ -88,28 +57,18 @@ export function parseDuration(text: string): number {
   return Number(match[1]) * unit
 }
 
-async function central(
-  deps: TicketDeps,
-  method: string,
-  route: string,
-  body?: unknown,
-): Promise<unknown> {
-  return centralRequest(deps, method, `/api/gpu-pool/tickets${route}`, body)
-}
-
 function checkId(id: string): string {
   if (!isTicketId(id))
     emitErrorAndExit('BAD_REQUEST', `"${id}" is not a ticket id (tk_ followed by 12 characters)`)
   return id
 }
 
-async function granted(deps: TicketDeps, id: string): Promise<TicketView & { launch: Launch }> {
-  const view = (await central(deps, 'GET', `/${checkId(id)}`)) as TicketView
-  if (view.ticket.status !== 'GRANTED' || !view.launch)
-    emitErrorAndExit('CONFLICT', `ticket ${id} is ${view.ticket.status}, not GRANTED`)
-  return view as TicketView & { launch: Launch }
+function checkTask(task: string | undefined, usage: string): string {
+  if (!task) emitErrorAndExit('BAD_REQUEST', `name the task: ${usage}`)
+  return encodeURIComponent(task)
 }
 
+/** Terminal name for a task: unique per ticket, within herdr's 1–32 `[a-z0-9_-]`. */
 export function terminalName(ticketId: string, task: string): string {
   const clean =
     task
@@ -124,16 +83,152 @@ const line = (words: string[]) => {
   return words.join(' ')
 }
 
-async function terminalAddress(deps: TicketDeps, id: string, task: string): Promise<string> {
-  const listed = await deps.hcCapture(['ls', '--all', '--label', `ticket=${id}`, '--json'])
-  const name = terminalName(id, task)
-  const terminals =
-    listed.code === 0
-      ? (JSON.parse(listed.stdout).terminals as Array<{ address: string; name?: string }>)
-      : []
-  const found = terminals.find((t) => t.name === name)
-  if (!found) emitErrorAndExit('NOT_FOUND', `ticket ${id} has no task "${task}"`)
-  return found.address
+const tickets = (route: string) => `/api/gpu-pool/tickets${route}`
+
+/** `exec`: stream NDJSON output frames to stdout/stderr; resolve to the exit status. */
+async function streamExec(
+  deps: TicketDeps,
+  id: string,
+  body: Record<string, unknown>,
+): Promise<number> {
+  const target = await resolveCentral(deps)
+  let response: Response
+  try {
+    response = await deps.fetch(`${target.base}${tickets(`/${id}/exec`)}`, {
+      method: 'POST',
+      headers: { authorization: target.authorization, 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  } catch (err) {
+    emitErrorAndExit(
+      'CENTRAL_UNAVAILABLE',
+      `cannot reach memon central at ${target.base}: ${(err as Error).message}`,
+      undefined,
+      EXIT.GENERIC,
+    )
+  }
+  if (!response.ok || !response.body) {
+    // Errors carry the usual JSON envelope; reuse the shared mapping.
+    const text = await response.text().catch(() => '')
+    await centralRequest(
+      { ...deps, fetch: async () => new Response(text, { status: response.status }) },
+      'POST',
+      '',
+      undefined,
+      target,
+    )
+    return EXIT.GENERIC
+  }
+  const write = {
+    stdout: deps.stdout ?? ((chunk: Buffer) => deps.out(chunk.toString())),
+    stderr: deps.stderr ?? ((chunk: Buffer) => deps.out(chunk.toString())),
+  }
+  const decoder = new TextDecoder()
+  let pending = ''
+  let exit: number | null = null
+  const handle = (frame: string) => {
+    if (!frame.trim()) return
+    const value = JSON.parse(frame) as {
+      stream?: 'stdout' | 'stderr'
+      data?: string
+      exit?: number
+    }
+    if (typeof value.exit === 'number') exit = value.exit
+    else if (value.stream && value.data) write[value.stream](Buffer.from(value.data, 'base64'))
+  }
+  for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+    pending += decoder.decode(chunk, { stream: true })
+    let newline = pending.indexOf('\n')
+    while (newline >= 0) {
+      handle(pending.slice(0, newline))
+      pending = pending.slice(newline + 1)
+      newline = pending.indexOf('\n')
+    }
+  }
+  handle(pending)
+  if (exit === null)
+    emitErrorAndExit('CENTRAL_UNAVAILABLE', 'the exec stream ended early', undefined, EXIT.GENERIC)
+  return exit
+}
+
+const SOCKET_REFUSALS: Record<number, string> = {
+  401: 'FORBIDDEN',
+  403: 'FORBIDDEN',
+  404: 'NOT_FOUND',
+  409: 'CONFLICT',
+}
+
+/** `attach` / `logs --follow`: a WebSocket to the task's terminal on central. */
+async function socketSession(
+  deps: TicketDeps,
+  id: string,
+  query: Record<string, string>,
+  interactive: boolean,
+): Promise<number> {
+  const target = await resolveCentral(deps)
+  const size = {
+    cols: String(process.stdout.columns ?? 120),
+    rows: String(process.stdout.rows ?? 40),
+  }
+  const url = new URL(`${target.base.replace(/^http/, 'ws')}${tickets(`/${id}/attach`)}`)
+  for (const [key, value] of Object.entries({ ...size, ...query })) url.searchParams.set(key, value)
+  const open = deps.openSocket ?? ((u, headers) => new WebSocket(u, { headers }))
+  const ws = open(url.toString(), { authorization: target.authorization })
+  const write = deps.stdout ?? ((chunk: Buffer) => deps.out(chunk.toString()))
+  return new Promise((resolve) => {
+    let code: number = EXIT.GENERIC
+    const restore: Array<() => void> = []
+    ws.on('unexpected-response', (_req, res) => {
+      const status = res.statusCode ?? 0
+      emitErrorAndExit(
+        SOCKET_REFUSALS[status] ?? 'CENTRAL_UNAVAILABLE',
+        `attach refused (${status})`,
+      )
+    })
+    ws.on('error', (err) =>
+      emitErrorAndExit(
+        'CENTRAL_UNAVAILABLE',
+        `cannot reach memon central at ${target.base}: ${err.message}`,
+        undefined,
+        EXIT.GENERIC,
+      ),
+    )
+    ws.on('open', () => {
+      if (!interactive) return
+      const stdin = process.stdin
+      stdin.setRawMode?.(true)
+      stdin.resume()
+      const onData = (chunk: Buffer) => ws.send(chunk, { binary: true })
+      const onResize = () =>
+        ws.send(
+          JSON.stringify({
+            type: 'resize',
+            cols: process.stdout.columns,
+            rows: process.stdout.rows,
+          }),
+        )
+      stdin.on('data', onData)
+      process.stdout.on('resize', onResize)
+      restore.push(() => {
+        stdin.off('data', onData)
+        process.stdout.off('resize', onResize)
+        stdin.setRawMode?.(false)
+        stdin.pause()
+      })
+    })
+    ws.on('message', (data, isBinary) => {
+      if (isBinary) {
+        write(data as Buffer)
+        return
+      }
+      const message = JSON.parse(data.toString()) as { type?: string; code?: number }
+      if (message.type === 'exit' && typeof message.code === 'number') code = message.code
+    })
+    ws.on('close', () => {
+      for (const undo of restore) undo()
+      resolve(code)
+    })
+  })
 }
 
 export async function runTicket(
@@ -143,6 +238,10 @@ export async function runTicket(
   deps = defaultDeps(),
 ): Promise<number> {
   const print = (value: unknown) => deps.out(`${JSON.stringify(value)}\n`)
+  const call = (method: string, route: string, body?: unknown) =>
+    centralRequest(deps, method, tickets(route), body)
+  const forced = opts.force === true
+  const force = forced ? { force: true } : {}
   switch (action) {
     case 'request': {
       if (typeof opts.project !== 'string') emitErrorAndExit('BAD_REQUEST', '--project is required')
@@ -157,114 +256,102 @@ export async function runTicket(
       if (opts.gpuType !== undefined) body.gpu_type = opts.gpuType
       if (opts.label !== undefined) body.label = opts.label
       if (args.length > 0) body.run = args.join(' ')
-      print(await central(deps, 'POST', '', body))
+      print(await call('POST', '', body))
       return EXIT.SUCCESS
     }
     case 'list':
-      print(await central(deps, 'GET', ''))
+      print(await call('GET', ''))
       return EXIT.SUCCESS
     case 'show':
-      print(await central(deps, 'GET', `/${checkId(args[0] ?? '')}`))
+      print(await call('GET', `/${checkId(args[0] ?? '')}`))
       return EXIT.SUCCESS
     case 'release':
-      print(await central(deps, 'POST', `/${checkId(args[0] ?? '')}/release`))
+      print(await call('POST', `/${checkId(args[0] ?? '')}/release`, force))
       return EXIT.SUCCESS
     case 'exec': {
       const [id, ...rest] = args
-      const { launch } = await granted(deps, id ?? '')
-      const stdin = deps.isTty ? [] : ['-i']
-      return deps.hc([
-        'exec',
-        ...stdin,
-        '--on',
-        launch.machine,
-        '--timeout',
-        String(opts.timeout ?? 600),
-        '--',
-        ...launch.exec,
-        'bash',
-        '-c',
-        line(rest),
-      ])
+      const checked = checkId(id ?? '')
+      const body: Record<string, unknown> = {
+        command: line(rest),
+        timeout_s: Number(opts.timeout ?? 600),
+        ...force,
+      }
+      if (!deps.isTty && deps.readStdin) {
+        const input = await deps.readStdin()
+        if (input.length > 0) body.stdin = input.toString('base64')
+      }
+      return streamExec(deps, checked, body)
     }
     case 'run': {
       const [id, ...rest] = args
-      const { launch } = await granted(deps, id ?? '')
-      const task = typeof opts.name === 'string' ? opts.name : `task-${Date.now().toString(36)}`
-      const result = await deps.hcCapture([
-        'run',
-        '--on',
-        launch.machine,
-        '--bg',
-        '--name',
-        terminalName(id as string, task),
-        '--label',
-        `ticket=${id}`,
-        '--label',
-        `task=${task}`,
-        '--json',
-        '--',
-        ...launch.run,
-        'bash',
-        '-c',
-        line(rest),
-      ])
-      if (result.code !== 0)
-        emitErrorAndExit(
-          'TASK_START_FAILED',
-          `could not start task ${task}`,
-          undefined,
-          EXIT.GENERIC,
-        )
-      print({ ticket: id, task, terminal: JSON.parse(result.stdout).address })
+      const checked = checkId(id ?? '')
+      const result = (await call('POST', `/${checked}/tasks`, {
+        command: line(rest),
+        ...(typeof opts.name === 'string' ? { name: opts.name } : {}),
+        ...force,
+      })) as { task: { task: string; terminal: string } }
+      print({ ticket: checked, task: result.task.task, terminal: result.task.terminal })
       return EXIT.SUCCESS
     }
-    case 'ps': {
+    case 'ps':
+      print(await call('GET', `/${checkId(args[0] ?? '')}/tasks${forced ? '?force=1' : ''}`))
+      return EXIT.SUCCESS
+    case 'logs': {
       const id = checkId(args[0] ?? '')
-      const listed = await deps.hcCapture(['ls', '--all', '--label', `ticket=${id}`, '--json'])
-      if (listed.code !== 0) return listed.code
-      deps.out(listed.stdout.endsWith('\n') ? listed.stdout : `${listed.stdout}\n`)
+      const task = checkTask(args[1], `memon ticket logs ${id} <task>`)
+      if (opts.follow === true)
+        return socketSession(
+          deps,
+          id,
+          { task: decodeURIComponent(task), observe: '1', ...(forced ? { force: '1' } : {}) },
+          false,
+        )
+      const lines = Number(opts.lines ?? 200)
+      const { text } = (await call(
+        'GET',
+        `/${id}/tasks/${task}/logs?lines=${lines}${forced ? '&force=1' : ''}`,
+      )) as { text: string }
+      deps.out(text.endsWith('\n') ? text : `${text}\n`)
       return EXIT.SUCCESS
     }
-    case 'logs':
-    case 'wait':
-    case 'kill':
+    case 'wait': {
+      const id = checkId(args[0] ?? '')
+      const task = checkTask(args[1], `memon ticket wait ${id} <task>`)
+      const deadline = Date.now() + Number(opts.timeout ?? 3600) * 1000
+      const sleep = deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)))
+      for (;;) {
+        const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000))
+        const { task: view } = (await call('POST', `/${id}/tasks/${task}/wait`, {
+          timeout_s: Math.min(WAIT_SLICE_S, remaining),
+          ...force,
+        })) as { task: { state: string; exit_code: number | null } }
+        if (view.state !== 'live') {
+          print({ ticket: id, ...view })
+          return EXIT.SUCCESS
+        }
+        if (remaining === 0) {
+          print({ ticket: id, ...view })
+          return EXIT.GENERIC
+        }
+        // A slice can return early (e.g. a proxy cut it short); pace the next one.
+        await sleep(1000)
+      }
+    }
+    case 'kill': {
+      const id = checkId(args[0] ?? '')
+      const task = checkTask(args[1], `memon ticket kill ${id} <task>`)
+      print(await call('POST', `/${id}/tasks/${task}/kill`, force))
+      return EXIT.SUCCESS
+    }
     case 'attach': {
       const id = checkId(args[0] ?? '')
-      if (action === 'attach' && !deps.isTty)
-        emitErrorAndExit('BAD_REQUEST', 'attach needs a terminal')
-      if (action === 'attach' && !args[1]) {
-        const { launch } = await granted(deps, id)
-        const name = terminalName(id, 'shell')
-        const started = await deps.hcCapture([
-          'run',
-          '--on',
-          launch.machine,
-          '--bg',
-          '--name',
-          name,
-          '--label',
-          `ticket=${id}`,
-          '--label',
-          'task=shell',
-          '--json',
-          '--',
-          ...launch.exec,
-          'bash',
-          '-l',
-        ])
-        if (started.code !== 0)
-          emitErrorAndExit('TASK_START_FAILED', 'could not start a shell', undefined, EXIT.GENERIC)
-        return deps.hc(['attach', JSON.parse(started.stdout).address])
-      }
-      if (!args[1])
-        emitErrorAndExit('BAD_REQUEST', `name the task: memon ticket ${action} ${id} <task>`)
-      const address = await terminalAddress(deps, id, args[1])
-      if (action === 'logs') return deps.hc(['read', address, '--lines', String(opts.lines ?? 200)])
-      if (action === 'wait')
-        return deps.hc(['wait', address, '--timeout', String(opts.timeout ?? 3600)])
-      if (action === 'kill') return deps.hc(['kill', address])
-      return deps.hc(['attach', address])
+      if (!deps.isTty) emitErrorAndExit('BAD_REQUEST', 'attach needs a terminal')
+      return socketSession(
+        deps,
+        id,
+        { ...(args[1] ? { task: args[1] } : {}), ...(forced ? { force: '1' } : {}) },
+        true,
+      )
     }
     default:
       emitErrorAndExit('BAD_REQUEST', `unknown ticket action ${action}`)
@@ -275,6 +362,12 @@ export function registerTicketCommands(program: Command): void {
   const ticket = program
     .command('ticket')
     .description('request GPUs from memon central and use them through a ticket')
+    .addHelpText(
+      'after',
+      `
+Every subcommand talks to memon central only (see \`memon login\`). Only the
+account that requested a ticket may use it; the super admin must add --force.`,
+    )
   const act =
     (action: string) =>
     async (...input: unknown[]) => {
@@ -287,6 +380,8 @@ export function registerTicketCommands(program: Command): void {
         ) as string[]
       process.exitCode = await runTicket(action, args, opts)
     }
+  const withForce = (command: Command) =>
+    command.option('--force', 'super admin: act on another account’s ticket', false)
   ticket
     .command('request')
     .description('queue a GPU request; prints the ticket and its random id (tk_…)')
@@ -305,55 +400,59 @@ export function registerTicketCommands(program: Command): void {
     .command('list')
     .description('list tickets, dirty GPUs and unticketed GPU use')
     .action(act('list'))
-  ticket
-    .command('show')
-    .argument('<id>')
-    .description('show one ticket and its launch details')
-    .action(act('show'))
-  ticket
-    .command('release')
-    .argument('<id>')
-    .description('release a ticket: stop its tasks and free its GPUs')
-    .action(act('release'))
-  ticket
-    .command('exec')
-    .argument('<id>')
-    .argument('<command...>', 'short command, given after --')
-    .option('--timeout <s>', 'seconds before it is ended (max 600)', '600')
-    .description('run a short command on the ticket’s GPUs; exits with its status')
-    .action(act('exec'))
-  ticket
-    .command('run')
-    .argument('<id>')
-    .argument('<command...>', 'long task, given after --')
-    .option('--name <task>', 'task name (default: generated)')
-    .description('start a long task in a persistent terminal on the ticket’s GPUs')
-    .action(act('run'))
-  ticket.command('ps').argument('<id>').description('list the ticket’s tasks').action(act('ps'))
-  ticket
-    .command('logs')
-    .argument('<id>')
-    .argument('<task>')
-    .option('--lines <n>', 'history lines', '200')
-    .description('print a task’s screen and history')
-    .action(act('logs'))
-  ticket
-    .command('wait')
-    .argument('<id>')
-    .argument('<task>')
-    .option('--timeout <s>', 'seconds before it checks in', '3600')
-    .description('wait until a task stops')
-    .action(act('wait'))
-  ticket
-    .command('kill')
-    .argument('<id>')
-    .argument('<task>')
-    .description('end a task')
-    .action(act('kill'))
-  ticket
-    .command('attach')
-    .argument('<id>')
-    .argument('[task]', 'task to attach to (default: a new shell on the ticket’s GPUs)')
-    .description('attach this terminal to a task, or open a shell on the ticket’s GPUs')
-    .action(act('attach'))
+  ticket.command('show').argument('<id>').description('show one ticket').action(act('show'))
+  withForce(
+    ticket
+      .command('release')
+      .argument('<id>')
+      .description('release a ticket: stop its tasks and free its GPUs'),
+  ).action(act('release'))
+  withForce(
+    ticket
+      .command('exec')
+      .argument('<id>')
+      .argument('<command...>', 'short command, given after --')
+      .option('--timeout <s>', 'seconds before it is ended (max 600)', '600')
+      .description(
+        'run a short command on the ticket’s GPUs; piped stdin is sent along; exits with its status',
+      ),
+  ).action(act('exec'))
+  withForce(
+    ticket
+      .command('run')
+      .argument('<id>')
+      .argument('<command...>', 'long task, given after --')
+      .option('--name <task>', 'task name: 1–16 of a-z 0-9 _ - (default: generated)')
+      .description('start a long task in a persistent terminal on the ticket’s GPUs'),
+  ).action(act('run'))
+  withForce(ticket.command('ps').argument('<id>').description('list the ticket’s tasks')).action(
+    act('ps'),
+  )
+  withForce(
+    ticket
+      .command('logs')
+      .argument('<id>')
+      .argument('<task>')
+      .option('--lines <n>', 'history lines', '200')
+      .option('--follow', 'keep printing the task’s terminal until it ends (watch only)', false)
+      .description('print a task’s screen and history'),
+  ).action(act('logs'))
+  withForce(
+    ticket
+      .command('wait')
+      .argument('<id>')
+      .argument('<task>')
+      .option('--timeout <s>', 'seconds to wait (exit 1 if it is still running)', '3600')
+      .description('wait until a task stops; prints its state and exit code'),
+  ).action(act('wait'))
+  withForce(
+    ticket.command('kill').argument('<id>').argument('<task>').description('end a task'),
+  ).action(act('kill'))
+  withForce(
+    ticket
+      .command('attach')
+      .argument('<id>')
+      .argument('[task]', 'task to attach to (default: a new shell on the ticket’s GPUs)')
+      .description('attach this terminal to a task, or open a shell on the ticket’s GPUs'),
+  ).action(act('attach'))
 }

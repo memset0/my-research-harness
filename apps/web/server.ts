@@ -98,15 +98,26 @@ if (runtime.config.central) {
           }
 }
 // GPU tickets: expiry and reclaim must run without request traffic.
+let ticketAttach:
+  | { upgrade: (r: IncomingMessage, s: Duplex, h: Buffer) => Promise<boolean> }
+  | undefined
 if (runtime.config.central && process.env.MEMON_GPU_POOL !== 'off') {
-  const { getTicketBroker } = await import('./lib/server/gpu-pool/broker')
+  const [{ getTicketBroker }, { createTicketAttachGateway }] = await Promise.all([
+    import('./lib/server/gpu-pool/broker'),
+    import('./lib/server/gpu-pool/attach-gateway'),
+  ])
   getTicketBroker(runtime.configPath).start()
+  ticketAttach = createTicketAttachGateway({
+    runtimeAuth: runtime.auth,
+    broker: () => getTicketBroker(runtime.configPath),
+  })
 }
 const contentGateway = createContentServiceGateway(runtime.config, runtime.auth, {
   configPath: runtime.configPath,
 })
 const server = createMemonServer({
   contentGateway,
+  ...(ticketAttach ? { ticketAttach } : {}),
   handle,
   upgradeHandler,
   ...(centralGateway ? { centralGateway } : {}),

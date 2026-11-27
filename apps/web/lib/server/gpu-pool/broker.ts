@@ -13,15 +13,35 @@ import {
 } from './herdr'
 import { isIdle, type PoolNode, planGrants } from './planner'
 import { gpuPoolDatabasePath, TicketStore } from './store'
-import type { GpuSnapshot, Ticket, TicketRequest } from './types'
+import type { GpuSnapshot, Ticket, TicketActor, TicketOwner, TicketRequest } from './types'
+
+export type TicketErrorCode =
+  | 'BAD_REQUEST'
+  | 'NOT_FOUND'
+  | 'CONFLICT'
+  | 'UNAVAILABLE'
+  | 'OWNER_MISMATCH'
 
 export class TicketError extends Error {
   constructor(
-    readonly code: 'BAD_REQUEST' | 'NOT_FOUND' | 'CONFLICT' | 'UNAVAILABLE',
+    readonly code: TicketErrorCode,
     message: string,
   ) {
     super(message)
   }
+}
+
+/** Task names: what follows the ticket id in a terminal name (`<id>-<task>`, ≤ 32). */
+export const TASK_NAME = /^[a-z0-9][a-z0-9_-]{0,15}$/
+/** The longest a single `wait` request blocks; callers repeat it. */
+export const MAX_WAIT_S = 60
+const WAIT_POLL_MS = 2_000
+
+export interface TaskView {
+  task: string
+  address: string
+  state: string
+  exitCode: number | null
 }
 
 export const MIN_DURATION_S = 60
@@ -104,8 +124,8 @@ export class TicketBroker {
     this.log = deps.log ?? ((message) => console.warn(`[gpu-pool] ${message}`))
   }
 
-  async request(body: unknown): Promise<Ticket> {
-    const ticket = await this.deps.store.create(parseTicketRequest(body), this.now())
+  async request(body: unknown, owner: TicketOwner | null = null): Promise<Ticket> {
+    const ticket = await this.deps.store.create(parseTicketRequest(body), this.now(), owner)
     this.kick()
     return ticket
   }
@@ -128,6 +148,172 @@ export class TicketBroker {
     return ticket
   }
 
+  /**
+   * The ticket if `actor` may act on it: its owner, or the super admin with
+   * `force`. Anyone else is told the ticket does not exist. `null` is central
+   * itself (expiry, tests).
+   */
+  async authorize(id: string, actor: TicketActor | null, force = false): Promise<Ticket> {
+    const ticket = await this.get(id)
+    if (actor === null || (ticket.owner && ticket.owner.accountId === actor.accountId))
+      return ticket
+    if (!actor.superAdmin) throw new TicketError('NOT_FOUND', `ticket ${id} does not exist`)
+    if (!force)
+      throw new TicketError(
+        'OWNER_MISMATCH',
+        `ticket ${id} belongs to ${ticket.owner?.username ?? 'no account'}; pass --force to act on it`,
+      )
+    return ticket
+  }
+
+  /** Record a forced action on someone else's ticket. */
+  private async noteForced(ticket: Ticket, actor: TicketActor | null, action: string) {
+    if (!actor || (ticket.owner && ticket.owner.accountId === actor.accountId)) return
+    await this.deps.store.patch(ticket.id, {
+      forced: `${action} by ${actor.username} at ${formatIsoLocal(this.now())}`,
+    })
+  }
+
+  /** A granted ticket the actor may use, with its launch template. */
+  async usable(
+    id: string,
+    actor: TicketActor | null,
+    force = false,
+    action = 'used',
+  ): Promise<{ ticket: Ticket; template: LaunchTemplate }> {
+    const ticket = await this.authorize(id, actor, force)
+    if (ticket.status !== 'GRANTED')
+      throw new TicketError('CONFLICT', `ticket ${id} is ${ticket.status}, not GRANTED`)
+    await this.noteForced(ticket, actor, action)
+    return { ticket, template: launchTemplate(ticket, await this.node(ticket)) }
+  }
+
+  /** `hc exec` arguments for a one-shot command on the ticket's GPUs. */
+  async execPlan(
+    id: string,
+    actor: TicketActor | null,
+    options: { command: string; timeoutS: number; stdin: boolean; force?: boolean },
+  ): Promise<string[]> {
+    const { template } = await this.usable(id, actor, options.force, 'exec')
+    return [
+      'exec',
+      ...(options.stdin ? ['-i'] : []),
+      '--on',
+      template.machine,
+      '--timeout',
+      String(options.timeoutS),
+      '--',
+      ...template.exec,
+      'bash',
+      '-c',
+      options.command,
+    ]
+  }
+
+  async startNamedTask(
+    id: string,
+    actor: TicketActor | null,
+    options: { name?: string; command: string; force?: boolean },
+  ): Promise<TaskView> {
+    const task = options.name ?? `task-${this.now().getTime().toString(36)}`
+    if (!TASK_NAME.test(task))
+      throw new TicketError('BAD_REQUEST', 'task names are 1–16 of a-z 0-9 _ - (starting a-z0-9)')
+    const { ticket } = await this.usable(id, actor, options.force, `task ${task}`)
+    if (
+      (await this.taskViews(ticket.id)).some((view) => view.task === task && view.state === 'live')
+    )
+      throw new TicketError('CONFLICT', `task ${task} is already running`)
+    const address = await this.startTask(ticket, task, options.command)
+    return { task, address, state: 'live', exitCode: null }
+  }
+
+  async tasks(id: string, actor: TicketActor | null, force = false): Promise<TaskView[]> {
+    const ticket = await this.authorize(id, actor, force)
+    return this.taskViews(ticket.id)
+  }
+
+  async taskLogs(
+    id: string,
+    actor: TicketActor | null,
+    task: string,
+    lines: number,
+    force = false,
+  ): Promise<string> {
+    const view = await this.task(await this.authorize(id, actor, force), task)
+    return this.deps.herdr.read(view.address, Math.max(0, Math.min(lines, 100_000)))
+  }
+
+  /** Wait up to `timeoutS` (≤ MAX_WAIT_S) for a task to stop; returns its latest view. */
+  async waitTask(
+    id: string,
+    actor: TicketActor | null,
+    task: string,
+    timeoutS: number,
+    force = false,
+  ): Promise<TaskView> {
+    const ticket = await this.authorize(id, actor, force)
+    const deadline = Date.now() + Math.max(0, Math.min(timeoutS, MAX_WAIT_S)) * 1000
+    for (;;) {
+      const view = await this.task(ticket, task)
+      if (view.state !== 'live' || Date.now() >= deadline) return view
+      await new Promise((resolve) => setTimeout(resolve, WAIT_POLL_MS))
+    }
+  }
+
+  async killTask(
+    id: string,
+    actor: TicketActor | null,
+    task: string,
+    force = false,
+  ): Promise<TaskView> {
+    const ticket = await this.authorize(id, actor, force)
+    const view = await this.task(ticket, task)
+    await this.noteForced(ticket, actor, `kill ${task}`)
+    if (view.state === 'live') await this.deps.herdr.kill(view.address)
+    return this.task(ticket, task)
+  }
+
+  /** The terminal to attach to: a task, or a new login shell on the ticket's GPUs. */
+  async attachTarget(
+    id: string,
+    actor: TicketActor | null,
+    task: string | null,
+    force = false,
+  ): Promise<{ address: string; task: string }> {
+    const { ticket, template } = await this.usable(id, actor, force, 'attach')
+    if (task) return { address: (await this.task(ticket, task)).address, task }
+    const shell = `sh-${this.now().getTime().toString(36).slice(-6)}`
+    const address = await this.deps.herdr.runBackground(
+      template.machine,
+      [...template.exec, 'bash', '-l'],
+      { name: terminalName(ticket.id, shell), labels: { ticket: ticket.id, task: shell } },
+    )
+    return { address, task: shell }
+  }
+
+  private async taskViews(ticketId: string): Promise<TaskView[]> {
+    const prefix = `${ticketId.toLowerCase()}-`
+    return (await this.deps.herdr.terminals(ticketId)).flatMap((terminal) =>
+      terminal.name?.startsWith(prefix)
+        ? [
+            {
+              task: terminal.name.slice(prefix.length),
+              address: terminal.address,
+              state: terminal.state,
+              exitCode: terminal.exitCode,
+            },
+          ]
+        : [],
+    )
+  }
+
+  private async task(ticket: Ticket, task: string): Promise<TaskView> {
+    const views = (await this.taskViews(ticket.id)).filter((view) => view.task === task)
+    const view = views.find((candidate) => candidate.state === 'live') ?? views.at(-1)
+    if (!view) throw new TicketError('NOT_FOUND', `ticket ${ticket.id} has no task "${task}"`)
+    return view
+  }
+
   async template(id: string): Promise<LaunchTemplate> {
     const ticket = await this.get(id)
     if (ticket.status !== 'GRANTED')
@@ -145,9 +331,10 @@ export class TicketBroker {
     return result
   }
 
-  release(id: string): Promise<Ticket> {
+  release(id: string, actor: TicketActor | null = null, force = false): Promise<Ticket> {
     return this.serial(async () => {
-      const ticket = await this.get(id)
+      const ticket = await this.authorize(id, actor, force)
+      await this.noteForced(ticket, actor, 'release')
       if (ticket.status === 'QUEUED') return this.deps.store.finish(id, 'RELEASED', this.now())
       if (ticket.status !== 'GRANTED')
         throw new TicketError('CONFLICT', `ticket ${id} is already ${ticket.status}`)

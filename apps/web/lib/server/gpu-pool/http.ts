@@ -5,10 +5,16 @@ import { levelCan } from '@/lib/server/auth/capabilities'
 import { type RequestIdentity, readIdentityFromRequest } from '@/lib/server/auth/request-context'
 import { getRuntime } from '@/lib/server/runtime'
 import { getTicketBroker, type TicketBroker, TicketError } from './broker'
-import type { Ticket } from './types'
+import type { Ticket, TicketActor } from './types'
 
 const HEADERS = { 'Cache-Control': 'no-store' }
-const STATUS = { BAD_REQUEST: 400, NOT_FOUND: 404, CONFLICT: 409, UNAVAILABLE: 503 } as const
+const STATUS = {
+  BAD_REQUEST: 400,
+  NOT_FOUND: 404,
+  CONFLICT: 409,
+  OWNER_MISMATCH: 409,
+  UNAVAILABLE: 503,
+} as const
 
 /** Ticket access is `access_clusters`: admins and the super admin (owner Basic auth included). */
 export function canUseTickets(identity: RequestIdentity): boolean {
@@ -16,12 +22,33 @@ export function canUseTickets(identity: RequestIdentity): boolean {
   return levelCan(identity.account.level, 'access_clusters')
 }
 
+/** The account acting on tickets: the signed-in account (owner Basic auth is account #1). */
+export function ticketActor(identity: RequestIdentity): TicketActor | null {
+  const account = identity.account
+  // Owner credentials without an account header are account #1, the super admin.
+  if (!account)
+    return identity.role === 'owner' ? { accountId: 1, username: 'owner', superAdmin: true } : null
+  return {
+    accountId: account.id,
+    username: account.username,
+    superAdmin: account.level === 'super_admin',
+  }
+}
+
+/** `force` from a JSON body field or a `?force=1` query parameter. */
+export function forceOf(req: NextRequest, body?: unknown): boolean {
+  if (body && typeof body === 'object' && (body as { force?: unknown }).force === true) return true
+  return req.nextUrl.searchParams.get('force') === '1'
+}
+
 /** Runs a ticket route behind the cluster capability gate, mapping broker errors to HTTP. */
 export async function ticketRoute(
   req: NextRequest,
-  handle: (broker: TicketBroker) => Promise<{ status?: number; body: unknown }>,
+  handle: (broker: TicketBroker, actor: TicketActor) => Promise<{ status?: number; body: unknown }>,
 ): Promise<NextResponse> {
-  if (!canUseTickets(readIdentityFromRequest(req))) {
+  const identity = readIdentityFromRequest(req)
+  const actor = ticketActor(identity)
+  if (!canUseTickets(identity) || !actor) {
     return NextResponse.json(
       { error: { code: 'FORBIDDEN', message: 'GPU tickets are available only to cluster users' } },
       { status: 403, headers: HEADERS },
@@ -30,7 +57,7 @@ export async function ticketRoute(
   try {
     const broker = getTicketBroker((await getRuntime()).configPath)
     broker.start()
-    const { status, body } = await handle(broker)
+    const { status, body } = await handle(broker, actor)
     return NextResponse.json(body, { status: status ?? 200, headers: HEADERS })
   } catch (err) {
     if (err instanceof TicketError) {
@@ -64,5 +91,28 @@ export function ticketDto(ticket: Ticket) {
     expires_at: ticket.expiresAt,
     ended_at: ticket.endedAt,
     reason: ticket.reason,
+    owner: ticket.owner?.username ?? null,
+    forced: ticket.forced,
+    sync: {
+      state: ticket.syncState,
+      commit: ticket.syncCommit,
+      output: ticket.syncOutput,
+      run_started_at: ticket.runStartedAt,
+    },
+    push: {
+      state: ticket.pushState,
+      commit: ticket.pushCommit,
+      output: ticket.pushOutput,
+      unrecorded_runs: ticket.unrecordedRuns,
+    },
   }
+}
+
+export function taskDto(view: {
+  task: string
+  address: string
+  state: string
+  exitCode: number | null
+}) {
+  return { task: view.task, terminal: view.address, state: view.state, exit_code: view.exitCode }
 }

@@ -53,6 +53,16 @@ const ticket = {
   expiresAtMs: 1,
   endedAt: null,
   reason: null,
+  owner: null,
+  forced: null,
+  syncState: null,
+  syncCommit: null,
+  syncOutput: null,
+  runStartedAt: null,
+  pushState: null,
+  pushCommit: null,
+  pushOutput: null,
+  unrecordedRuns: [],
 }
 
 const params = (id: string) => ({ params: Promise.resolve({ id }) })
@@ -93,16 +103,11 @@ describe('/api/gpu-pool/tickets', () => {
     expect((await RELEASE(req('owner', 'POST'), params('tk_7h3q9m2xw4ra'))).status).toBe(409)
   })
 
-  it('includes the launch template for granted tickets', async () => {
-    broker.get.mockResolvedValue(ticket)
-    broker.template.mockResolvedValue({
-      machine: 'node-01',
-      exec: ['env'],
-      run: ['env'],
-      holdJob: null,
-    })
+  it('shows one ticket with its owner and sync state', async () => {
+    broker.get.mockResolvedValue({ ...ticket, owner: { accountId: 2, username: 'ada' } })
     const body = await (await SHOW(req('owner'), params('tk_7h3q9m2xw4ra'))).json()
-    expect(body.launch).toMatchObject({ machine: 'node-01' })
-    expect(body.ticket.granted_gpus).toEqual([0, 1])
+    expect(body.ticket).toMatchObject({ owner: 'ada', granted_gpus: [0, 1] })
+    expect(body.ticket.sync).toMatchObject({ state: null })
+    expect(body.launch).toBeUndefined()
   })
 })

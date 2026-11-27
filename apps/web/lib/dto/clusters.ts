@@ -53,6 +53,8 @@ export interface ClusterTaskDto {
   status: ClusterTicketStatus
   redacted: boolean
   project: string | null
+  /** The account that requested the ticket (null when redacted or unowned). */
+  owner: string | null
   label: string | null
   node: string | null
   gpus: number[]

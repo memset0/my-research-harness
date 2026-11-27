@@ -40,6 +40,7 @@ export function mapTasks(
       status: full ? ticket.status : 'GRANTED',
       redacted: !full,
       project: full ? ticket.project : null,
+      owner: full ? (ticket.owner?.username ?? null) : null,
       label: full ? ticket.label : null,
       node: ticket.node,
       gpus: ticket.grantedGpus,

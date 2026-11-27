@@ -23,6 +23,10 @@ export interface MemonServerDeps {
     http: CentralGatewayHandler
     upgrade: (req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<boolean>
   }
+  /** WebSocket attach to GPU ticket terminals (central only). */
+  ticketAttach?: {
+    upgrade: (req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<boolean>
+  }
 }
 
 export function createMemonServer(deps: MemonServerDeps): Server {
@@ -41,6 +45,7 @@ export function createMemonServer(deps: MemonServerDeps): Server {
   })
 
   server.on('upgrade', async (req, socket, head) => {
+    if (deps.ticketAttach && (await deps.ticketAttach.upgrade(req, socket, head))) return
     if (deps.contentGateway && (await deps.contentGateway.upgrade(req, socket, head))) return
     if (deps.upgradeHandler) {
       await deps.upgradeHandler(req, socket, head)

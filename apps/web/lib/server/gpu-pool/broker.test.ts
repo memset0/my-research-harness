@@ -83,6 +83,11 @@ class FakeHerdr implements Herdr {
       for (const t of list) if (t.address === address) t.state = 'finished'
   }
 
+  async read(address: string, lines: number) {
+    this.calls.push(['read', address, String(lines)])
+    return `screen of ${address}\n`
+  }
+
   async remove(address: string) {
     this.calls.push(['rm', address])
     for (const [id, list] of this.terminalsByTicket)
@@ -257,5 +262,75 @@ describe('TicketStore files', () => {
     } finally {
       await upgraded.close()
     }
+  })
+})
+
+describe('ticket ownership and execution', () => {
+  const ADA = { accountId: 2, username: 'ada', superAdmin: false }
+  const BOB = { accountId: 3, username: 'bob', superAdmin: false }
+  const ROOT = { accountId: 1, username: 'owner', superAdmin: true }
+  const own = (actor: typeof ADA) => ({ accountId: actor.accountId, username: actor.username })
+
+  it('lets only the owner act, and the super admin only with force', async () => {
+    const { id } = await broker.request(
+      { project: 'project-a', duration_s: 3600, whole_node: true },
+      own(ADA),
+    )
+    await broker.tick()
+    expect((await broker.get(id)).owner).toEqual({ accountId: 2, username: 'ada' })
+    await expect(broker.release(id, BOB)).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    await expect(broker.tasks(id, BOB)).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    await expect(broker.release(id, ROOT)).rejects.toMatchObject({ code: 'OWNER_MISMATCH' })
+    expect((await broker.get(id)).status).toBe('GRANTED')
+
+    const released = await broker.release(id, ROOT, true)
+    expect(released.status).toBe('RELEASED')
+    expect(released.forced).toMatch(/^release by owner at /)
+  })
+
+  it('starts, lists, reads, waits on and kills tasks inside the ticket only', async () => {
+    const { id } = await broker.request(
+      { project: 'project-a', duration_s: 3600, whole_node: true },
+      own(ADA),
+    )
+    await broker.tick()
+    const started = await broker.startNamedTask(id, ADA, { name: 'train', command: 'python t.py' })
+    expect(started).toMatchObject({ task: 'train', state: 'live' })
+    const launched = herdr.calls.at(-1) as string[]
+    expect(launched).toContain(`MEMON_TICKET=${id}`)
+    expect(launched.slice(-3)).toEqual(['bash', '-c', 'python t.py'])
+    await expect(
+      broker.startNamedTask(id, ADA, { name: 'train', command: 'x' }),
+    ).rejects.toMatchObject({ code: 'CONFLICT' })
+    await expect(
+      broker.startNamedTask(id, ADA, { name: 'Bad Name', command: 'x' }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+
+    expect((await broker.tasks(id, ADA)).map((t) => t.task)).toEqual(['train'])
+    expect(await broker.taskLogs(id, ADA, 'train', 50)).toContain(started.address)
+    await expect(broker.taskLogs(id, ADA, 'other', 50)).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    })
+    expect((await broker.waitTask(id, ADA, 'train', 0)).state).toBe('live')
+    expect((await broker.killTask(id, ADA, 'train')).state).toBe('finished')
+    expect((await broker.waitTask(id, ADA, 'train', 5)).state).toBe('finished')
+
+    const plan = await broker.execPlan(id, ADA, {
+      command: 'nvidia-smi -L',
+      timeoutS: 30,
+      stdin: true,
+    })
+    expect(plan.slice(0, 6)).toEqual(['exec', '-i', '--on', 'node-01', '--timeout', '30'])
+    expect(plan).toContain('CUDA_VISIBLE_DEVICES=0,1,2,3')
+    expect(plan.slice(-3)).toEqual(['bash', '-c', 'nvidia-smi -L'])
+
+    const shell = await broker.attachTarget(id, ADA, null)
+    expect(shell.task).toMatch(/^sh-/)
+    expect((await broker.attachTarget(id, ADA, 'train')).address).toBe(started.address)
+
+    await broker.release(id, ADA)
+    await expect(
+      broker.execPlan(id, ADA, { command: 'ls', timeoutS: 5, stdin: false }),
+    ).rejects.toMatchObject({ code: 'CONFLICT' })
   })
 })

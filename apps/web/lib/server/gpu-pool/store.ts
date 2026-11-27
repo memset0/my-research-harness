@@ -2,7 +2,15 @@ import { chmodSync, closeSync, existsSync, openSync } from 'node:fs'
 import { formatIsoLocal, newTicketId, TICKET_ID_PATTERN } from '@memon/core'
 import { dirname, join } from '@memon/file-protocol/paths'
 import sqlite3 from 'sqlite3'
-import type { DirtyGpu, Ticket, TicketRequest, TicketStatus } from './types'
+import type {
+  DirtyGpu,
+  PushState,
+  SyncState,
+  Ticket,
+  TicketOwner,
+  TicketRequest,
+  TicketStatus,
+} from './types'
 
 export const GPU_POOL_DB_FILENAME = 'memon-gpu-pool.sqlite3'
 
@@ -27,7 +35,34 @@ interface TicketRow {
   expires_at_ms: number | null
   ended_at: string | null
   reason: string | null
+  owner_account_id: number | null
+  owner_username: string | null
+  forced: string | null
+  sync_state: SyncState | null
+  sync_commit: string | null
+  sync_output: string | null
+  run_started_at: string | null
+  push_state: PushState | null
+  push_commit: string | null
+  push_output: string | null
+  unrecorded_runs: string | null
 }
+
+/** Columns added after the first release, created on open when missing. */
+const ADDED_COLUMNS: ReadonlyArray<[string, string]> = [
+  ['token', 'TEXT'],
+  ['owner_account_id', 'INTEGER'],
+  ['owner_username', 'TEXT'],
+  ['forced', 'TEXT'],
+  ['sync_state', 'TEXT'],
+  ['sync_commit', 'TEXT'],
+  ['sync_output', 'TEXT'],
+  ['run_started_at', 'TEXT'],
+  ['push_state', 'TEXT'],
+  ['push_commit', 'TEXT'],
+  ['push_output', 'TEXT'],
+  ['unrecorded_runs', 'TEXT'],
+]
 
 function toTicket(row: TicketRow): Ticket {
   return {
@@ -49,6 +84,19 @@ function toTicket(row: TicketRow): Ticket {
     expiresAtMs: row.expires_at_ms,
     endedAt: row.ended_at,
     reason: row.reason,
+    owner:
+      row.owner_account_id !== null && row.owner_username !== null
+        ? { accountId: row.owner_account_id, username: row.owner_username }
+        : null,
+    forced: row.forced,
+    syncState: row.sync_state,
+    syncCommit: row.sync_commit,
+    syncOutput: row.sync_output,
+    runStartedAt: row.run_started_at,
+    pushState: row.push_state,
+    pushCommit: row.push_commit,
+    pushOutput: row.push_output,
+    unrecordedRuns: row.unrecorded_runs ? (JSON.parse(row.unrecorded_runs) as string[]) : [],
   }
 }
 
@@ -66,7 +114,6 @@ export class TicketStore {
       PRAGMA synchronous = NORMAL;
       CREATE TABLE IF NOT EXISTS tickets (
         seq             INTEGER PRIMARY KEY AUTOINCREMENT,
-        token           TEXT,
         project         TEXT NOT NULL,
         gpus            INTEGER,
         whole_node      INTEGER NOT NULL,
@@ -94,9 +141,11 @@ export class TicketStore {
       ) WITHOUT ROWID;
     `)
       .then(async () => {
-        const columns = await this.all<{ name: string }>('PRAGMA table_info(tickets)')
-        if (!columns.some((column) => column.name === 'token'))
-          await this.exec('ALTER TABLE tickets ADD COLUMN token TEXT')
+        const columns = new Set(
+          (await this.all<{ name: string }>('PRAGMA table_info(tickets)')).map((c) => c.name),
+        )
+        for (const [name, type] of ADDED_COLUMNS)
+          if (!columns.has(name)) await this.exec(`ALTER TABLE tickets ADD COLUMN ${name} ${type}`)
         await this.exec('CREATE UNIQUE INDEX IF NOT EXISTS tickets_token ON tickets (token)')
         // Rows from stores that predate random ids get one, so every ticket has a random id.
         const unnamed = await this.all<{ seq: number }>(
@@ -111,12 +160,16 @@ export class TicketStore {
       })
   }
 
-  async create(request: TicketRequest, now: Date): Promise<Ticket> {
+  async create(
+    request: TicketRequest,
+    now: Date,
+    owner: TicketOwner | null = null,
+  ): Promise<Ticket> {
     await this.ready
     for (let attempt = 0; ; attempt += 1) {
       const id = newTicketId()
       try {
-        await this.insert(id, request, now)
+        await this.insert(id, request, now, owner)
         return (await this.get(id)) as Ticket
       } catch (error) {
         // 60 random bits make a collision practically impossible; retry anyway.
@@ -126,11 +179,16 @@ export class TicketStore {
     }
   }
 
-  private insert(id: string, request: TicketRequest, now: Date): Promise<number> {
+  private insert(
+    id: string,
+    request: TicketRequest,
+    now: Date,
+    owner: TicketOwner | null,
+  ): Promise<number> {
     return this.run(
       `INSERT INTO tickets (token, project, gpus, whole_node, gpu_type, duration_s, label, run,
-                            status, requested_at, requested_at_ms)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'QUEUED', ?, ?)`,
+                            status, requested_at, requested_at_ms, owner_account_id, owner_username)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'QUEUED', ?, ?, ?, ?)`,
       [
         id,
         request.project,
@@ -142,8 +200,62 @@ export class TicketStore {
         request.run ?? null,
         formatIsoLocal(now),
         now.getTime(),
+        owner?.accountId ?? null,
+        owner?.username ?? null,
       ],
     )
+  }
+
+  /** Update the sync, push and forced-action columns of one ticket. */
+  async patch(
+    id: string,
+    fields: Partial<{
+      forced: string | null
+      syncState: SyncState | null
+      syncCommit: string | null
+      syncOutput: string | null
+      runStartedAt: string | null
+      pushState: PushState | null
+      pushCommit: string | null
+      pushOutput: string | null
+      unrecordedRuns: string[]
+    }>,
+  ): Promise<Ticket> {
+    const columns: Record<string, string> = {
+      forced: 'forced',
+      syncState: 'sync_state',
+      syncCommit: 'sync_commit',
+      syncOutput: 'sync_output',
+      runStartedAt: 'run_started_at',
+      pushState: 'push_state',
+      pushCommit: 'push_commit',
+      pushOutput: 'push_output',
+      unrecordedRuns: 'unrecorded_runs',
+    }
+    const sets: string[] = []
+    const values: unknown[] = []
+    for (const [key, value] of Object.entries(fields)) {
+      const column = columns[key]
+      if (!column) continue
+      sets.push(`${column} = ?`)
+      values.push(key === 'unrecordedRuns' ? JSON.stringify(value) : value)
+    }
+    if (sets.length > 0)
+      await this.run(`UPDATE tickets SET ${sets.join(', ')} WHERE seq = ?`, [
+        ...values,
+        await this.seq(id),
+      ])
+    return this.require(id)
+  }
+
+  /** Mark the start command launched unless it already was; true when this call won. */
+  async claimRunStart(id: string, now: Date): Promise<boolean> {
+    const seq = await this.seq(id)
+    await this.run(
+      'UPDATE tickets SET run_started_at = ? WHERE seq = ? AND run_started_at IS NULL',
+      [formatIsoLocal(now), seq],
+    )
+    return (await this.require(id)).runStartedAt === formatIsoLocal(now)
   }
 
   async get(id: string): Promise<Ticket | null> {

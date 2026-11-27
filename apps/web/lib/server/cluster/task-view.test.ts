@@ -27,6 +27,16 @@ function ticket(id: string, over: Partial<Ticket> = {}): Ticket {
     expiresAtMs: 0,
     endedAt: null,
     reason: null,
+    owner: null,
+    forced: null,
+    syncState: null,
+    syncCommit: null,
+    syncOutput: null,
+    runStartedAt: null,
+    pushState: null,
+    pushCommit: null,
+    pushOutput: null,
+    unrecordedRuns: [],
     ...over,
   }
 }

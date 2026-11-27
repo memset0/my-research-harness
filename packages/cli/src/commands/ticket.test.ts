@@ -1,161 +1,189 @@
 // @vitest-environment node
+import { EventEmitter } from 'node:events'
 import { describe, expect, it, vi } from 'vitest'
+import type WebSocket from 'ws'
 import { captureCli } from '../test-support/results-project.js'
 import { parseDuration, runTicket, type TicketDeps, terminalName } from './ticket.js'
 
-const LAUNCH = {
-  machine: 'node-01',
-  exec: ['env', 'CUDA_VISIBLE_DEVICES=0,1', 'MEMON_TICKET=tk_7h3q9m2xw4ra'],
-  run: [
-    'env',
-    'CUDA_VISIBLE_DEVICES=0,1',
-    'MEMON_TICKET=tk_7h3q9m2xw4ra',
-    'srun',
-    '--jobid=12345',
-    '-J',
-    'memon-task-tk_7h3q9m2xw4ra',
-  ],
-  holdJob: '12345',
-}
+const ID = 'tk_7h3q9m2xw4ra'
+const TOKEN = `mtk_${'a'.repeat(43)}`
 
-function deps(response: { status: number; body: unknown }, over: Partial<TicketDeps> = {}) {
-  const fetchMock = vi.fn(
-    async () => new Response(JSON.stringify(response.body), { status: response.status }),
-  )
+type Reply = { status: number; body: unknown } | { status: number; raw: string }
+
+/** A central that answers each request in turn and records what it was sent. */
+function central(replies: Reply[], over: Partial<TicketDeps> = {}) {
+  const queue = [...replies]
+  const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => {
+    const reply = queue.shift() ?? { status: 500, body: {} }
+    return new Response('raw' in reply ? reply.raw : JSON.stringify(reply.body), {
+      status: reply.status,
+    })
+  })
+  const output: string[] = []
   const d: TicketDeps = {
     fetch: fetchMock as unknown as typeof fetch,
-    env: { MEMON_CENTRAL_AUTH: 'owner:secret', MEMON_CENTRAL_URL: 'http://central.test' },
+    env: { MEMON_CENTRAL_URL: 'https://central.test', MEMON_CENTRAL_TOKEN: TOKEN },
     home: '/nonexistent-memon-home',
-    hc: vi.fn(async () => 7),
-    hcCapture: vi.fn(async () => ({
-      code: 0,
-      stdout: '{"address":"node-01/tk_7h3q9m2xw4ra-train"}',
-    })),
-    out: vi.fn(),
+    out: (text) => output.push(text),
+    stdout: (chunk) => output.push(chunk.toString()),
+    stderr: (chunk) => output.push(`[err]${chunk.toString()}`),
     isTty: false,
+    readStdin: async () => Buffer.alloc(0),
+    sleep: async () => {},
     ...over,
   }
-  return { d, fetchMock }
-}
-
-const granted = {
-  status: 200,
-  body: { ticket: { id: 'tk_7h3q9m2xw4ra', status: 'GRANTED' }, launch: LAUNCH },
+  const sent = (i: number) => {
+    const [url, init] = fetchMock.mock.calls[i] as [string, RequestInit]
+    return {
+      url,
+      method: init.method,
+      auth: (init.headers as Record<string, string>).authorization,
+      body: init.body ? JSON.parse(init.body as string) : undefined,
+    }
+  }
+  return { d, fetchMock, output, sent }
 }
 
 describe('memon ticket', () => {
-  it('parses durations', () => {
+  it('parses durations and names terminals', () => {
     expect(parseDuration('90m')).toBe(5400)
     expect(parseDuration('2d')).toBe(172800)
+    expect(terminalName(ID, 'Main')).toBe(`${ID}-main`)
   })
 
-  it('posts a request with Basic auth and the start command', async () => {
-    const { d, fetchMock } = deps({
-      status: 201,
-      body: { ticket: { id: 'tk_7h3q9m2xw4ra', status: 'QUEUED' } },
-    })
-    const code = await runTicket(
-      'request',
-      ['python', 'train.py'],
-      { project: 'project-a', duration: '6h', gpus: '2' },
-      d,
-    )
-    expect(code).toBe(0)
-    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
-    expect(url).toBe('http://central.test/api/gpu-pool/tickets')
-    expect((init.headers as Record<string, string>).authorization).toBe(
-      `Basic ${Buffer.from('owner:secret').toString('base64')}`,
-    )
-    expect(JSON.parse(init.body as string)).toEqual({
-      project: 'project-a',
-      duration_s: 21600,
-      gpus: 2,
-      run: 'python train.py',
+  it('requests with the bearer token and the start command', async () => {
+    const { d, sent } = central([{ status: 201, body: { ticket: { id: ID, status: 'QUEUED' } } }])
+    expect(
+      await runTicket(
+        'request',
+        ['python', 'train.py'],
+        { project: 'project-a', duration: '6h', gpus: '2' },
+        d,
+      ),
+    ).toBe(0)
+    expect(sent(0)).toEqual({
+      url: 'https://central.test/api/gpu-pool/tickets',
+      method: 'POST',
+      auth: `Bearer ${TOKEN}`,
+      body: { project: 'project-a', duration_s: 21600, gpus: 2, run: 'python train.py' },
     })
   })
 
-  it('maps central errors to the exit-code table', async () => {
-    const { d } = deps({
-      status: 404,
-      body: { error: { code: 'NOT_FOUND', message: 'ticket tk_0000000000zz does not exist' } },
-    })
-    const result = await captureCli(() => runTicket('show', ['tk_0000000000zz'], {}, d))
-    expect(result.exitCode).toBe(4)
-    expect(result.error?.code).toBe('NOT_FOUND')
-  })
+  it('maps central errors, and rejects malformed ids before calling central', async () => {
+    const { d } = central([
+      { status: 409, body: { error: { code: 'OWNER_MISMATCH', message: 'not yours' } } },
+    ])
+    const refused = await captureCli(() => runTicket('release', [ID], {}, d))
+    expect(refused.exitCode).toBe(9)
+    expect(refused.error?.details).toEqual({ code: 'OWNER_MISMATCH' })
 
-  it('rejects malformed ticket ids before calling central', async () => {
-    const { d, fetchMock } = deps(granted)
+    const fresh = central([])
     for (const id of ['T1', 'tk_short', 'TK_7H3Q9M2XW4RA']) {
-      const result = await captureCli(() => runTicket('show', [id], {}, d))
+      const result = await captureCli(() => runTicket('show', [id], {}, fresh.d))
       expect(result.error?.code).toBe('BAD_REQUEST')
     }
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(fresh.fetchMock).not.toHaveBeenCalled()
   })
 
-  it('refuses work on tickets that are not granted', async () => {
-    const { d } = deps({
-      status: 200,
-      body: { ticket: { id: 'tk_7h3q9m2xw4ra', status: 'QUEUED' }, launch: null },
+  it('sends force on release when asked', async () => {
+    const { d, sent } = central([{ status: 200, body: { ticket: { id: ID } } }])
+    await runTicket('release', [ID], { force: true }, d)
+    expect(sent(0).body).toEqual({ force: true })
+  })
+
+  it('streams exec output, forwards piped stdin and exits with the command status', async () => {
+    const frames = [
+      { stream: 'stdout', data: Buffer.from('GPU 0\n').toString('base64') },
+      { stream: 'stderr', data: Buffer.from('warn\n').toString('base64') },
+      { exit: 7 },
+    ]
+    const { d, output, sent } = central(
+      [{ status: 200, raw: frames.map((f) => JSON.stringify(f)).join('\n') }],
+      { readStdin: async () => Buffer.from('input') },
+    )
+    expect(await runTicket('exec', [ID, 'nvidia-smi', '-L'], { timeout: '60' }, d)).toBe(7)
+    expect(output).toEqual(['GPU 0\n', '[err]warn\n'])
+    expect(sent(0)).toMatchObject({
+      url: `https://central.test/api/gpu-pool/tickets/${ID}/exec`,
+      body: {
+        command: 'nvidia-smi -L',
+        timeout_s: 60,
+        stdin: Buffer.from('input').toString('base64'),
+      },
     })
-    const result = await captureCli(() =>
-      runTicket('exec', ['tk_7h3q9m2xw4ra', 'nvidia-smi'], {}, d),
-    )
+  })
+
+  it('reports exec refusals with the usual exit codes', async () => {
+    const { d } = central([
+      { status: 409, body: { error: { code: 'CONFLICT', message: `ticket ${ID} is QUEUED` } } },
+    ])
+    const result = await captureCli(() => runTicket('exec', [ID, 'ls'], {}, d))
     expect(result.exitCode).toBe(9)
-    expect(d.hc).not.toHaveBeenCalled()
   })
 
-  it('runs short commands with the ticket environment and passes the status through', async () => {
-    const { d } = deps(granted)
-    expect(
-      await runTicket('exec', ['tk_7h3q9m2xw4ra', 'nvidia-smi', '-L'], { timeout: '60' }, d),
-    ).toBe(7)
-    expect(d.hc).toHaveBeenCalledWith([
-      'exec',
-      '-i',
-      '--on',
-      'node-01',
-      '--timeout',
-      '60',
-      '--',
-      'env',
-      'CUDA_VISIBLE_DEVICES=0,1',
-      'MEMON_TICKET=tk_7h3q9m2xw4ra',
-      'bash',
-      '-c',
-      'nvidia-smi -L',
+  it('starts tasks, reads logs and kills through central', async () => {
+    const { d, output, sent } = central([
+      { status: 201, body: { task: { task: 'train', terminal: 'node-01/t9' } } },
+      { status: 200, body: { text: 'epoch 1' } },
+      { status: 200, body: { task: { task: 'train', state: 'finished' } } },
     ])
-  })
-
-  it('starts long tasks in a labelled terminal inside the ticket step', async () => {
-    const { d } = deps(granted)
-    expect(
-      await runTicket('run', ['tk_7h3q9m2xw4ra', 'python', 'train.py'], { name: 'train' }, d),
-    ).toBe(0)
-    expect(d.hcCapture).toHaveBeenCalledWith([
-      'run',
-      '--on',
-      'node-01',
-      '--bg',
-      '--name',
-      'tk_7h3q9m2xw4ra-train',
-      '--label',
-      'ticket=tk_7h3q9m2xw4ra',
-      '--label',
-      'task=train',
-      '--json',
-      '--',
-      ...LAUNCH.run,
-      'bash',
-      '-c',
-      'python train.py',
-    ])
-    expect(d.out).toHaveBeenCalledWith(
-      '{"ticket":"tk_7h3q9m2xw4ra","task":"train","terminal":"node-01/tk_7h3q9m2xw4ra-train"}\n',
+    await runTicket('run', [ID, 'python', 'train.py'], { name: 'train' }, d)
+    await runTicket('logs', [ID, 'train'], { lines: '50' }, d)
+    await runTicket('kill', [ID, 'train'], {}, d)
+    expect(sent(0)).toMatchObject({
+      url: `https://central.test/api/gpu-pool/tickets/${ID}/tasks`,
+      body: { command: 'python train.py', name: 'train' },
+    })
+    expect(sent(1).url).toBe(
+      `https://central.test/api/gpu-pool/tickets/${ID}/tasks/train/logs?lines=50`,
     )
+    expect(sent(2).url).toBe(`https://central.test/api/gpu-pool/tickets/${ID}/tasks/train/kill`)
+    expect(output[0]).toBe(
+      `${JSON.stringify({ ticket: ID, task: 'train', terminal: 'node-01/t9' })}\n`,
+    )
+    expect(output[1]).toBe('epoch 1\n')
   })
 
-  it('names terminals like the broker', () => {
-    expect(terminalName('tk_7h3q9m2xw4ra', 'Main')).toBe('tk_7h3q9m2xw4ra-main')
+  it('waits in slices until the task stops, and exits 1 at its own timeout', async () => {
+    const live = { status: 200, body: { task: { task: 'train', state: 'live', exit_code: null } } }
+    const done = { status: 200, body: { task: { task: 'train', state: 'finished', exit_code: 0 } } }
+    const stops = central([live, live, done])
+    expect(await runTicket('wait', [ID, 'train'], { timeout: '600' }, stops.d)).toBe(0)
+    expect(stops.fetchMock).toHaveBeenCalledTimes(3)
+    expect(stops.sent(0).body).toEqual({ timeout_s: 60 })
+
+    const timeout = central([live])
+    expect(await runTicket('wait', [ID, 'train'], { timeout: '0' }, timeout.d)).toBe(1)
+  })
+
+  it('follows a task over a WebSocket to central and returns the terminal exit code', async () => {
+    const socket = new EventEmitter() as EventEmitter & { send: (data: unknown) => void }
+    socket.send = vi.fn()
+    const opened: Array<{ url: string; headers: Record<string, string> }> = []
+    const { d, output } = central([], {
+      openSocket: (url, headers) => {
+        opened.push({ url, headers })
+        setTimeout(() => {
+          socket.emit('message', Buffer.from('prompt$ '), true)
+          socket.emit('message', Buffer.from(JSON.stringify({ type: 'exit', code: 4 })), false)
+          socket.emit('close')
+        }, 0)
+        return socket as unknown as WebSocket
+      },
+    })
+    expect(await runTicket('logs', [ID, 'train'], { follow: true }, d)).toBe(4)
+    const url = new URL(opened[0]?.url ?? '')
+    expect(url.protocol).toBe('wss:')
+    expect(url.pathname).toBe(`/api/gpu-pool/tickets/${ID}/attach`)
+    expect(url.searchParams.get('observe')).toBe('1')
+    expect(url.searchParams.get('task')).toBe('train')
+    expect(opened[0]?.headers.authorization).toBe(`Bearer ${TOKEN}`)
+    expect(output).toEqual(['prompt$ '])
+  })
+
+  it('refuses attach without a terminal', async () => {
+    const { d } = central([])
+    const result = await captureCli(() => runTicket('attach', [ID], {}, d))
+    expect(result.error?.code).toBe('BAD_REQUEST')
   })
 })
