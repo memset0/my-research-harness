@@ -15,4 +15,4 @@
 ## 3. Verification
 
 - [x] 3.1 Typecheck, Biome and the selected tests
-- [ ] 3.2 Rendered check (super admin and admin views) on a preview server and after deployment
+- [x] 3.2 Rendered check (super admin and admin views) on a preview server and after deployment
