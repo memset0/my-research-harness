@@ -457,7 +457,7 @@ function SyncBadge({
       <TooltipTrigger asChild>
         <Badge
           variant={failed ? 'destructive' : 'outline'}
-          className={cn(BADGE, 'ml-1')}
+          className={BADGE}
           data-slot={`ticket-${label}`}
           data-state={state}
         >
@@ -475,41 +475,51 @@ function TicketRow({ task, nowMs }: { task: ClusterTaskDto; nowMs: number }) {
   const ends = task.expires_at ? Date.parse(task.expires_at) : null
   return (
     <TableRow data-slot="ticket-row" data-status={task.status}>
-      <TableCell className="font-mono">
-        {task.id}
-        {task.label && <span className="ml-1 font-sans text-muted-foreground">{task.label}</span>}
+      <TableCell className="align-top">
+        <span className="block truncate font-mono">{task.id}</span>
+        {task.label && (
+          <span className="block truncate text-muted-foreground" title={task.label}>
+            {task.label}
+          </span>
+        )}
       </TableCell>
-      <TableCell className="truncate">
-        {task.project}
-        {task.owner && <span className="ml-1 text-muted-foreground">· {task.owner}</span>}
+      <TableCell className="align-top">
+        <span className="block truncate" title={task.project ?? undefined}>
+          {task.project}
+        </span>
+        {task.owner && <span className="block truncate text-muted-foreground">{task.owner}</span>}
       </TableCell>
-      <TableCell>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Badge variant={STATUS_VARIANT[task.status]} className={BADGE}>
-              {task.status}
-            </Badge>
-          </TooltipTrigger>
-          <TooltipContent>{task.reason ?? `requested ${task.requested_at ?? '—'}`}</TooltipContent>
-        </Tooltip>
-        <SyncBadge label="pull" state={task.sync?.state} output={task.sync?.output} />
-        <SyncBadge
-          label="push"
-          state={task.push?.state}
-          output={[
-            task.push?.output,
-            task.push?.unrecorded_runs.length
-              ? `unrecorded Runs (not pushed): ${task.push.unrecorded_runs.join(', ')}`
-              : null,
-          ]
-            .filter(Boolean)
-            .join('\n')}
-        />
+      <TableCell className="align-top">
+        <div className="flex flex-wrap items-center gap-1">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge variant={STATUS_VARIANT[task.status]} className={BADGE}>
+                {task.status}
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent>
+              {task.reason ?? `requested ${task.requested_at ?? '—'}`}
+            </TooltipContent>
+          </Tooltip>
+          <SyncBadge label="pull" state={task.sync?.state} output={task.sync?.output} />
+          <SyncBadge
+            label="push"
+            state={task.push?.state}
+            output={[
+              task.push?.output,
+              task.push?.unrecorded_runs.length
+                ? `unrecorded Runs (not pushed): ${task.push.unrecorded_runs.join(', ')}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join('\n')}
+          />
+        </div>
       </TableCell>
-      <TableCell className="whitespace-nowrap">
+      <TableCell className="truncate align-top">
         {task.node ? `${task.node} · ${task.gpus.join(',')}` : '—'}
       </TableCell>
-      <TableCell className="whitespace-nowrap tabular-nums text-muted-foreground">
+      <TableCell className="whitespace-nowrap align-top tabular-nums text-muted-foreground">
         {task.state === 'QUEUED'
           ? `${shortTime(task.requested_at)} · ${formatSpan(task.requested_duration_s * 1000)}`
           : `${shortTime(task.granted_at)} → ${shortTime(task.ended_at ?? task.expires_at)}`}
@@ -542,8 +552,8 @@ function TicketTable({ tasks, nowMs }: { tasks: ClusterTaskDto[]; nowMs: number 
     <Table className="table-fixed [&_td]:px-1.5 [&_td]:py-1 [&_th]:h-7 [&_th]:px-1.5">
       <colgroup>
         <col className="w-40" />
-        <col className="w-36" />
-        <col className="w-24" />
+        <col className="w-40" />
+        <col className="w-44" />
         <col className="w-32" />
         <col className="w-64" />
         <col />
