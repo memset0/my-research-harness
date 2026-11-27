@@ -134,6 +134,12 @@ function isLogout(req: NextRequest): boolean {
   return req.method === 'POST' && req.nextUrl.pathname === '/api/auth/logout'
 }
 
+/** The caller's own API tokens: the handler scopes every request to the account. */
+function isOwnTokens(req: NextRequest): boolean {
+  const path = req.nextUrl.pathname
+  return path === '/api/tokens' || /^\/api\/tokens\/[^/]+$/.test(path)
+}
+
 /** Query parameters of the retired side Report/wiki workspace. */
 const RETIRED_SIDE_PARAMS = ['report', 'reportSurface', 'wiki', 'wikiSurface'] as const
 
@@ -245,6 +251,13 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   if (identity.refundToken) refund(ip)
   let response: NextResponse
 
+  // A bad API token is refused outright: never served as anon, never redirected to login.
+  if (identity.bearerRejected)
+    return NextResponse.json(
+      { error: { code: 'UNAUTHORIZED', message: 'API token is invalid, expired or revoked' } },
+      { status: 401, headers: UNAUTHORIZED_HEADERS },
+    )
+
   // Capability-gated surfaces (admin area, account management, instance
   // configuration, clusters / GPU pool) are denied on the route, not hidden.
   const gated = requiredCapabilities(pathname) !== null
@@ -287,6 +300,13 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
     // An account holding the path's capability (checked above); handlers scope it further.
   } else if (identity.role === 'viewer' && identity.account && isLogout(req)) {
     // Every signed-in account may end its own session.
+  } else if (
+    identity.role === 'viewer' &&
+    identity.account &&
+    identity.account.level !== 'guest' &&
+    isOwnTokens(req)
+  ) {
+    // Every signed-in non-guest account manages its own API tokens.
   } else if (identity.role === 'viewer') {
     if (viewerVisibleMutation || routeClass !== 'read') {
       response = denyForbidden('Share viewers cannot perform this action')

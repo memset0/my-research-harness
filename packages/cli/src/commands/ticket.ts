@@ -1,9 +1,9 @@
 import { spawn } from 'node:child_process'
-import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { isTicketId } from '@memon/core'
 import type { Command } from 'commander'
+import { centralRequest } from '../lib/central-client.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { EXIT } from '../lib/exit-codes.js'
 
@@ -22,6 +22,8 @@ interface TicketView {
 export interface TicketDeps {
   fetch: typeof fetch
   env: NodeJS.ProcessEnv
+  /** Home directory holding `.config/memon` (tests); defaults to the user's. */
+  home?: string
   /** Runs memon's herdr client with inherited stdio; resolves to its exit status. */
   hc: (args: string[]) => Promise<number>
   /** Runs memon's herdr client and captures stdout. */
@@ -86,61 +88,13 @@ export function parseDuration(text: string): number {
   return Number(match[1]) * unit
 }
 
-async function credentials(env: NodeJS.ProcessEnv): Promise<string> {
-  if (env.MEMON_CENTRAL_AUTH) return env.MEMON_CENTRAL_AUTH
-  const file = path.join(os.homedir(), '.config', 'memon', 'central-auth')
-  const text = await fs.readFile(file, 'utf8').catch(() => '')
-  if (text.trim().includes(':')) return text.trim()
-  emitErrorAndExit(
-    'BAD_REQUEST',
-    'no central credentials: set MEMON_CENTRAL_AUTH=user:password or write them to ~/.config/memon/central-auth (mode 0600)',
-  )
-}
-
-const CODE_FOR_STATUS: Record<number, string> = {
-  400: 'BAD_REQUEST',
-  401: 'FORBIDDEN',
-  403: 'FORBIDDEN',
-  404: 'NOT_FOUND',
-  409: 'CONFLICT',
-}
-
 async function central(
   deps: TicketDeps,
   method: string,
   route: string,
   body?: unknown,
 ): Promise<unknown> {
-  const base = (deps.env.MEMON_CENTRAL_URL || 'http://localhost:3737').replace(/\/$/, '')
-  const auth = Buffer.from(await credentials(deps.env)).toString('base64')
-  let response: Response
-  try {
-    response = await deps.fetch(`${base}/api/gpu-pool/tickets${route}`, {
-      method,
-      headers: { authorization: `Basic ${auth}`, 'content-type': 'application/json' },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    })
-  } catch (err) {
-    emitErrorAndExit(
-      'CENTRAL_UNAVAILABLE',
-      `cannot reach memon central at ${base}: ${(err as Error).message}`,
-      undefined,
-      EXIT.GENERIC,
-    )
-  }
-  const payload = (await response.json().catch(() => ({}))) as {
-    error?: { code?: string; message?: string }
-  }
-  if (!response.ok) {
-    const code = payload.error?.code ?? CODE_FOR_STATUS[response.status] ?? 'GENERIC'
-    const mapped = CODE_FOR_STATUS[response.status]
-    emitErrorAndExit(
-      mapped ?? code,
-      payload.error?.message ?? `central answered ${response.status}`,
-      mapped && code !== mapped ? { code } : undefined,
-    )
-  }
-  return payload
+  return centralRequest(deps, method, `/api/gpu-pool/tickets${route}`, body)
 }
 
 function checkId(id: string): string {

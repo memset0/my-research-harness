@@ -1,4 +1,4 @@
-// /manage/access — Access control: the Users, Projects and Shares cards.
+// /manage/access — Access control: the Users, Projects, Shares and API tokens cards.
 // Middleware admits `manage_accounts` or `manage_project_grants`; each card is
 // rendered only with its own capability, so an admin never receives the Users
 // card (and the account list it would fetch).
@@ -6,6 +6,7 @@
 import { notFound } from 'next/navigation'
 import { AdminProjectsPanel } from '../../../components/admin-projects-panel'
 import { AdminSharesPanel } from '../../../components/admin-shares-panel'
+import { AdminTokensPanel } from '../../../components/admin-tokens-panel'
 import { AdminUsersPanel } from '../../../components/admin-users-panel'
 import { levelCan } from '../../../lib/server/auth/capabilities'
 import { readAccountFromHeaders } from '../../../lib/server/auth/request-context'
@@ -30,6 +31,7 @@ export default async function AccessControlPage() {
         {accounts && <AdminUsersPanel />}
         {grants && <AdminProjectsPanel />}
         {grants && <AdminSharesPanel superAdmin={superAdmin} />}
+        <AdminTokensPanel superAdmin={superAdmin} />
       </div>
     </div>
   )

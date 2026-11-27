@@ -25,6 +25,7 @@ function deps(response: { status: number; body: unknown }, over: Partial<TicketD
   const d: TicketDeps = {
     fetch: fetchMock as unknown as typeof fetch,
     env: { MEMON_CENTRAL_AUTH: 'owner:secret', MEMON_CENTRAL_URL: 'http://central.test' },
+    home: '/nonexistent-memon-home',
     hc: vi.fn(async () => 7),
     hcCapture: vi.fn(async () => ({
       code: 0,

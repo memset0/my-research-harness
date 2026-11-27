@@ -19,6 +19,11 @@ import type {
   UpdateAccountRequest,
 } from './dto/accounts'
 import type { ScopedSharesResponse } from './dto/shares'
+import type {
+  ApiTokenListResponse,
+  CreateApiTokenRequest,
+  CreateApiTokenResponse,
+} from './dto/tokens'
 import { type ProjectTarget, projectHost, projectName } from './project-target'
 
 export type {
@@ -346,6 +351,18 @@ export function updateAdminAccount(
 
 export async function fetchAdminShares(): Promise<ScopedSharesResponse> {
   return jsonFetch('/api/shares', undefined, false)
+}
+
+export async function fetchApiTokens(): Promise<ApiTokenListResponse> {
+  return jsonFetch('/api/tokens', undefined, false)
+}
+
+export function createApiToken(body: CreateApiTokenRequest): Promise<CreateApiTokenResponse> {
+  return accountWrite('/api/tokens', 'POST', body)
+}
+
+export function revokeApiToken(id: number): Promise<{ ok: true }> {
+  return jsonFetch(`/api/tokens/${id}`, { method: 'DELETE' }, false)
 }
 
 export function revokeAdminShare(id: string): Promise<{ revoked: string }> {

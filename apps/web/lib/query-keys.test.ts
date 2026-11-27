@@ -30,6 +30,7 @@ describe('queryKeys', () => {
         "adminAccounts",
         "adminShares",
         "allRuns",
+        "apiTokens",
         "clusters",
         "codePreview",
         "codeReview",

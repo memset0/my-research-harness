@@ -141,3 +141,73 @@ describe('account sessions', () => {
     expect(withoutStore.role).toBe('anon')
   })
 })
+
+describe('API tokens', () => {
+  const tokens = new Map<string, number>([
+    ['mtk_ada', 2],
+    ['mtk_old', 5],
+    ['mtk_owner', 1],
+  ])
+  const base = lookup([
+    {
+      id: 1,
+      username: 'owner',
+      level: 'super_admin',
+      disabled: false,
+      grants: [],
+    },
+    {
+      id: 2,
+      username: 'ada',
+      level: 'admin',
+      disabled: false,
+      grants: [],
+      adminProjects: [
+        { host: 'host-a', project: 'project-a' },
+        { host: 'host-b', project: 'project-b' },
+      ],
+    },
+    { id: 5, username: 'old', level: 'admin', disabled: true, grants: [] },
+  ])
+  const withTokens: AccountLookup = {
+    ...base,
+    byToken: async (value) => {
+      const id = tokens.get(value)
+      return id === undefined ? null : base.byId(id)
+    },
+  }
+  const bearer = (header: string, cookie: string | null = null) =>
+    resolveIdentity(
+      {
+        authorizationHeader: header,
+        sessionCookieValue: cookie,
+        sharesCookieValue: null,
+        allowViewer: true,
+      },
+      { ...auth, accounts: withTokens },
+      noShares,
+      NOW,
+    )
+
+  it('authenticates as the token account with its reach and no session cookie', async () => {
+    const identity = await bearer('Bearer mtk_ada')
+    expect(identity.role).toBe('viewer')
+    expect(identity.account).toEqual({ id: 2, username: 'ada', level: 'admin' })
+    expect(identity.ownerProjectRefs).toEqual([
+      { host: 'host-a', project: 'project-a' },
+      { host: 'host-b', project: 'project-b' },
+    ])
+    expect(identity.refreshedSessionCookie).toBeNull()
+    expect(identity.bearerRejected).toBeUndefined()
+    expect((await bearer('Bearer mtk_owner')).role).toBe('owner')
+  })
+
+  it('rejects unknown, empty and disabled-account tokens without falling back', async () => {
+    const owner = session({ v: 1, role: 'owner', iat: NOW, exp: NOW + 60 })
+    for (const header of ['Bearer mtk_nope', 'Bearer', 'Bearer mtk_old']) {
+      const identity = await bearer(header, owner)
+      expect(identity).toMatchObject({ role: 'anon', account: null, bearerRejected: true })
+      expect(identity.refundToken).toBe(false)
+    }
+  })
+})

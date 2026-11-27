@@ -302,6 +302,14 @@ const RULES: Rule[] = [
     class: 'mutating',
     projectFor: projectGlobal(),
   },
+  // API tokens: every signed-in non-guest account manages its own (middleware
+  // admits them; the handler scopes to the caller).
+  {
+    match: ((_m: string, p: string) =>
+      p === '/api/tokens' || /^\/api\/tokens\/[^/]+$/.test(p)) as Rule['match'],
+    class: 'mutating',
+    projectFor: projectGlobal(),
+  },
   {
     match: ((_m: string, p: string) =>
       p === '/api/admin' || p.startsWith('/api/admin/')) as Rule['match'],

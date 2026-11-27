@@ -45,6 +45,8 @@ it('keeps the complete command surface in one memon tree without duplicate group
     'mock seed',
     'serve',
     'ssh',
+    'login',
+    'logout',
     'ticket request',
     'ticket list',
     'ticket show',

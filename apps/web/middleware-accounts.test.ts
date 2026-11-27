@@ -43,7 +43,11 @@ beforeEach(() => {
       username: 'owner',
       password: 'correct',
       sessionSecret: SECRET,
-      accounts: { byId: async (id: number) => ACCOUNTS.find((a) => a.id === id) ?? null },
+      accounts: {
+        byId: async (id: number) => ACCOUNTS.find((a) => a.id === id) ?? null,
+        byToken: async (value: string) =>
+          value === 'mtk_ada' ? (ACCOUNTS.find((a) => a.id === 2) ?? null) : null,
+      },
     },
     config: { projects: [] },
     index: { get: () => undefined },
@@ -151,5 +155,28 @@ describe('account levels in middleware', () => {
     expect((await call(2, '/api/ui-preferences', 'PUT')).status).toBe(403)
     const user = await call(3, '/api/wiki/W0001?host=host-a&project=project-a')
     expect(role(user)).not.toBe('owner')
+  })
+})
+
+describe('API tokens in middleware', () => {
+  it('serves a valid token as its account and refuses a bad one with 401, even with a cookie', async () => {
+    const good = await call(null, '/api/clusters', 'GET', { authorization: 'Bearer mtk_ada' })
+    expect(passes(good)).toBe(true)
+    expect(
+      parseAccountHeader(good.headers.get(`x-middleware-request-${ACCOUNT_HEADER}`)),
+    ).toMatchObject({
+      username: 'ada',
+    })
+    expect(
+      (await call(null, '/api/admin/accounts', 'GET', { authorization: 'Bearer mtk_ada' })).status,
+    ).toBe(403)
+
+    const bad = await call(1, '/api/clusters', 'GET', { authorization: 'Bearer mtk_nope' })
+    expect(bad.status).toBe(401)
+    const page = await call(null, '/manage/clusters', 'GET', {
+      accept: 'text/html',
+      authorization: 'Bearer mtk_nope',
+    })
+    expect(page.status).toBe(401)
   })
 })

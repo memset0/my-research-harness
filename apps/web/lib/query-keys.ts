@@ -41,6 +41,7 @@ export const queryKeys = {
   adminAccounts: () => ['admin-accounts'] as const,
   projectAccess: () => ['project-access'] as const,
   adminShares: () => ['admin-shares'] as const,
+  apiTokens: () => ['api-tokens'] as const,
   clusters: () => ['clusters'] as const,
 
   // Runs. `project` is optional where the caller may act outside a Project

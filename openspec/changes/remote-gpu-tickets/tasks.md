@@ -3,14 +3,14 @@
 ## 1. Admin reach on every Project
 
 - [x] 1.1 Make the admin branch of identity resolution grant owner reach on every configured Project, drop admin Project grants in the account store on open, retire `/api/admin/project-admins` and its UI, and list every Project in `/api/project-access` for admins; verify with updated `identity-accounts.test.ts`, `capabilities.test.ts`, `account-store.test.ts` and the project-access route test
-- [ ] 1.2 Update the `user-accounts` behavior in admin copy and help text; verify the Access control page renders for an admin without the removed Project-admin card (rendered check)
+- [x] 1.2 Update the `user-accounts` behavior in admin copy and help text; verify the Access control page renders for an admin without the removed Project-admin card (rendered check)
 
 ## 2. API tokens
 
-- [ ] 2.1 Add the `api_tokens` table (hashed values, prefix, expiry, last use) with create/list/revoke, revocation on level change, disable and delete; verify with `account-store.test.ts` cases
-- [ ] 2.2 Resolve `Authorization: Bearer` in `identity.ts` (pages, API, WebSocket upgrade) with no fallback on failure, rate limiting and throttled last-use writes; verify with identity and middleware tests (valid, revoked, expired, disabled account, level change)
+- [x] 2.1 Add the `api_tokens` table (hashed values, prefix, expiry, last use) with create/list/revoke, revocation on level change, disable and delete; verify with `account-store.test.ts` cases
+- [x] 2.2 Resolve `Authorization: Bearer` in `identity.ts` (pages, API, WebSocket upgrade) with no fallback on failure, rate limiting and throttled last-use writes; verify with identity and middleware tests (valid, revoked, expired, disabled account, level change)
 - [ ] 2.3 Add `/api/tokens` (own tokens for every signed-in non-guest account, any account's for the super admin) and an API token card on the Access control page using stock shadcn components; verify with route tests and a rendered check that the value is shown once
-- [ ] 2.4 Add the CLI central client (credential order: env token, `central.json`, legacy Basic), `memon login`/`logout` with a 0600 file, and register them in the command surface and ledger classes; verify with CLI tests (stdin login, rejected token writes nothing, mode 0600, no credential in output) and `command-surface.test.ts`
+- [x] 2.4 Add the CLI central client (credential order: env token, `central.json`, legacy Basic), `memon login`/`logout` with a 0600 file, and register them in the command surface and ledger classes; verify with CLI tests (stdin login, rejected token writes nothing, mode 0600, no credential in output) and `command-surface.test.ts`
 
 ## 3. Ticket ownership and central execution
 

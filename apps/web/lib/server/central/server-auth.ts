@@ -210,6 +210,8 @@ export async function authorizeCentralServerRequest(
     options.nowSeconds,
   )
   if (identity.refundToken) limiter.refund(ip)
+  if (identity.bearerRejected)
+    return { ok: false, status: 401, headers: { ...UNAUTHORIZED_HEADERS }, setCookies: [] }
   const setCookies = refreshedCookies(
     identity,
     requestIsHttps(options.request),

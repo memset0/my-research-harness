@@ -1,4 +1,4 @@
-import { randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto'
+import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto'
 import { chmod } from 'node:fs/promises'
 import { dirname, join } from '@memon/file-protocol/paths'
 import sqlite3 from 'sqlite3'
@@ -34,6 +34,39 @@ export interface Account {
   createdAt: number
   updatedAt: number
   grants: AccountGrant[]
+}
+
+/** An API token as listed: never its value. Times are epoch milliseconds. */
+export interface ApiToken {
+  id: number
+  accountId: number
+  username: string
+  name: string
+  /** The first characters of the value, enough to recognise it. */
+  prefix: string
+  createdAt: number
+  expiresAt: number | null
+  lastUsedAt: number | null
+}
+
+interface ApiTokenRow {
+  id: number
+  account_id: number
+  username: string
+  name: string
+  prefix: string
+  created_at: number
+  expires_at: number | null
+  last_used_at: number | null
+}
+
+export const API_TOKEN_PATTERN = /^mtk_[A-Za-z0-9_-]{43}$/
+const TOKEN_PREFIX_LENGTH = 12
+/** Last-use writes happen at most this often per token. */
+const TOKEN_TOUCH_INTERVAL_MS = 60_000
+
+function tokenHash(value: string): string {
+  return createHash('sha256').update(value).digest('hex')
 }
 
 export class AccountStoreError extends Error {
@@ -146,6 +179,16 @@ export class AccountStore {
       );
       -- Admins reach every Project, so per-Project admin grants are retired.
       DROP TABLE IF EXISTS project_admins;
+      CREATE TABLE IF NOT EXISTS api_tokens (
+        id           INTEGER PRIMARY KEY,
+        account_id   INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        name         TEXT NOT NULL,
+        hash         TEXT NOT NULL UNIQUE,
+        prefix       TEXT NOT NULL,
+        created_at   INTEGER NOT NULL,
+        expires_at   INTEGER,
+        last_used_at INTEGER
+      );
       CREATE TABLE IF NOT EXISTS account_grants (
         account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
         host       TEXT NOT NULL,
@@ -271,6 +314,9 @@ export class AccountStore {
       throw new AccountStoreError('BAD_REQUEST', 'level must be admin, user or guest')
     if (patch.password !== undefined) this.checkPassword(patch.password)
     const now = Date.now()
+    // A token carries its account's reach, so any change of reach or status revokes it.
+    if ((patch.level !== undefined && patch.level !== existing.level) || patch.disabled === true)
+      await this.run(`DELETE FROM api_tokens WHERE account_id = ?`, [id])
     if (patch.level !== undefined) {
       await this.run(`UPDATE accounts SET level = ?, updated_at = ? WHERE id = ?`, [
         patch.level,
@@ -293,6 +339,115 @@ export class AccountStore {
         id,
       ])
     return (await this.byId(id)) as Account
+  }
+
+  /** Create a token for an account; the value is returned here and never again. */
+  async createToken(
+    accountId: number,
+    name: string,
+    expiresAt: number | null,
+    now = Date.now(),
+  ): Promise<{ token: ApiToken; value: string }> {
+    await this.ready
+    if (typeof name !== 'string' || name.trim().length < 1 || name.length > 64)
+      throw new AccountStoreError('BAD_REQUEST', 'token name must be 1–64 characters')
+    if (expiresAt !== null && (!Number.isFinite(expiresAt) || expiresAt <= now))
+      throw new AccountStoreError('BAD_REQUEST', 'expires_at must be in the future')
+    const account = await this.row(`SELECT * FROM accounts WHERE id = ?`, [accountId])
+    if (!account || account.disabled)
+      throw new AccountStoreError('NOT_FOUND', `account ${accountId} does not exist`)
+    if (account.level === 'guest')
+      throw new AccountStoreError('BAD_REQUEST', 'guest accounts cannot hold API tokens')
+    const value = `mtk_${randomBytes(32).toString('base64url')}`
+    const id = await new Promise<number>((resolve, reject) => {
+      this.database.run(
+        `INSERT INTO api_tokens (account_id, name, hash, prefix, created_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          accountId,
+          name.trim(),
+          tokenHash(value),
+          value.slice(0, TOKEN_PREFIX_LENGTH),
+          now,
+          expiresAt,
+        ],
+        function (this: sqlite3.RunResult, error) {
+          if (error) reject(error)
+          else resolve(this.lastID)
+        },
+      )
+    })
+    const [token] = await this.tokens({ id })
+    return { token: token as ApiToken, value }
+  }
+
+  /** Tokens of one account, or of every account when `accountId` is omitted. */
+  async listTokens(accountId?: number): Promise<ApiToken[]> {
+    await this.ready
+    return this.tokens(accountId === undefined ? {} : { accountId })
+  }
+
+  /** Revoke a token; with `accountId`, only if that account holds it. False when nothing matched. */
+  async revokeToken(id: number, accountId?: number): Promise<boolean> {
+    await this.ready
+    const [token] = await this.tokens({ id })
+    if (!token || (accountId !== undefined && token.accountId !== accountId)) return false
+    await this.run(`DELETE FROM api_tokens WHERE id = ?`, [id])
+    return true
+  }
+
+  /**
+   * The enabled account a token value authenticates, or null for an unknown,
+   * expired or malformed value. Records the use at most once a minute.
+   */
+  async accountForToken(value: string, now = Date.now()): Promise<Account | null> {
+    await this.ready
+    if (!API_TOKEN_PATTERN.test(value)) return null
+    const rows = await this.all<{
+      id: number
+      account_id: number
+      expires_at: number | null
+      last_used_at: number | null
+    }>(`SELECT id, account_id, expires_at, last_used_at FROM api_tokens WHERE hash = ?`, [
+      tokenHash(value),
+    ])
+    const row = rows[0]
+    if (!row || (row.expires_at !== null && row.expires_at <= now)) return null
+    const account = await this.byId(row.account_id)
+    if (!account || account.disabled) return null
+    if (row.last_used_at === null || now - row.last_used_at >= TOKEN_TOUCH_INTERVAL_MS)
+      await this.run(`UPDATE api_tokens SET last_used_at = ? WHERE id = ?`, [now, row.id])
+    return account
+  }
+
+  private async tokens(filter: { id?: number; accountId?: number }): Promise<ApiToken[]> {
+    const where =
+      filter.id !== undefined
+        ? 'WHERE t.id = ?'
+        : filter.accountId !== undefined
+          ? 'WHERE t.account_id = ?'
+          : ''
+    const params =
+      filter.id !== undefined
+        ? [filter.id]
+        : filter.accountId !== undefined
+          ? [filter.accountId]
+          : []
+    const rows = await this.all<ApiTokenRow>(
+      `SELECT t.id, t.account_id, a.username, t.name, t.prefix, t.created_at, t.expires_at, t.last_used_at
+         FROM api_tokens t JOIN accounts a ON a.id = t.account_id ${where} ORDER BY t.id`,
+      params,
+    )
+    return rows.map((row) => ({
+      id: row.id,
+      accountId: row.account_id,
+      username: row.username,
+      name: row.name,
+      prefix: row.prefix,
+      createdAt: row.created_at,
+      expiresAt: row.expires_at,
+      lastUsedAt: row.last_used_at,
+    }))
   }
 
   async replaceGrants(id: number, grants: AccountGrant[]): Promise<Account> {
@@ -487,18 +642,20 @@ export function createAccountLookup(
   ownerUsername: string,
   projects: () => Array<{ host: string; project: string }>,
 ): {
-  byId(
-    id: number,
-  ): Promise<(Account & { adminProjects?: Array<{ host: string; project: string }> }) | null>
+  byId(id: number): Promise<LookedUp | null>
+  byToken(value: string): Promise<LookedUp | null>
 } {
+  const withReach = (account: Account | null): LookedUp | null =>
+    account && account.level === 'admin' ? { ...account, adminProjects: projects() } : account
   return {
-    byId: async (id) => {
-      const account = await (await getAccountStore(configPath, ownerUsername)).byId(id)
-      if (!account || account.level !== 'admin') return account
-      return { ...account, adminProjects: projects() }
-    },
+    byId: async (id) =>
+      withReach(await (await getAccountStore(configPath, ownerUsername)).byId(id)),
+    byToken: async (value) =>
+      withReach(await (await getAccountStore(configPath, ownerUsername)).accountForToken(value)),
   }
 }
+
+type LookedUp = Account & { adminProjects?: Array<{ host: string; project: string }> }
 
 export async function closeAccountStores(): Promise<void> {
   await Promise.all(Array.from(stores.values(), (entry) => entry.store.close()))

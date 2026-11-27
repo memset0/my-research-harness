@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
+  API_TOKEN_PATTERN,
   accountsDatabasePath,
   closeAccountStores,
   createAccountLookup,
@@ -197,5 +198,50 @@ describe('account store', () => {
     const lookup = createAccountLookup(configPath, 'owner', () => projects)
     expect((await lookup.byId(ada.id))?.adminProjects).toEqual(projects)
     expect((await lookup.byId(bob.id))?.adminProjects).toBeUndefined()
+  })
+
+  it('issues API tokens once, lists them without values and revokes them', async () => {
+    const store = await getAccountStore(configPath, 'owner')
+    const ada = await store.create({ username: 'ada', password: 'password1', level: 'admin' })
+    const bob = await store.create({ username: 'bob', password: 'password1', level: 'user' })
+    const gil = await store.create({ username: 'gil', password: 'password1', level: 'guest' })
+    const now = 1_000_000
+
+    const { token, value } = await store.createToken(ada.id, 'laptop', null, now)
+    expect(value).toMatch(API_TOKEN_PATTERN)
+    expect(token).toMatchObject({ accountId: ada.id, username: 'ada', name: 'laptop' })
+    expect(token.prefix).toBe(value.slice(0, 12))
+    expect(JSON.stringify(await store.listTokens())).not.toContain(value)
+    expect((await store.accountForToken(value, now + 1))?.username).toBe('ada')
+    expect((await store.listTokens(ada.id))[0]?.lastUsedAt).toBe(now + 1)
+    expect(await store.accountForToken(`${value.slice(0, -1)}x`, now)).toBeNull()
+
+    const expiring = await store.createToken(bob.id, 'ci', now + 10, now)
+    expect((await store.accountForToken(expiring.value, now + 5))?.username).toBe('bob')
+    expect(await store.accountForToken(expiring.value, now + 10)).toBeNull()
+    await expect(store.createToken(gil.id, 'x', null)).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+    })
+    await expect(store.createToken(ada.id, '', null)).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+
+    // Revoking needs the holder when an account is named.
+    expect(await store.revokeToken(token.id, bob.id)).toBe(false)
+    expect(await store.revokeToken(token.id, ada.id)).toBe(true)
+    expect(await store.accountForToken(value, now)).toBeNull()
+  })
+
+  it('revokes an account tokens when its level changes or it is disabled', async () => {
+    const store = await getAccountStore(configPath, 'owner')
+    const ada = await store.create({ username: 'ada', password: 'password1', level: 'admin' })
+    const first = await store.createToken(ada.id, 'one', null)
+    await store.update(ada.id, { level: 'admin' })
+    expect(await store.accountForToken(first.value)).not.toBeNull()
+    await store.update(ada.id, { level: 'user' })
+    expect(await store.accountForToken(first.value)).toBeNull()
+
+    const second = await store.createToken(ada.id, 'two', null)
+    await store.update(ada.id, { disabled: true })
+    expect(await store.accountForToken(second.value)).toBeNull()
+    expect(await store.listTokens(ada.id)).toEqual([])
   })
 })

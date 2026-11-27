@@ -5,6 +5,9 @@
 //   "Who is making this request — owner, viewer, or anon?"
 //
 // Mode evaluation order (lazy):
+//   0. API token             (Authorization: Bearer mtk_… — a stored account's
+//                              token). A Bearer header decides alone: a bad one
+//                              is `bearerRejected`, never a fallback to cookies.
 //   1. Owner session cookie  (memon-session — HMAC-signed payload)
 //   2. Owner HTTP Basic      (Authorization: Basic ... — config.yml plaintext)
 //   3. Viewer share cookie   (memon-shares — HMAC-signed list of {project, token})
@@ -79,6 +82,11 @@ export interface ResolvedIdentity {
   /** True if the caller should refund the rate-limit token. */
   refundToken: boolean
   /**
+   * The request carried `Authorization: Bearer` that authenticates nobody.
+   * Callers answer 401 instead of serving anything as anon.
+   */
+  bearerRejected?: true
+  /**
    * If the owner-session cookie was used, the freshly-signed replacement
    * cookie value to set on the response (refreshing `exp`). null otherwise.
    */
@@ -130,6 +138,8 @@ export interface LookedUpAccount extends IdentityAccount {
 
 export interface AccountLookup {
   byId(id: number): Promise<LookedUpAccount | null>
+  /** The account an API token authenticates (enabled, unexpired), or null. */
+  byToken?(value: string): Promise<LookedUpAccount | null>
 }
 
 export interface RuntimeAuth {
@@ -202,8 +212,93 @@ function shareCookieRefresh(outcome: ShareCookieOutcome | null, secret: string) 
   }
 }
 
+/** The token of `Authorization: Bearer <token>`; '' for an empty one; null without Bearer. */
+export function parseBearer(header: string | null | undefined): string | null {
+  if (!header) return null
+  const match = /^Bearer(?:\s+(.*))?$/i.exec(header.trim())
+  return match ? (match[1] ?? '').trim() : null
+}
+
+function anonIdentity(): ResolvedIdentity {
+  return {
+    role: 'anon',
+    account: null,
+    scopeProjects: new Set(),
+    scopeProjectRefs: [],
+    ownerProjectRefs: [],
+    scopeDocuments: [],
+    refundToken: false,
+    refreshedSessionCookie: null,
+    refreshedSharesCookie: null,
+    clearSharesCookie: false,
+  }
+}
+
 /**
- * Three-mode identity resolution. See file header.
+ * The identity of an authenticated account, from a session cookie or an API
+ * token. The super admin is the owner. Admins, users and guests are viewers
+ * of their reach (every Project for admins, grants for users) plus any valid
+ * share links; capabilities add the rest.
+ */
+function accountIdentity(
+  account: LookedUpAccount,
+  shares: ShareCookieOutcome | null,
+  session: { refreshedSessionCookie: string | null; secret: string },
+): ResolvedIdentity {
+  const summary: IdentityAccount = {
+    id: account.id,
+    username: account.username,
+    level: account.level,
+  }
+  if (isOwnerLevel(account.level)) {
+    return {
+      role: 'owner',
+      account: summary,
+      scopeProjects: new Set(),
+      scopeProjectRefs: [],
+      ownerProjectRefs: [],
+      scopeDocuments: [],
+      refundToken: true,
+      refreshedSessionCookie: session.refreshedSessionCookie,
+      refreshedSharesCookie: null,
+      clearSharesCookie: false,
+    }
+  }
+  const projectRefs: ProjectRef[] = [...(shares?.projectRefs ?? [])]
+  const documents: ShareDocumentGrant[] = [...(shares?.documents ?? [])]
+  const addProject = (host: string, project: string) => {
+    if (!projectRefs.some((ref) => ref.host === host && ref.project === project))
+      projectRefs.push({ host, project } as ProjectRef)
+  }
+  if (account.level === 'admin')
+    for (const granted of account.adminProjects ?? []) addProject(granted.host, granted.project)
+  if (account.level === 'user') {
+    for (const grant of account.grants) {
+      if (grant.document)
+        documents.push({ host: grant.host, project: grant.project, ...grant.document })
+      else addProject(grant.host, grant.project)
+    }
+  }
+  return {
+    role: 'viewer',
+    account: summary,
+    scopeProjects: new Set(shares?.projects ?? []),
+    scopeProjectRefs: projectRefs,
+    ownerProjectRefs:
+      account.level === 'admin'
+        ? (account.adminProjects ?? []).map(
+            (granted) => ({ host: granted.host, project: granted.project }) as ProjectRef,
+          )
+        : [],
+    scopeDocuments: documents,
+    refundToken: true,
+    refreshedSessionCookie: session.refreshedSessionCookie,
+    ...shareCookieRefresh(shares, session.secret),
+  }
+}
+
+/**
+ * Identity resolution: API token, session cookie, owner Basic, share cookie. See file header.
  */
 export async function resolveIdentity(
   inputs: AuthInputs,
@@ -212,6 +307,17 @@ export async function resolveIdentity(
   nowSeconds: number = Math.floor(Date.now() / 1000),
 ): Promise<ResolvedIdentity> {
   const secret = runtimeAuth.sessionSecret ?? ''
+
+  // ----- Mode 0: API token. A Bearer header decides alone and never falls back. -----
+  const bearer = parseBearer(inputs.authorizationHeader)
+  if (bearer !== null) {
+    const account =
+      bearer && runtimeAuth.accounts?.byToken
+        ? await runtimeAuth.accounts.byToken(bearer).catch(() => null)
+        : null
+    if (!account || account.disabled) return { ...anonIdentity(), bearerRejected: true }
+    return accountIdentity(account, null, { refreshedSessionCookie: null, secret })
+  }
 
   // ----- Mode 1: session cookie (account #1 or a stored account) -----
   if (secret && inputs.sessionCookieValue) {
@@ -230,65 +336,11 @@ export async function resolveIdentity(
           : { v: 2, uid: account.id, iat: nowSeconds, exp },
         secret,
       )
-      const summary: IdentityAccount = {
-        id: account.id,
-        username: account.username,
-        level: account.level,
-      }
-      if (isOwnerLevel(account.level)) {
-        return {
-          role: 'owner',
-          account: summary,
-          scopeProjects: new Set(),
-          scopeProjectRefs: [],
-          ownerProjectRefs: [],
-          scopeDocuments: [],
-          refundToken: true,
-          refreshedSessionCookie: refreshed,
-          refreshedSharesCookie: null,
-          clearSharesCookie: false,
-        }
-      }
-      // Admins, users and guests are read-only viewers of their granted Projects /
-      // documents plus any valid share links; capabilities add the rest.
       const shares =
-        inputs.allowViewer && inputs.sharesCookieValue
+        !isOwnerLevel(account.level) && inputs.allowViewer && inputs.sharesCookieValue
           ? await validateShareCookie(inputs.sharesCookieValue, secret, shareValidator)
           : null
-      const projectRefs: ProjectRef[] = [...(shares?.projectRefs ?? [])]
-      const documents: ShareDocumentGrant[] = [...(shares?.documents ?? [])]
-      const addProject = (host: string, project: string) => {
-        if (!projectRefs.some((ref) => ref.host === host && ref.project === project))
-          projectRefs.push({ host, project } as ProjectRef)
-      }
-      if (account.level === 'admin')
-        for (const granted of account.adminProjects ?? []) addProject(granted.host, granted.project)
-      if (account.level === 'user') {
-        for (const grant of account.grants) {
-          if (grant.document)
-            documents.push({ host: grant.host, project: grant.project, ...grant.document })
-          else if (
-            !projectRefs.some((ref) => ref.host === grant.host && ref.project === grant.project)
-          )
-            projectRefs.push({ host: grant.host, project: grant.project } as ProjectRef)
-        }
-      }
-      return {
-        role: 'viewer',
-        account: summary,
-        scopeProjects: new Set(shares?.projects ?? []),
-        scopeProjectRefs: projectRefs,
-        ownerProjectRefs:
-          account.level === 'admin'
-            ? (account.adminProjects ?? []).map(
-                (granted) => ({ host: granted.host, project: granted.project }) as ProjectRef,
-              )
-            : [],
-        scopeDocuments: documents,
-        refundToken: true,
-        refreshedSessionCookie: refreshed,
-        ...shareCookieRefresh(shares, secret),
-      }
+      return accountIdentity(account, shares, { refreshedSessionCookie: refreshed, secret })
     }
   }
 

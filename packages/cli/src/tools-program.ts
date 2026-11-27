@@ -1,6 +1,7 @@
 import type { Command } from 'commander'
 import { runComponentsRun } from './commands/components.js'
 import { runJournalRead } from './commands/journal.js'
+import { registerLoginCommands } from './commands/login.js'
 import { runMockSeed } from './commands/mock.js'
 import { runServe } from './commands/serve.js'
 import { runSsh } from './commands/ssh.js'
@@ -143,6 +144,7 @@ Expired nodes are refused (exit 13); unknown nodes exit 4; registry errors exit 
       })
     })
 
+  registerLoginCommands(program)
   registerTicketCommands(program)
 
   const journal = program

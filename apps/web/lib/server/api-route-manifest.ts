@@ -123,6 +123,8 @@ export const API_ROUTE_MANIFEST = {
   'log/route.ts': backend(['GET'], 'resource', 'read', 'bytes'),
   'log/stream/route.ts': backend(['GET'], 'resource', 'read', 'sse'),
   'project-access/route.ts': central(['DELETE', 'GET', 'POST'], 'mutating'),
+  'tokens/[id]/route.ts': central(['DELETE'], 'mutating'),
+  'tokens/route.ts': central(['GET', 'POST'], 'mutating'),
   'projects/[project]/commit-marks/[sha]/route.ts': backend(
     ['PUT', 'DELETE'],
     'project-path',
@@ -227,6 +229,7 @@ export const DIRECT_RUNTIME_SURFACES = {
   'app/page.tsx': { owner: 'composed', scope: 'global', purpose: 'project-data' },
   'lib/server/share-api.ts': { owner: 'central', scope: 'global', purpose: 'auth' },
   'lib/server/admin-accounts-route.ts': { owner: 'central', scope: 'global', purpose: 'auth' },
+  'lib/server/tokens-route.ts': { owner: 'central', scope: 'global', purpose: 'auth' },
   'lib/server/gpu-pool/http.ts': { owner: 'central', scope: 'global', purpose: 'shell' },
   'lib/server/cluster/tasks.ts': { owner: 'central', scope: 'global', purpose: 'shell' },
   'app/s/[token]/route.ts': { owner: 'central', scope: 'global', purpose: 'share-landing' },
