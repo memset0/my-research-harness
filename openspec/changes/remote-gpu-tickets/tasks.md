@@ -18,7 +18,7 @@
 - [x] 3.2 Add broker execution methods and routes: streamed `exec` (ndjson, stdin body, 600 s cap), task start/list, logs (with follow), wait, kill, all limited to the ticket's terminals and refused unless `GRANTED`; verify with broker tests against the fake herdr and route tests
 - [x] 3.3 Add the `attach` WebSocket in the custom server's upgrade path, authenticated through the shared identity function and bound to one ticket terminal (resize frames); verify with an upgrade test (owner, other admin, released ticket)
 - [x] 3.4 Rewire every `memon ticket` subcommand to the central API (no local `hc`), add `--force` on release and execution commands, and keep exit codes; verify with `ticket.test.ts` using a mocked central
-- [ ] 3.5 Live check from a machine without herdr/SSH tooling (or with them hidden from `PATH`): login with a token, request on a Slurm-held node, `exec nvidia-smi -L`, `run` + `logs`, `attach`, release; record the result in LOCAL.md
+- [x] 3.5 Live check from a machine without herdr/SSH tooling (or with them hidden from `PATH`): login with a token, request on a Slurm-held node, `exec nvidia-smi -L`, `run` + `logs`, `attach`, release; record the result in LOCAL.md
 
 ## 4. Project clusters and sync
 

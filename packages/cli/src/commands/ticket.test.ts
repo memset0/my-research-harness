@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events'
 import { describe, expect, it, vi } from 'vitest'
 import type WebSocket from 'ws'
 import { captureCli } from '../test-support/results-project.js'
-import { parseDuration, runTicket, type TicketDeps, terminalName } from './ticket.js'
+import { newLines, parseDuration, runTicket, type TicketDeps, terminalName } from './ticket.js'
 
 const ID = 'tk_7h3q9m2xw4ra'
 const TOKEN = `mtk_${'a'.repeat(43)}`
@@ -156,11 +156,38 @@ describe('memon ticket', () => {
     expect(await runTicket('wait', [ID, 'train'], { timeout: '0' }, timeout.d)).toBe(1)
   })
 
-  it('follows a task over a WebSocket to central and returns the terminal exit code', async () => {
+  it('follows a task by polling its history and exits with its status', async () => {
+    const live = {
+      status: 200,
+      body: { tasks: [{ task: 'train', state: 'live', exit_code: null }] },
+    }
+    const done = {
+      status: 200,
+      body: { tasks: [{ task: 'train', state: 'finished', exit_code: 3 }] },
+    }
+    const { d, output } = central([
+      { status: 200, body: { text: 'a\nb\n\n' } },
+      live,
+      { status: 200, body: { text: 'a\nb\nc\nd\n' } },
+      done,
+    ])
+    expect(await runTicket('logs', [ID, 'train'], { follow: true }, d)).toBe(3)
+    expect(output).toEqual(['a\nb\n', 'c\nd\n'])
+  })
+
+  it('finds new lines after the last printed ones', () => {
+    expect(newLines([], ['x'])).toEqual(['x'])
+    expect(newLines(['1', '2', '3'], ['2', '3', '4', '5'])).toEqual(['4', '5'])
+    expect(newLines(['a', 'b'], ['a', 'b'])).toEqual([])
+    expect(newLines(['gone'], ['new'])).toEqual(['new'])
+  })
+
+  it('attaches over a WebSocket to central and returns the terminal exit code', async () => {
     const socket = new EventEmitter() as EventEmitter & { send: (data: unknown) => void }
     socket.send = vi.fn()
     const opened: Array<{ url: string; headers: Record<string, string> }> = []
     const { d, output } = central([], {
+      isTty: true,
       openSocket: (url, headers) => {
         opened.push({ url, headers })
         setTimeout(() => {
@@ -171,11 +198,10 @@ describe('memon ticket', () => {
         return socket as unknown as WebSocket
       },
     })
-    expect(await runTicket('logs', [ID, 'train'], { follow: true }, d)).toBe(4)
+    expect(await runTicket('attach', [ID, 'train'], {}, d)).toBe(4)
     const url = new URL(opened[0]?.url ?? '')
     expect(url.protocol).toBe('wss:')
     expect(url.pathname).toBe(`/api/gpu-pool/tickets/${ID}/attach`)
-    expect(url.searchParams.get('observe')).toBe('1')
     expect(url.searchParams.get('task')).toBe('train')
     expect(opened[0]?.headers.authorization).toBe(`Bearer ${TOKEN}`)
     expect(output).toEqual(['prompt$ '])

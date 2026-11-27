@@ -23,6 +23,8 @@ export interface TicketDeps extends CentralClientDeps {
 }
 
 const MAX_STDIN_BYTES = 8 * 1024 * 1024
+const FOLLOW_INTERVAL_MS = 2_000
+const FOLLOW_LINES = 500
 /** Each `wait` request blocks at most this long on central; the CLI repeats it. */
 const WAIT_SLICE_S = 60
 
@@ -149,6 +151,22 @@ async function streamExec(
   if (exit === null)
     emitErrorAndExit('CENTRAL_UNAVAILABLE', 'the exec stream ended early', undefined, EXIT.GENERIC)
   return exit
+}
+
+/**
+ * The lines of `next` that follow what `printed` already showed. Both are
+ * snapshots of one terminal's history, so the newest printed lines are found
+ * again in `next` and only what comes after them is new.
+ */
+export function newLines(printed: string[], next: string[]): string[] {
+  if (printed.length === 0) return next
+  for (let k = Math.min(5, printed.length); k > 0; k -= 1) {
+    const tail = printed.slice(-k)
+    for (let end = next.length; end >= k; end -= 1) {
+      if (tail.every((line, i) => next[end - k + i] === line)) return next.slice(end)
+    }
+  }
+  return next
 }
 
 const SOCKET_REFUSALS: Record<number, string> = {
@@ -299,18 +317,36 @@ export async function runTicket(
     case 'logs': {
       const id = checkId(args[0] ?? '')
       const task = checkTask(args[1], `memon ticket logs ${id} <task>`)
-      if (opts.follow === true)
-        return socketSession(
-          deps,
-          id,
-          { task: decodeURIComponent(task), observe: '1', ...(forced ? { force: '1' } : {}) },
-          false,
-        )
+      const suffix = forced ? '&force=1' : ''
+      if (opts.follow === true) {
+        // Poll the history rather than watching the terminal: a watch-only
+        // attach waits for terminal replies that a pipe never sends.
+        const sleep = deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)))
+        let printed: string[] = []
+        for (;;) {
+          const { text } = (await call(
+            'GET',
+            `/${id}/tasks/${task}/logs?lines=${FOLLOW_LINES}${suffix}`,
+          )) as { text: string }
+          const lines = text.replace(/\s+$/, '').split('\n')
+          const fresh = newLines(printed, lines)
+          if (fresh.length > 0) deps.out(`${fresh.join('\n')}\n`)
+          printed = lines
+          const { tasks: views } = (await call(
+            'GET',
+            `/${id}/tasks${forced ? '?force=1' : ''}`,
+          )) as {
+            tasks: Array<{ task: string; state: string; exit_code: number | null }>
+          }
+          const view = views.filter((v) => v.task === decodeURIComponent(task)).at(-1)
+          if (!view || view.state !== 'live') return view?.exit_code ?? EXIT.SUCCESS
+          await sleep(FOLLOW_INTERVAL_MS)
+        }
+      }
       const lines = Number(opts.lines ?? 200)
-      const { text } = (await call(
-        'GET',
-        `/${id}/tasks/${task}/logs?lines=${lines}${forced ? '&force=1' : ''}`,
-      )) as { text: string }
+      const { text } = (await call('GET', `/${id}/tasks/${task}/logs?lines=${lines}${suffix}`)) as {
+        text: string
+      }
       deps.out(text.endsWith('\n') ? text : `${text}\n`)
       return EXIT.SUCCESS
     }
@@ -434,7 +470,11 @@ account that requested a ticket may use it; the super admin must add --force.`,
       .argument('<id>')
       .argument('<task>')
       .option('--lines <n>', 'history lines', '200')
-      .option('--follow', 'keep printing the task’s terminal until it ends (watch only)', false)
+      .option(
+        '--follow',
+        'keep printing new lines until the task ends; exits with its status',
+        false,
+      )
       .description('print a task’s screen and history'),
   ).action(act('logs'))
   withForce(
