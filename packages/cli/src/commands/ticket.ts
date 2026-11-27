@@ -2,11 +2,10 @@ import { spawn } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { isTicketId } from '@memon/core'
 import type { Command } from 'commander'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { EXIT } from '../lib/exit-codes.js'
-
-const TICKET_ID = /^T\d{4,}$/
 
 interface Launch {
   machine: string
@@ -145,7 +144,8 @@ async function central(
 }
 
 function checkId(id: string): string {
-  if (!TICKET_ID.test(id)) emitErrorAndExit('BAD_REQUEST', `"${id}" is not a ticket id (T0001)`)
+  if (!isTicketId(id))
+    emitErrorAndExit('BAD_REQUEST', `"${id}" is not a ticket id (tk_ followed by 12 characters)`)
   return id
 }
 
@@ -335,7 +335,7 @@ export function registerTicketCommands(program: Command): void {
     }
   ticket
     .command('request')
-    .description('queue a GPU request; prints the ticket (T0001)')
+    .description('queue a GPU request; prints the ticket and its random id (tk_…)')
     .requiredOption('--project <name>', 'project the GPUs are for')
     .requiredOption('--duration <d>', 'how long, e.g. 90m, 6h, 2d')
     .option('--gpus <n>', 'number of GPUs')

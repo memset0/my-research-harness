@@ -31,14 +31,18 @@ describe('launch templates', () => {
 
   it('wraps long tasks in their own named step and sets the environment', () => {
     const template = launchTemplate(
-      { id: 'T0007', grantedGpus: [2, 3] },
+      { id: 'tk_00000000000a', grantedGpus: [2, 3] },
       { id: 'node-01', enter: ENTER },
     )
-    expect(template.exec).toEqual(['env', 'CUDA_VISIBLE_DEVICES=2,3', 'MEMON_TICKET=T0007'])
+    expect(template.exec).toEqual([
+      'env',
+      'CUDA_VISIBLE_DEVICES=2,3',
+      'MEMON_TICKET=tk_00000000000a',
+    ])
     expect(template.run).toEqual([
       'env',
       'CUDA_VISIBLE_DEVICES=2,3',
-      'MEMON_TICKET=T0007',
+      'MEMON_TICKET=tk_00000000000a',
       'srun',
       '--jobid=12345',
       '--overlap',
@@ -47,10 +51,10 @@ describe('launch templates', () => {
       '-N1',
       '-n1',
       '-J',
-      'memon-task-T0007',
+      'memon-task-tk_00000000000a',
     ])
     expect(template.holdJob).toBe('12345')
-    const plain = launchTemplate({ id: 'T0007', grantedGpus: [0] }, { id: 'node-02' })
+    const plain = launchTemplate({ id: 'tk_00000000000a', grantedGpus: [0] }, { id: 'node-02' })
     expect(plain.run).toEqual(plain.exec)
   })
 
@@ -69,11 +73,11 @@ describe('reclaim step filtering', () => {
     'StepId=12345.18 UserId=1',
     '   Name=herdr-core',
     'StepId=12345.21 UserId=1',
-    '   Name=memon-task-T0007',
+    '   Name=memon-task-tk_00000000000a',
     'StepId=12345.22 UserId=1',
     '   Name=memon-task-T0070',
     'StepId=99999.3 UserId=1',
-    '   Name=memon-task-T0007',
+    '   Name=memon-task-tk_00000000000a',
   ].join('\n')
 
   it('cancels only this ticket’s numbered steps of the hold job', () => {
@@ -86,15 +90,15 @@ describe('reclaim step filtering', () => {
       '12345.22',
       '99999.3',
     ])
-    expect(stepsToCancel(steps, '12345', 'T0007')).toEqual(['12345.21'])
+    expect(stepsToCancel(steps, '12345', 'tk_00000000000a')).toEqual(['12345.21'])
   })
 
   it('never yields the bare hold id or the core step', () => {
     const steps = [
-      { id: '12345', name: 'memon-task-T0007' },
+      { id: '12345', name: 'memon-task-tk_00000000000a' },
       { id: '12345.18', name: 'herdr-core' },
     ]
-    expect(stepsToCancel(steps, '12345', 'T0007')).toEqual([])
+    expect(stepsToCancel(steps, '12345', 'tk_00000000000a')).toEqual([])
   })
 })
 

@@ -7,15 +7,27 @@ Broker GPUs of registered compute nodes centrally. Agents request GPUs, wait in 
 ## ADDED Requirements
 
 ### Requirement: Ticket requests are validated and queued
-A request SHALL name a project and a duration (1 minute to 30 days). It SHALL name either a positive GPU count or a whole node, and MAY name a GPU type, a label (≤ 64 characters) and a start command. Invalid requests SHALL be refused with `BAD_REQUEST` and SHALL NOT be stored. A valid request SHALL be stored as `QUEUED` with an id `T<NNNN>` and an offset-qualified `requested_at`.
+A request SHALL name a project and a duration (1 minute to 30 days). It SHALL name either a positive GPU count or a whole node, and MAY name a GPU type, a label (≤ 64 characters) and a start command. Invalid requests SHALL be refused with `BAD_REQUEST` and SHALL NOT be stored. A valid request SHALL be stored as `QUEUED` with an offset-qualified `requested_at` and a ticket id.
 
 #### Scenario: Valid request queues
 - **WHEN** an operator requests 2 GPUs for 6 hours for project `project-a`
-- **THEN** a ticket `T0001` is stored with status `QUEUED`
+- **THEN** a ticket with a fresh `tk_…` id is stored with status `QUEUED`
 
 #### Scenario: Count and whole node together
 - **WHEN** a request names both `gpus: 2` and `whole_node: true`
 - **THEN** it is refused with `BAD_REQUEST` and nothing is stored
+
+### Requirement: Ticket ids are random
+A new ticket's id SHALL be `tk_` followed by 12 random lowercase Crockford base32 characters, so that no ticket id can be derived from another. Tickets stored before random ids SHALL keep their sequential `T<NNNN>` id, and a sequential id SHALL NOT resolve to a ticket that carries a random id. The CLI SHALL refuse an argument matching neither form with `BAD_REQUEST` before contacting central.
+
+#### Scenario: Ids cannot be counted
+- **GIVEN** a ticket `tk_7h3q9m2xw4ra` was just issued
+- **WHEN** another caller asks for `T0002`, or for any id it did not receive
+- **THEN** no ticket is found
+
+#### Scenario: Malformed id
+- **WHEN** `memon ticket show T1` runs
+- **THEN** it exits with `BAD_REQUEST` without contacting central
 
 ### Requirement: Grants respect the registry and live GPU state
 The broker SHALL consider queued tickets in `requested_at` order and grant every ticket that fits now. A GPU is grantable when all of these hold:
@@ -57,7 +69,7 @@ Commands run under a ticket SHALL see `CUDA_VISIBLE_DEVICES` set to the granted 
 - **THEN** the command starts as task `main` in a labelled terminal, inside a `memon-task-<id>` step, with `CUDA_VISIBLE_DEVICES` set to the granted GPUs
 
 #### Scenario: Task on a released ticket
-- **WHEN** `memon ticket run T0001 -- train.sh` targets a `RELEASED` ticket
+- **WHEN** `memon ticket run tk_7h3q9m2xw4ra -- train.sh` targets a `RELEASED` ticket
 - **THEN** the command exits 9 with `CONFLICT` and nothing starts
 
 ### Requirement: Release and expiry reclaim completely
@@ -101,9 +113,9 @@ The CLI SHALL provide `memon ticket request|list|show|release` against central, 
 The cluster overview SHALL list queued and granted tickets, plus tickets that ended within the last 24 hours, with id, Project, label, status, node, GPUs, request/grant/expiry times and the ticket's tasks. Each granted ticket SHALL draw a bar on the lanes of its GPUs from `granted_at` to `expires_at`, with the elapsed part distinguished. Ended tickets SHALL be collapsed by default.
 
 #### Scenario: Granted ticket on the timeline
-- **GIVEN** ticket `T0001` holds GPUs 0–3 of `node-01` and was granted 10 minutes ago for 1 hour
+- **GIVEN** ticket `tk_7h3q9m2xw4ra` holds GPUs 0–3 of `node-01` and was granted 10 minutes ago for 1 hour
 - **WHEN** the super admin opens the cluster overview
-- **THEN** each of the four GPU lanes shows a T0001 bar whose first sixth is shaded as elapsed, and the Tasks tab lists T0001 as `GRANTED` with its tasks
+- **THEN** each of the four GPU lanes shows a bar for that ticket whose first sixth is shaded as elapsed, and the Tasks tab lists it as `GRANTED` with its tasks
 
 ### Requirement: Ticket details are limited to the viewer's Projects
 The super admin (including owner Basic auth) SHALL see every ticket in full. An admin SHALL see full details only for tickets on Projects granted to them. Other granted tickets SHALL appear only as anonymous occupied bars, with no id, Project, label, reason or tasks; other queued or ended tickets SHALL not appear. Users, guests and viewers SHALL get no ticket data.

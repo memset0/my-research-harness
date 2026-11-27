@@ -26,3 +26,7 @@
 - [x] 5.1 Implement the cluster-dashboard `listTasks()` source from the ticket store and herdr terminal names, filtered per viewer (super admin all; admin granted Projects in full, others anonymous), and verify `task-view.test.ts` and the clusters route test
 - [x] 5.2 Draw granted tickets as GPU-lane bars with elapsed shading on a horizon with a lead-in before now, list tickets in the Tasks tab (ended in the last 24 h collapsed) with stock shadcn components, and verify `cluster-timeline.test.ts` plus a rendered preview check
 - [x] 5.3 Create the store and its WAL/SHM files with mode 0600, and verify the store mode test in `broker.test.ts`
+
+## 6. Random ticket ids
+
+- [x] 6.1 Issue `tk_` + 12 random Crockford base32 ids from `@memon/core`, add a `token` column (legacy rows keep `T<NNNN>`, which never resolves a random-id row), accept both forms in the CLI and terminal-name parser, and verify `ticket-id.test.ts`, `broker.test.ts`, `task-view.test.ts`, `herdr.test.ts`, the tickets route test and the CLI `ticket.test.ts`

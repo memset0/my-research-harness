@@ -5,15 +5,15 @@ import { parseDuration, runTicket, type TicketDeps, terminalName } from './ticke
 
 const LAUNCH = {
   machine: 'node-01',
-  exec: ['env', 'CUDA_VISIBLE_DEVICES=0,1', 'MEMON_TICKET=T0001'],
+  exec: ['env', 'CUDA_VISIBLE_DEVICES=0,1', 'MEMON_TICKET=tk_7h3q9m2xw4ra'],
   run: [
     'env',
     'CUDA_VISIBLE_DEVICES=0,1',
-    'MEMON_TICKET=T0001',
+    'MEMON_TICKET=tk_7h3q9m2xw4ra',
     'srun',
     '--jobid=12345',
     '-J',
-    'memon-task-T0001',
+    'memon-task-tk_7h3q9m2xw4ra',
   ],
   holdJob: '12345',
 }
@@ -26,7 +26,10 @@ function deps(response: { status: number; body: unknown }, over: Partial<TicketD
     fetch: fetchMock as unknown as typeof fetch,
     env: { MEMON_CENTRAL_AUTH: 'owner:secret', MEMON_CENTRAL_URL: 'http://central.test' },
     hc: vi.fn(async () => 7),
-    hcCapture: vi.fn(async () => ({ code: 0, stdout: '{"address":"node-01/t0001-train"}' })),
+    hcCapture: vi.fn(async () => ({
+      code: 0,
+      stdout: '{"address":"node-01/tk_7h3q9m2xw4ra-train"}',
+    })),
     out: vi.fn(),
     isTty: false,
     ...over,
@@ -36,7 +39,7 @@ function deps(response: { status: number; body: unknown }, over: Partial<TicketD
 
 const granted = {
   status: 200,
-  body: { ticket: { id: 'T0001', status: 'GRANTED' }, launch: LAUNCH },
+  body: { ticket: { id: 'tk_7h3q9m2xw4ra', status: 'GRANTED' }, launch: LAUNCH },
 }
 
 describe('memon ticket', () => {
@@ -48,7 +51,7 @@ describe('memon ticket', () => {
   it('posts a request with Basic auth and the start command', async () => {
     const { d, fetchMock } = deps({
       status: 201,
-      body: { ticket: { id: 'T0001', status: 'QUEUED' } },
+      body: { ticket: { id: 'tk_7h3q9m2xw4ra', status: 'QUEUED' } },
     })
     const code = await runTicket(
       'request',
@@ -80,19 +83,32 @@ describe('memon ticket', () => {
     expect(result.error?.code).toBe('NOT_FOUND')
   })
 
+  it('rejects malformed ticket ids before calling central', async () => {
+    const { d, fetchMock } = deps(granted)
+    for (const id of ['T1', 'tk_short', 'TK_7H3Q9M2XW4RA']) {
+      const result = await captureCli(() => runTicket('show', [id], {}, d))
+      expect(result.error?.code).toBe('BAD_REQUEST')
+    }
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('refuses work on tickets that are not granted', async () => {
     const { d } = deps({
       status: 200,
-      body: { ticket: { id: 'T0001', status: 'QUEUED' }, launch: null },
+      body: { ticket: { id: 'tk_7h3q9m2xw4ra', status: 'QUEUED' }, launch: null },
     })
-    const result = await captureCli(() => runTicket('exec', ['T0001', 'nvidia-smi'], {}, d))
+    const result = await captureCli(() =>
+      runTicket('exec', ['tk_7h3q9m2xw4ra', 'nvidia-smi'], {}, d),
+    )
     expect(result.exitCode).toBe(9)
     expect(d.hc).not.toHaveBeenCalled()
   })
 
   it('runs short commands with the ticket environment and passes the status through', async () => {
     const { d } = deps(granted)
-    expect(await runTicket('exec', ['T0001', 'nvidia-smi', '-L'], { timeout: '60' }, d)).toBe(7)
+    expect(
+      await runTicket('exec', ['tk_7h3q9m2xw4ra', 'nvidia-smi', '-L'], { timeout: '60' }, d),
+    ).toBe(7)
     expect(d.hc).toHaveBeenCalledWith([
       'exec',
       '-i',
@@ -103,7 +119,7 @@ describe('memon ticket', () => {
       '--',
       'env',
       'CUDA_VISIBLE_DEVICES=0,1',
-      'MEMON_TICKET=T0001',
+      'MEMON_TICKET=tk_7h3q9m2xw4ra',
       'bash',
       '-c',
       'nvidia-smi -L',
@@ -112,16 +128,18 @@ describe('memon ticket', () => {
 
   it('starts long tasks in a labelled terminal inside the ticket step', async () => {
     const { d } = deps(granted)
-    expect(await runTicket('run', ['T0001', 'python', 'train.py'], { name: 'train' }, d)).toBe(0)
+    expect(
+      await runTicket('run', ['tk_7h3q9m2xw4ra', 'python', 'train.py'], { name: 'train' }, d),
+    ).toBe(0)
     expect(d.hcCapture).toHaveBeenCalledWith([
       'run',
       '--on',
       'node-01',
       '--bg',
       '--name',
-      't0001-train',
+      'tk_7h3q9m2xw4ra-train',
       '--label',
-      'ticket=T0001',
+      'ticket=tk_7h3q9m2xw4ra',
       '--label',
       'task=train',
       '--json',
@@ -132,11 +150,11 @@ describe('memon ticket', () => {
       'python train.py',
     ])
     expect(d.out).toHaveBeenCalledWith(
-      '{"ticket":"T0001","task":"train","terminal":"node-01/t0001-train"}\n',
+      '{"ticket":"tk_7h3q9m2xw4ra","task":"train","terminal":"node-01/tk_7h3q9m2xw4ra-train"}\n',
     )
   })
 
   it('names terminals like the broker', () => {
-    expect(terminalName('T0001', 'Main')).toBe('t0001-main')
+    expect(terminalName('tk_7h3q9m2xw4ra', 'Main')).toBe('tk_7h3q9m2xw4ra-main')
   })
 })

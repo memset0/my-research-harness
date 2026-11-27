@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import os from 'node:os'
 import path from 'node:path'
+import { TICKET_ID_PATTERN } from '@memon/core'
 import type { GpuSnapshot } from './types'
 
 /** memon's own herdr client; never another installation's. */
@@ -206,9 +207,15 @@ export function launchTemplate(
 }
 
 /** The ticket id a terminal name belongs to, or null for terminals outside tickets. */
+// Terminal names start with the lowercase ticket id; random ids are lowercase already.
+const TERMINAL_OF_TICKET = new RegExp(`^(${TICKET_ID_PATTERN.source.slice(1, -1)})-.`)
+
 export function ticketOfTerminal(name: string | null): string | null {
-  const match = name ? /^t(\d{4,})-./.exec(name) : null
-  return match ? `T${match[1]}` : null
+  if (!name) return null
+  const random = TERMINAL_OF_TICKET.exec(name)
+  if (random) return random[1] as string
+  const legacy = /^t(\d{4,})-./.exec(name)
+  return legacy ? `T${legacy[1]}` : null
 }
 
 /** Terminal name for a task: unique per ticket, within herdr's 1–32 `[a-z0-9_-]`. */

@@ -35,7 +35,7 @@ const req = (role: string, method = 'GET', body?: unknown) =>
   })
 
 const ticket = {
-  id: 'T0001',
+  id: 'tk_7h3q9m2xw4ra',
   project: 'project-a',
   status: 'GRANTED',
   gpus: null,
@@ -78,7 +78,7 @@ describe('/api/gpu-pool/tickets', () => {
     )
     expect(response.status).toBe(201)
     expect((await response.json()).ticket).toMatchObject({
-      id: 'T0001',
+      id: 'tk_7h3q9m2xw4ra',
       status: 'QUEUED',
       whole_node: true,
     })
@@ -88,9 +88,9 @@ describe('/api/gpu-pool/tickets', () => {
     broker.request.mockRejectedValue(new TicketError('BAD_REQUEST', 'bad'))
     expect((await POST(req('owner', 'POST', {}))).status).toBe(400)
     broker.get.mockRejectedValue(new TicketError('NOT_FOUND', 'missing'))
-    expect((await SHOW(req('owner'), params('T0099'))).status).toBe(404)
+    expect((await SHOW(req('owner'), params('tk_0000000000zz'))).status).toBe(404)
     broker.release.mockRejectedValue(new TicketError('CONFLICT', 'done'))
-    expect((await RELEASE(req('owner', 'POST'), params('T0001'))).status).toBe(409)
+    expect((await RELEASE(req('owner', 'POST'), params('tk_7h3q9m2xw4ra'))).status).toBe(409)
   })
 
   it('includes the launch template for granted tickets', async () => {
@@ -101,7 +101,7 @@ describe('/api/gpu-pool/tickets', () => {
       run: ['env'],
       holdJob: null,
     })
-    const body = await (await SHOW(req('owner'), params('T0001'))).json()
+    const body = await (await SHOW(req('owner'), params('tk_7h3q9m2xw4ra'))).json()
     expect(body.launch).toMatchObject({ machine: 'node-01' })
     expect(body.ticket.granted_gpus).toEqual([0, 1])
   })

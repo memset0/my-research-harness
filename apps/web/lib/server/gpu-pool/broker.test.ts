@@ -2,7 +2,7 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { parseNodes } from '@memon/core'
+import { parseNodes, TICKET_ID_PATTERN } from '@memon/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { TicketBroker, TicketError } from './broker'
 import type { HcResult, Herdr, HerdrTerminal } from './herdr'
@@ -135,75 +135,83 @@ describe('TicketBroker', () => {
 
   it('grants a whole node, starts the command inside its own step, and reclaims it on release', async () => {
     const queued = await request({ whole_node: true, run: 'python train.py' })
-    expect(queued).toMatchObject({ id: 'T0001', status: 'QUEUED' })
+    expect(queued).toMatchObject({ status: 'QUEUED' })
+    expect(queued.id).toMatch(TICKET_ID_PATTERN)
     await broker.tick()
-    const granted = await broker.get('T0001')
+    const granted = await broker.get(queued.id)
     expect(granted).toMatchObject({ status: 'GRANTED', node: 'node-01', grantedGpus: [0, 1, 2, 3] })
     expect(granted.expiresAtMs).toBe(now.getTime() + 3600_000)
     const launched = herdr.calls.find((c) => c.includes('srun')) as string[]
     expect(launched.slice(0, 3)).toEqual([
       'env',
       'CUDA_VISIBLE_DEVICES=0,1,2,3',
-      'MEMON_TICKET=T0001',
+      `MEMON_TICKET=${queued.id}`,
     ])
-    expect(launched.slice(-5)).toEqual(['-J', 'memon-task-T0001', 'bash', '-c', 'python train.py'])
+    expect(launched.slice(-5)).toEqual([
+      '-J',
+      `memon-task-${queued.id}`,
+      'bash',
+      '-c',
+      'python train.py',
+    ])
 
     herdr.steps.push({ id: '12345.18', name: 'herdr-core' })
-    const released = await broker.release('T0001')
+    const released = await broker.release(queued.id)
     expect(released.status).toBe('RELEASED')
     expect(herdr.calls).toContainEqual(['scancel', '12345.20'])
     expect(herdr.steps).toEqual([{ id: '12345.18', name: 'herdr-core' }])
-    expect(await herdr.terminals('T0001')).toEqual([])
+    expect(await herdr.terminals(queued.id)).toEqual([])
     expect(await store.dirty()).toEqual([])
   })
 
   it('refuses partial requests on whole-node nodes', async () => {
-    await request({ gpus: 2 })
+    const { id } = await request({ gpus: 2 })
     await broker.tick()
-    expect(await broker.get('T0001')).toMatchObject({ status: 'FAILED' })
+    expect(await broker.get(id)).toMatchObject({ status: 'FAILED' })
   })
 
   it('expires tickets, and marks GPUs dirty when processes survive', async () => {
-    await request({ whole_node: true })
+    const first = await request({ whole_node: true })
     await broker.tick()
     herdr.busy.add(2)
     now = new Date(now.getTime() + 3601_000)
     await broker.tick()
-    expect(await broker.get('T0001')).toMatchObject({ status: 'EXPIRED' })
+    expect(await broker.get(first.id)).toMatchObject({ status: 'EXPIRED' })
     expect((await store.dirty()).map((d) => d.gpu)).toEqual([2])
 
-    await request({ whole_node: true })
+    const second = await request({ whole_node: true })
+    expect(second.id).not.toBe(first.id)
     await broker.tick()
-    expect(await broker.get('T0002')).toMatchObject({ status: 'QUEUED' })
+    expect(await broker.get(second.id)).toMatchObject({ status: 'QUEUED' })
     herdr.busy.clear()
     await broker.tick()
     expect(await store.dirty()).toEqual([])
-    expect(await broker.get('T0002')).toMatchObject({ status: 'GRANTED' })
+    expect(await broker.get(second.id)).toMatchObject({ status: 'GRANTED' })
   })
 
   it('keeps an expired ticket open while its node cannot be reached', async () => {
-    await request({ whole_node: true })
+    const { id } = await request({ whole_node: true })
     await broker.tick()
     herdr.connected = false
     now = new Date(now.getTime() + 3601_000)
     await broker.tick()
-    const ticket = await broker.get('T0001')
+    const ticket = await broker.get(id)
     expect(ticket.status).toBe('GRANTED')
     expect(ticket.reason).toMatch(/expiry reclaim pending/)
   })
 
   it('reports unticketed GPU use without granting busy GPUs', async () => {
     herdr.busy.add(1)
-    await request({ whole_node: true })
+    const { id } = await request({ whole_node: true })
     await broker.tick()
     expect(broker.unticketed).toMatchObject([{ node: 'node-01', gpu: 1, processes: 1 }])
-    expect(await broker.get('T0001')).toMatchObject({ status: 'QUEUED' })
+    expect(await broker.get(id)).toMatchObject({ status: 'QUEUED' })
   })
 
   it('refuses launch templates for tickets that are not granted', async () => {
-    await request({ whole_node: true })
-    await expect(broker.template('T0001')).rejects.toMatchObject({ code: 'CONFLICT' })
-    await expect(broker.get('T0099')).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    const { id } = await request({ whole_node: true })
+    await expect(broker.template(id)).rejects.toMatchObject({ code: 'CONFLICT' })
+    await expect(broker.get('tk_0000000000zz')).rejects.toMatchObject({ code: 'NOT_FOUND' })
   })
 })
 
@@ -214,5 +222,40 @@ describe('TicketStore files', () => {
     for (const file of [store.path, `${store.path}-wal`, `${store.path}-shm`])
       if (existsSync(file)) expect(statSync(file).mode & 0o777).toBe(0o600)
     expect(statSync(store.path).mode & 0o777).toBe(0o600)
+  })
+
+  it('keeps sequential ids of tickets stored before random ids, and issues random ids after', async () => {
+    const sqlite3 = (await import('sqlite3')).default
+    const path = join(dir, 'legacy.sqlite3')
+    const legacy = new sqlite3.Database(path)
+    await new Promise<void>((resolve, reject) =>
+      legacy.exec(
+        `CREATE TABLE tickets (
+           seq INTEGER PRIMARY KEY AUTOINCREMENT, project TEXT NOT NULL, gpus INTEGER,
+           whole_node INTEGER NOT NULL, gpu_type TEXT, duration_s INTEGER NOT NULL, label TEXT,
+           run TEXT, status TEXT NOT NULL, node TEXT, granted_gpus TEXT NOT NULL DEFAULT '[]',
+           requested_at TEXT NOT NULL, requested_at_ms INTEGER NOT NULL, granted_at TEXT,
+           expires_at TEXT, expires_at_ms INTEGER, ended_at TEXT, reason TEXT);
+         INSERT INTO tickets (project, whole_node, duration_s, status, requested_at, requested_at_ms)
+           VALUES ('project-a', 1, 60, 'RELEASED', '2026-11-25T00:00:00+00:00', 0);`,
+        (error) => (error ? reject(error) : resolve()),
+      ),
+    )
+    await new Promise<void>((resolve) => legacy.close(() => resolve()))
+
+    const upgraded = new TicketStore(path)
+    try {
+      expect(await upgraded.get('T0001')).toMatchObject({ id: 'T0001', status: 'RELEASED' })
+      const fresh = await upgraded.create(
+        { project: 'project-a', wholeNode: true, durationS: 60 },
+        new Date(),
+      )
+      expect(fresh.id).toMatch(TICKET_ID_PATTERN)
+      // The new row's sequence number never doubles as an id.
+      expect(await upgraded.get('T0002')).toBeNull()
+      expect((await upgraded.list()).map((ticket) => ticket.id)).toEqual(['T0001', fresh.id])
+    } finally {
+      await upgraded.close()
+    }
   })
 })

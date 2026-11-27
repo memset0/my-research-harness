@@ -1,5 +1,10 @@
 import { chmodSync, closeSync, existsSync, openSync } from 'node:fs'
-import { formatIsoLocal } from '@memon/core'
+import {
+  formatIsoLocal,
+  LEGACY_TICKET_ID_PATTERN,
+  newTicketId,
+  TICKET_ID_PATTERN,
+} from '@memon/core'
 import { dirname, join } from '@memon/file-protocol/paths'
 import sqlite3 from 'sqlite3'
 import type { DirtyGpu, Ticket, TicketRequest, TicketStatus } from './types'
@@ -8,6 +13,8 @@ export const GPU_POOL_DB_FILENAME = 'memon-gpu-pool.sqlite3'
 
 interface TicketRow {
   seq: number
+  /** Random ticket id; null only on rows written before random ids. */
+  token: string | null
   project: string
   gpus: number | null
   whole_node: number
@@ -27,16 +34,12 @@ interface TicketRow {
   reason: string | null
 }
 
-export const ticketId = (seq: number) => `T${String(seq).padStart(4, '0')}`
-
-export function parseTicketId(id: string): number | null {
-  const match = /^T(\d{4,})$/.exec(id)
-  return match ? Number(match[1]) : null
-}
+/** The sequential id a row had before tickets carried random ids. */
+const legacyTicketId = (seq: number) => `T${String(seq).padStart(4, '0')}`
 
 function toTicket(row: TicketRow): Ticket {
   return {
-    id: ticketId(row.seq),
+    id: row.token ?? legacyTicketId(row.seq),
     project: row.project,
     gpus: row.gpus,
     wholeNode: row.whole_node === 1,
@@ -71,6 +74,7 @@ export class TicketStore {
       PRAGMA synchronous = NORMAL;
       CREATE TABLE IF NOT EXISTS tickets (
         seq             INTEGER PRIMARY KEY AUTOINCREMENT,
+        token           TEXT,
         project         TEXT NOT NULL,
         gpus            INTEGER,
         whole_node      INTEGER NOT NULL,
@@ -96,19 +100,41 @@ export class TicketStore {
         reason TEXT NOT NULL,
         PRIMARY KEY (node, gpu)
       ) WITHOUT ROWID;
-    `).then(() => {
-      for (const file of [path, `${path}-wal`, `${path}-shm`])
-        if (existsSync(file)) chmodSync(file, 0o600)
-    })
+    `)
+      .then(async () => {
+        const columns = await this.all<{ name: string }>('PRAGMA table_info(tickets)')
+        if (!columns.some((column) => column.name === 'token'))
+          await this.exec('ALTER TABLE tickets ADD COLUMN token TEXT')
+        await this.exec('CREATE UNIQUE INDEX IF NOT EXISTS tickets_token ON tickets (token)')
+      })
+      .then(() => {
+        for (const file of [path, `${path}-wal`, `${path}-shm`])
+          if (existsSync(file)) chmodSync(file, 0o600)
+      })
   }
 
   async create(request: TicketRequest, now: Date): Promise<Ticket> {
     await this.ready
-    const seq = await this.run(
-      `INSERT INTO tickets (project, gpus, whole_node, gpu_type, duration_s, label, run, status,
-                            requested_at, requested_at_ms)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'QUEUED', ?, ?)`,
+    for (let attempt = 0; ; attempt += 1) {
+      const id = newTicketId()
+      try {
+        await this.insert(id, request, now)
+        return (await this.get(id)) as Ticket
+      } catch (error) {
+        // 60 random bits make a collision practically impossible; retry anyway.
+        if (attempt < 3 && (error as { code?: string }).code === 'SQLITE_CONSTRAINT') continue
+        throw error
+      }
+    }
+  }
+
+  private insert(id: string, request: TicketRequest, now: Date): Promise<number> {
+    return this.run(
+      `INSERT INTO tickets (token, project, gpus, whole_node, gpu_type, duration_s, label, run,
+                            status, requested_at, requested_at_ms)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'QUEUED', ?, ?)`,
       [
+        id,
         request.project,
         request.gpus ?? null,
         request.wholeNode ? 1 : 0,
@@ -120,15 +146,29 @@ export class TicketStore {
         now.getTime(),
       ],
     )
-    return (await this.get(ticketId(seq))) as Ticket
   }
 
   async get(id: string): Promise<Ticket | null> {
-    const seq = parseTicketId(id)
-    if (seq === null) return null
-    await this.ready
-    const row = await this.one<TicketRow>('SELECT * FROM tickets WHERE seq = ?', [seq])
+    const row = await this.row(id)
     return row ? toTicket(row) : null
+  }
+
+  /** Row of a random id, or of a legacy sequential id on a row that has no random id. */
+  private async row(id: string): Promise<TicketRow | undefined> {
+    await this.ready
+    if (TICKET_ID_PATTERN.test(id))
+      return this.one<TicketRow>('SELECT * FROM tickets WHERE token = ?', [id])
+    if (LEGACY_TICKET_ID_PATTERN.test(id))
+      return this.one<TicketRow>('SELECT * FROM tickets WHERE seq = ? AND token IS NULL', [
+        Number(id.slice(1)),
+      ])
+    return undefined
+  }
+
+  private async seq(id: string): Promise<number> {
+    const row = await this.row(id)
+    if (!row) throw new Error(`ticket ${id} does not exist`)
+    return row.seq
   }
 
   async list(statuses?: TicketStatus[]): Promise<Ticket[]> {
@@ -144,6 +184,7 @@ export class TicketStore {
 
   async grant(id: string, node: string, gpus: number[], now: Date): Promise<Ticket> {
     const ticket = await this.require(id)
+    const seq = await this.seq(id)
     const expires = new Date(now.getTime() + ticket.durationS * 1000)
     await this.run(
       `UPDATE tickets SET status = 'GRANTED', node = ?, granted_gpus = ?, granted_at = ?,
@@ -155,24 +196,25 @@ export class TicketStore {
         formatIsoLocal(now),
         formatIsoLocal(expires),
         expires.getTime(),
-        parseTicketId(id),
+        seq,
       ],
     )
     return this.require(id)
   }
 
   async finish(id: string, status: 'RELEASED' | 'EXPIRED' | 'FAILED', now: Date, reason?: string) {
+    const seq = await this.seq(id)
     await this.run(`UPDATE tickets SET status = ?, ended_at = ?, reason = ? WHERE seq = ?`, [
       status,
       formatIsoLocal(now),
       reason ?? null,
-      parseTicketId(id),
+      seq,
     ])
     return this.require(id)
   }
 
   async note(id: string, reason: string | null): Promise<void> {
-    await this.run('UPDATE tickets SET reason = ? WHERE seq = ?', [reason, parseTicketId(id)])
+    await this.run('UPDATE tickets SET reason = ? WHERE seq = ?', [reason, await this.seq(id)])
   }
 
   async markDirty(node: string, gpu: number, reason: string, now: Date): Promise<void> {
